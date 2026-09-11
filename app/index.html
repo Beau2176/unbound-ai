@@ -868,6 +868,7 @@
             <div id="userPlan" class="user-plan">FREE</div>
           </div>
         </div>
+        <button id="adminButton" class="account-button primary "type="button" hidden>ADMIN<button>
         <button id="logoutButton" class="logout-button" type="button">LOG OUT</button>
       </div>
     </div>
@@ -994,6 +995,7 @@
     const signedOutActions = document.getElementById("signedOutActions");
     const signedInActions = document.getElementById("signedInActions");
     const signInButton = document.getElementById("signInButton");
+    const adminButton = document.getElementById("adminButton"):
     const createAccountButton = document.getElementById("createAccountButton");
     const logoutButton = document.getElementById("logoutButton");
     const userAvatar = document.getElementById("userAvatar");
@@ -1249,6 +1251,7 @@
         userName.textContent = currentUser.displayName || currentUser.email || "UNBOUND User";
         userPlan.textContent = planLabelForUser(currentUser);
         userPlan.classList.toggle("gift", Boolean(currentUser.complimentaryTopTier));
+        adminButton.hidden = currentUser.role !== "admin";
         return;
       }
 
@@ -1258,6 +1261,7 @@
       userName.textContent = "UNBOUND User";
       userPlan.textContent = "FREE";
       userPlan.classList.remove("gift");
+      adminButton.hidden = true;
     }
 
     function setAuthMode(mode) {
@@ -1491,7 +1495,10 @@
 
     signInButton.addEventListener("click", () => openAuth("login"));
     createAccountButton.addEventListener("click", () => openAuth("register"));
-    logoutButton.addEventListener("click", handleLogout);
+    logoutButton.addEventListener("click", handleLogout); 
+adminButton.addEventListener("click", () => {
+  window.location.href = "/admin.html";
+});
     authCloseButton.addEventListener("click", closeAuth);
     loginTab.addEventListener("click", () => setAuthMode("login"));
     registerTab.addEventListener("click", () => setAuthMode("register"));
