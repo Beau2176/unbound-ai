@@ -29,14 +29,36 @@ UNBOUND AI brand line:
 "A more open tomorrow starts today."
 `;
 
-app.use(express.json());
+app.use(express.json({ limit: "100kb" }));
 app.use(express.static(__dirname));
+
+function cleanHistory(history) {
+  if (!Array.isArray(history)) {
+    return [];
+  }
+
+  return history
+    .filter((item) => {
+      return (
+        item &&
+        (item.role === "user" || item.role === "assistant") &&
+        typeof item.content === "string" &&
+        item.content.trim()
+      );
+    })
+    .map((item) => ({
+      role: item.role,
+      content: item.content.trim().slice(0, 12000)
+    }))
+    .slice(-20);
+}
 
 app.post("/api/chat", async (req, res) => {
   try {
-    const message = req.body.message;
+    const message =
+      typeof req.body.message === "string" ? req.body.message.trim() : "";
 
-    if (!message || !message.trim()) {
+    if (!message) {
       return res.status(400).json({
         error: "Please enter a message."
       });
@@ -54,10 +76,20 @@ app.post("/api/chat", async (req, res) => {
       apiKey: process.env.OPENAI_API_KEY
     });
 
+    const history = cleanHistory(req.body.history);
+
+    const input = [
+      ...history,
+      {
+        role: "user",
+        content: message.slice(0, 12000)
+      }
+    ];
+
     const response = await client.responses.create({
       model: "gpt-5.6-luna",
       instructions: UNBOUND_SYSTEM_PROMPT,
-      input: message
+      input
     });
 
     res.json({
