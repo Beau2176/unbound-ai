@@ -208,6 +208,32 @@
       letter-spacing: 0.08em;
     }
 
+    .chat-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+    }
+
+    .new-chat {
+      padding: 7px 10px;
+      border: 1px solid rgba(107, 193, 255, 0.30);
+      border-radius: 10px;
+      background: rgba(66, 165, 255, 0.08);
+      color: #d9efff;
+      font: inherit;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .new-chat:hover {
+      background: rgba(66, 165, 255, 0.15);
+      border-color: rgba(107, 193, 255, 0.55);
+    }
+
     .messages {
       display: flex;
       flex-direction: column;
@@ -450,7 +476,10 @@
           <h1>Ask anything. Explore without limits.</h1>
           <p>Direct conversation, broad knowledge, creativity, and user-controlled AI.</p>
         </div>
-        <div class="age">18+ PLATFORM</div>
+        <div class="chat-actions">
+          <div class="age">18+ PLATFORM</div>
+          <button id="newChatButton" class="new-chat" type="button">NEW CHAT</button>
+        </div>
       </div>
 
       <div id="messages" class="messages" aria-live="polite">
@@ -485,10 +514,17 @@
   </main>
 
   <script>
+    const STORAGE_KEY = "unbound-ai-chat-history-v1";
+    const MAX_STORED_MESSAGES = 50;
+    const MAX_CONTEXT_MESSAGES = 20;
+
     const form = document.getElementById("chatForm");
     const input = document.getElementById("message");
     const sendButton = document.getElementById("sendButton");
+    const newChatButton = document.getElementById("newChatButton");
     const messages = document.getElementById("messages");
+
+    let conversationHistory = loadConversation();
 
     function escapeHtml(value) {
       return String(value)
@@ -507,6 +543,51 @@
       return html;
     }
 
+    function normalizeHistory(items) {
+      if (!Array.isArray(items)) {
+        return [];
+      }
+
+      return items
+        .filter((item) => {
+          return (
+            item &&
+            (item.role === "user" || item.role === "assistant") &&
+            typeof item.content === "string" &&
+            item.content.trim()
+          );
+        })
+        .map((item) => ({
+          role: item.role,
+          content: item.content
+        }))
+        .slice(-MAX_STORED_MESSAGES);
+    }
+
+    function loadConversation() {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+
+        if (!saved) {
+          return [];
+        }
+
+        return normalizeHistory(JSON.parse(saved));
+      } catch (error) {
+        console.warn("Could not load UNBOUND AI chat history:", error);
+        return [];
+      }
+    }
+
+    function saveConversation() {
+      try {
+        conversationHistory = normalizeHistory(conversationHistory);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(conversationHistory));
+      } catch (error) {
+        console.warn("Could not save UNBOUND AI chat history:", error);
+      }
+    }
+
     function addMessage(role, content, extraClass = "") {
       const bubble = document.createElement("div");
       bubble.className = `message ${role} ${extraClass}`.trim();
@@ -522,6 +603,26 @@
       return bubble;
     }
 
+    function showWelcomeMessage() {
+      addMessage(
+        "assistant",
+        "I’m UNBOUND AI. What do you want to explore?"
+      );
+    }
+
+    function renderConversation() {
+      messages.innerHTML = "";
+
+      if (!conversationHistory.length) {
+        showWelcomeMessage();
+        return;
+      }
+
+      conversationHistory.forEach((item) => {
+        addMessage(item.role, item.content);
+      });
+    }
+
     function addTypingIndicator() {
       const bubble = document.createElement("div");
       bubble.className = "message assistant";
@@ -531,6 +632,26 @@
       return bubble;
     }
 
+    function startNewChat() {
+      const hasHistory = conversationHistory.length > 0;
+
+      if (hasHistory) {
+        const confirmed = window.confirm(
+          "Start a new chat? This will clear the conversation saved in this browser."
+        );
+
+        if (!confirmed) {
+          return;
+        }
+      }
+
+      conversationHistory = [];
+      localStorage.removeItem(STORAGE_KEY);
+      renderConversation();
+      input.value = "";
+      input.focus();
+    }
+
     async function sendMessage() {
       const message = input.value.trim();
 
@@ -538,7 +659,15 @@
         return;
       }
 
+      const priorHistory = conversationHistory.slice(-MAX_CONTEXT_MESSAGES);
+
       addMessage("user", message);
+      conversationHistory.push({
+        role: "user",
+        content: message
+      });
+      saveConversation();
+
       input.value = "";
       input.focus();
 
@@ -551,7 +680,10 @@
           headers: {
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({ message })
+          body: JSON.stringify({
+            message,
+            history: priorHistory
+          })
         });
 
         const data = await response.json();
@@ -561,7 +693,14 @@
           throw new Error(data.error || "Request failed.");
         }
 
-        addMessage("assistant", data.reply || "No response returned.");
+        const reply = data.reply || "No response returned.";
+        addMessage("assistant", reply);
+
+        conversationHistory.push({
+          role: "assistant",
+          content: reply
+        });
+        saveConversation();
       } catch (error) {
         typingBubble.remove();
         addMessage(
@@ -579,12 +718,16 @@
       sendMessage();
     });
 
+    newChatButton.addEventListener("click", startNewChat);
+
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         form.requestSubmit();
       }
     });
+
+    renderConversation();
   </script>
 </body>
 </html>
