@@ -1,139 +1,614 @@
+
+
+Skip to content
+Using Gmail with screen readers
+
+1 of 5
+UNBOUND AI - New cosmic frontend files
+Inbox
+
+Bj Koehler <bjkoehler5@gmail.com>
+Attachments
+5:06 AM (18 minutes ago)
+to me
+
+Attached are the two files for the new UNBOUND AI frontend:
+
+1) index-code.txt — the full replacement code for app/index.html
+2) unbound-cosmic.png — the official cosmic UNBOUND AI background image
+
+Next: put unbound-cosmic.png into the app folder in GitHub, then replace the contents of app/index.html with everything from index-code.txt. Do not commit until ChatGPT checks the editor screenshot.
+
+ 2 Attachments
+  •  Scanned by Gmail
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>UNBOUND AI</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#050913" />
+  <title>UNBOUND AI</title>
 
-        <style>
-            body {
-                  margin: 0;
-                        font-family: Arial, sans-serif;
-                              background: #0b0b0f;
-                                    color: white;
-                                        }
+  <style>
+    :root {
+      --bg: #050913;
+      --panel: rgba(5, 10, 20, 0.84);
+      --panel-soft: rgba(8, 15, 29, 0.72);
+      --line: rgba(88, 179, 255, 0.34);
+      --line-strong: rgba(88, 179, 255, 0.72);
+      --text: #f7fbff;
+      --muted: #aab8c9;
+      --blue: #42a5ff;
+      --blue-bright: #6bc1ff;
+      --gold: #ffad43;
+      --danger: #ff7676;
+      --shadow: 0 22px 70px rgba(0, 0, 0, 0.55);
+    }
 
-                                            header {
-                                                  padding: 18px;
-                                                        text-align: center;
-                                                              background: #12121a;
-                                                                    border-bottom: 1px solid #333;
-                                                                        }
+    * {
+      box-sizing: border-box;
+    }
 
-                                                                            h1 {
-                                                                                  margin: 0;
-                                                                                        font-size: 28px;
-                                                                                            }
+    html {
+      min-height: 100%;
+      background: var(--bg);
+    }
 
-                                                                                                .subtitle {
-                                                                                                      color: #aaa;
-                                                                                                            margin-top: 6px;
-                                                                                                                }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        linear-gradient(180deg, rgba(2, 6, 14, 0.16) 0%, rgba(2, 6, 14, 0.20) 42%, rgba(2, 6, 14, 0.88) 100%),
+        url("./unbound-cosmic.png") center top / cover fixed no-repeat;
+      overflow-x: hidden;
+    }
 
-                                                                                                                    .chat {
-                                                                                                                          padding: 20px;
-                                                                                                                                max-width: 900px;
-                                                                                                                                      margin: auto;
-                                                                                                                                          }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 50% 35%, rgba(22, 122, 255, 0.05), transparent 34%),
+        radial-gradient(circle at 74% 59%, rgba(255, 150, 43, 0.05), transparent 25%);
+      z-index: 0;
+    }
 
-                                                                                                                                              .welcome {
-                                                                                                                                                    background: #161620;
-                                                                                                                                                          border: 1px solid #333;
-                                                                                                                                                                border-radius: 14px;
-                                                                                                                                                                      padding: 18px;
-                                                                                                                                                                            margin-bottom: 18px;
-                                                                                                                                                                                }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 28px;
+      background: rgba(3, 8, 16, 0.72);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
 
-                                                                                                                                                                                    textarea {
-                                                                                                                                                                                          width: 100%;
-                                                                                                                                                                                                box-sizing: border-box;
-                                                                                                                                                                                                      min-height: 110px;
-                                                                                                                                                                                                            background: #15151d;
-                                                                                                                                                                                                                  color: white;
-                                                                                                                                                                                                                        border: 1px solid #444;
-                                                                                                                                                                                                                              border-radius: 12px;
-                                                                                                                                                                                                                                    padding: 14px;
-                                                                                                                                                                                                                                          font-size: 16px;
-                                                                                                                                                                                                                                                resize: vertical;
-                                                                                                                                                                                                                                                    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
 
-                                                                                                                                                                                                                                                        button {
-                                                                                                                                                                                                                                                              margin-top: 12px;
-                                                                                                                                                                                                                                                                    padding: 12px 22px;
-                                                                                                                                                                                                                                                                          background: #7c3aed;
-                                                                                                                                                                                                                                                                                color: white;
-                                                                                                                                                                                                                                                                                      border: none;
-                                                                                                                                                                                                                                                                                            border-radius: 10px;
-                                                                                                                                                                                                                                                                                                  font-size: 16px;
-                                                                                                                                                                                                                                                                                                        cursor: pointer;
-                                                                                                                                                                                                                                                                                                            }
+    .mark {
+      width: 42px;
+      height: 25px;
+      position: relative;
+      flex: 0 0 auto;
+      filter: drop-shadow(0 0 12px rgba(69, 167, 255, 0.4));
+    }
 
-                                                                                                                                                                                                                                                  .response {
-                                                                                                                                                                                                                                                        margin-top: 12px;
-                                                                                                                                                                                                                                                              padding: 12px 14px;
-                                                                                                                                                                                                                                                                    background: #12121a;
-                                                                                                                                                                                                                                                                          border: 1px solid #333;
-                                                                                                                                                                                                                                                                                border-radius: 10px;
-                                                                                                                                                                                                                                                                                      color: #e5e7eb;
-                                                                                                                                                                                                                                                                                            white-space: pre-wrap;
-                                                                                                                                                                                                                                                                                                }
-                                                                                                                                                                                                                                                                                                              </style>
-                                                                                                                                                                                                                                                                                                              </head>
+    .mark::before,
+    .mark::after {
+      content: "";
+      position: absolute;
+      top: 4px;
+      width: 22px;
+      height: 14px;
+      border: 3px solid;
+      border-radius: 50%;
+      transform: rotate(18deg);
+    }
 
-                                                                                                                                                                                                                                                                                                              <body>
+    .mark::before {
+      left: 1px;
+      border-color: var(--blue-bright);
+      border-right-color: transparent;
+    }
 
-                                                                                                                                                                                                                                                                                                              <header>
-                                                                                                                                                                                                                                                                                                                <h1>UNBOUND AI</h1>
-                                                                                                                                                                                                                                                                                                                  <div class="subtitle">Private. Powerful. User Controlled.</div>
-                                                                                                                                                                                                                                                                                                                  </header>
+    .mark::after {
+      right: 1px;
+      border-color: var(--gold);
+      border-left-color: transparent;
+      transform: rotate(-18deg);
+    }
 
-                                                                                                                                                                                                                                                                                                                  <main class="chat">
+    .brand-copy {
+      min-width: 0;
+    }
 
-                                                                                                                                                                                                                                                                                                                    <div class="welcome">
-                                                                                                                                                                                                                                                                                                                        <h2>Welcome to UNBOUND AI</h2>
-                                                                                                                                                                                                                                                                                                                            <p>Your AI workspace for open conversation, research, creativity and personalized AI modes.</p>
-                                                                                                                                                                                                                                                                                                                              </div>
+    .brand-name {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.22em;
+      white-space: nowrap;
+    }
 
-                                                                                                                                                                                                                                                                                                                                <textarea id="message" placeholder="Ask UNBOUND AI anything..."></textarea>
+    .brand-name span {
+      color: var(--blue);
+    }
 
-                                                                                                                                                                                                                                                                                                                                  <button onclick="sendMessage()">Send</button>
-                                                                                                                                                                                                                                                                                                                                  <div id="response" class="response" aria-live="polite"></div>
+    .tagline {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+    }
 
-                                                                                                                                                                                                                                                                                                                                  </main>
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      border: 1px solid rgba(94, 214, 153, 0.28);
+      background: rgba(19, 91, 59, 0.20);
+      color: #9cf2c5;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
 
-                                                                                                                                                                                                                                                                                                                                  <script>
-                                                                                                                                                                                                                                                                                                                                    async function sendMessage() {
-                                                                                                                                                                                                                                                                                                                                        const message = document.getElementById("message").value;
-                                                                                                                                                                                                                                                                                                                                        const responseBox = document.getElementById("response");
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #65e8a4;
+      box-shadow: 0 0 12px rgba(101, 232, 164, 0.78);
+    }
 
-                                                                                                                                                                                                                                                                                                                                            if (!message.trim()) {
-                                                                                                                                                                                                                                                                                                                                                  return;
-                                                                                                                                                                                                                                                                                                                                                      }
+    .page {
+      position: relative;
+      z-index: 1;
+      width: min(1100px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: clamp(250px, 43vh, 470px) 0 52px;
+    }
 
-                                                                                                                                                                                                                                                                                                                                                          try {
-                                                                                                                                                                                                                                                                                                                                                              const response = await fetch("/api/chat", {
-                                                                                                                                                                                                                                                                                                                                                                    method: "POST",
-                                                                                                                                                                                                                                                                                                                                                                          headers: {
-                                                                                                                                                                                                                                                                                                                                                                            "Content-Type": "application/json"
-                                                                                                                                                                                                                                                                                                                                                                                  },
-                                                                                                                                                                                                                                                                                                                                                                                        body: JSON.stringify({ message })
-                                                                                                                                                                                                                                                                                                                                                                                          });
+    .chat-shell {
+      width: min(940px, 100%);
+      margin: 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(4, 10, 21, 0.93), rgba(5, 11, 22, 0.86));
+      box-shadow: var(--shadow), 0 0 45px rgba(49, 149, 255, 0.09);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      overflow: hidden;
+    }
 
-                                                                                                                                                                                                                                                                                                                                                                                              const data = await response.json();
+    .chat-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 20px 22px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    }
 
-                                                                                                                                                                                                                                                                                                                                                                                              if (!response.ok) {
-                                                                                                                                                                                                                                                                                                                                                                                                throw new Error(data.error || "Request failed.");
-                                                                                                                                                                                                                                                                                                                                                                                                    }
+    .chat-head h1 {
+      margin: 0;
+      font-size: clamp(20px, 3vw, 27px);
+      letter-spacing: 0.02em;
+    }
 
-                                                                                                                                                                                                                                                                                                                                                                                                    responseBox.textContent = data.reply || "No response returned.";
-                                                                                                                                                                                                                                                                                                                                  } catch (error) {
-                                                                                                                                                                                                                                                                                                                                      responseBox.textContent = error.message || "Something went wrong.";
-                                                                                                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                                                                                                                            </script>
+    .chat-head p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
 
-                                                                                                                                                                                                                                                                                                                                                            </body>
-                                                                                                                                                                                                                                                                                                                                                            </html>
-                                                                                                                                                                                                                                                                                                                                                            
-                                                                                                                                                                                                                                                                                                                                                      
-                                                                                                                                                                                                                                                                                                                        
+    .age {
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 173, 67, 0.25);
+      background: rgba(255, 173, 67, 0.08);
+      color: #ffd297;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+    }
+
+    .messages {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 90px;
+      max-height: min(48vh, 470px);
+      overflow-y: auto;
+      padding: 20px 22px 10px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(88, 179, 255, 0.4) transparent;
+    }
+
+    .message {
+      max-width: min(82%, 720px);
+      padding: 13px 15px;
+      border-radius: 17px;
+      line-height: 1.55;
+      font-size: 15px;
+      word-wrap: break-word;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.16);
+    }
+
+    .message.user {
+      align-self: flex-end;
+      color: #ffffff;
+      background: linear-gradient(135deg, #1476d8, #0e54a1);
+      border-bottom-right-radius: 5px;
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+      color: #ecf7ff;
+      background: rgba(14, 24, 40, 0.92);
+      border: 1px solid rgba(91, 184, 255, 0.20);
+      border-bottom-left-radius: 5px;
+    }
+
+    .message.assistant strong {
+      color: #ffffff;
+    }
+
+    .message.assistant code {
+      padding: 2px 5px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.09);
+      color: #bfe5ff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.93em;
+    }
+
+    .message.error {
+      color: #ffd4d4;
+      border-color: rgba(255, 118, 118, 0.32);
+      background: rgba(98, 21, 28, 0.56);
+    }
+
+    .typing {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 68px;
+    }
+
+    .typing i {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #8fcaff;
+      opacity: 0.35;
+      animation: pulse 1.1s infinite ease-in-out;
+    }
+
+    .typing i:nth-child(2) { animation-delay: 0.15s; }
+    .typing i:nth-child(3) { animation-delay: 0.30s; }
+
+    @keyframes pulse {
+      0%, 70%, 100% { transform: translateY(0); opacity: 0.3; }
+      35% { transform: translateY(-4px); opacity: 1; }
+    }
+
+    .composer-wrap {
+      padding: 14px 18px 18px;
+    }
+
+    .composer {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: end;
+      gap: 12px;
+      padding: 9px 9px 9px 16px;
+      border: 1px solid var(--line-strong);
+      border-radius: 18px;
+      background: rgba(2, 8, 18, 0.88);
+      box-shadow: inset 0 0 25px rgba(56, 157, 255, 0.035), 0 0 24px rgba(45, 151, 255, 0.08);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 48px;
+      max-height: 180px;
+      resize: vertical;
+      border: 0;
+      outline: 0;
+      padding: 11px 4px 8px;
+      background: transparent;
+      color: #ffffff;
+      font: inherit;
+      line-height: 1.45;
+    }
+
+    textarea::placeholder {
+      color: #8797aa;
+    }
+
+    .send {
+      width: 48px;
+      height: 48px;
+      border: 0;
+      border-radius: 50%;
+      color: white;
+      background: linear-gradient(145deg, #2f9fff, #176bd4);
+      cursor: pointer;
+      font-size: 23px;
+      box-shadow: 0 0 22px rgba(55, 164, 255, 0.58);
+      transition: transform 0.15s ease, filter 0.15s ease;
+    }
+
+    .send:hover {
+      transform: translateY(-1px) scale(1.03);
+      filter: brightness(1.08);
+    }
+
+    .send:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      transform: none;
+    }
+
+    .hint {
+      margin: 9px 4px 0;
+      color: #8190a3;
+      font-size: 11px;
+    }
+
+    .footer-line {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px 18px;
+      margin-top: 18px;
+      color: rgba(223, 236, 249, 0.62);
+      font-size: 11px;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .footer-line span::before {
+      content: "•";
+      margin-right: 8px;
+      color: var(--blue);
+    }
+
+    @media (max-width: 680px) {
+      body {
+        background-attachment: scroll;
+        background-position: center top;
+      }
+
+      .topbar {
+        padding: 12px 14px;
+      }
+
+      .brand-name {
+        font-size: 14px;
+      }
+
+      .tagline {
+        display: none;
+      }
+
+      .page {
+        width: min(100% - 18px, 1100px);
+        padding-top: 31vh;
+        padding-bottom: 24px;
+      }
+
+      .chat-shell {
+        border-radius: 19px;
+      }
+
+      .chat-head {
+        padding: 16px 15px 13px;
+      }
+
+      .age {
+        display: none;
+      }
+
+      .messages {
+        padding: 16px 14px 8px;
+        max-height: 46vh;
+      }
+
+      .message {
+        max-width: 92%;
+      }
+
+      .composer-wrap {
+        padding: 11px;
+      }
+
+      .composer {
+        gap: 8px;
+        padding-left: 12px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark" aria-hidden="true"></div>
+      <div class="brand-copy">
+        <div class="brand-name">UNBOUND <span>AI</span></div>
+        <div class="tagline">A more open tomorrow starts today.</div>
+      </div>
+    </div>
+
+    <div class="status">
+      <span class="status-dot"></span>
+      LIVE
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="chat-shell" aria-label="UNBOUND AI chat">
+      <div class="chat-head">
+        <div>
+          <h1>Ask anything. Explore without limits.</h1>
+          <p>Direct conversation, broad knowledge, creativity, and user-controlled AI.</p>
+        </div>
+        <div class="age">18+ PLATFORM</div>
+      </div>
+
+      <div id="messages" class="messages" aria-live="polite">
+        <div class="message assistant">
+          I’m UNBOUND AI. What do you want to explore?
+        </div>
+      </div>
+
+      <div class="composer-wrap">
+        <form id="chatForm" class="composer">
+          <textarea
+            id="message"
+            placeholder="Message UNBOUND AI..."
+            aria-label="Message UNBOUND AI"
+            autocomplete="off"
+          ></textarea>
+
+          <button id="sendButton" class="send" type="submit" aria-label="Send message">↑</button>
+        </form>
+
+        <div class="hint">Enter to send • Shift + Enter for a new line</div>
+      </div>
+    </section>
+
+    <div class="footer-line" aria-hidden="true">
+      <span>Real conversations</span>
+      <span>Broad knowledge</span>
+      <span>User control</span>
+      <span>Your privacy</span>
+      <span>Adult freedom 18+</span>
+    </div>
+  </main>
+
+  <script>
+    const form = document.getElementById("chatForm");
+    const input = document.getElementById("message");
+    const sendButton = document.getElementById("sendButton");
+    const messages = document.getElementById("messages");
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function renderMarkdown(text) {
+      let html = escapeHtml(text);
+      html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+      html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      html = html.replace(/\n/g, "<br>");
+      return html;
+    }
+
+    function addMessage(role, content, extraClass = "") {
+      const bubble = document.createElement("div");
+      bubble.className = `message ${role} ${extraClass}`.trim();
+
+      if (role === "assistant") {
+        bubble.innerHTML = renderMarkdown(content);
+      } else {
+        bubble.textContent = content;
+      }
+
+      messages.appendChild(bubble);
+      messages.scrollTop = messages.scrollHeight;
+      return bubble;
+    }
+
+    function addTypingIndicator() {
+      const bubble = document.createElement("div");
+      bubble.className = "message assistant";
+      bubble.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+      messages.appendChild(bubble);
+      messages.scrollTop = messages.scrollHeight;
+      return bubble;
+    }
+
+    async function sendMessage() {
+      const message = input.value.trim();
+
+      if (!message) {
+        return;
+      }
+
+      addMessage("user", message);
+      input.value = "";
+      input.focus();
+
+      sendButton.disabled = true;
+      const typingBubble = addTypingIndicator();
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ message })
+        });
+
+        const data = await response.json();
+        typingBubble.remove();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Request failed.");
+        }
+
+        addMessage("assistant", data.reply || "No response returned.");
+      } catch (error) {
+        typingBubble.remove();
+        addMessage(
+          "assistant",
+          error.message || "UNBOUND AI could not get a response.",
+          "error"
+        );
+      } finally {
+        sendButton.disabled = false;
+      }
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      sendMessage();
+    });
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+  </script>
+</body>
+</html>
+index-code.txt
