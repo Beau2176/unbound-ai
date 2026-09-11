@@ -19,6 +19,7 @@
       --blue-bright: #6bc1ff;
       --gold: #ffad43;
       --danger: #ff7676;
+      --success: #65e8a4;
       --shadow: 0 22px 70px rgba(0, 0, 0, 0.55);
     }
 
@@ -42,6 +43,10 @@
       overflow-x: hidden;
     }
 
+    body.modal-open {
+      overflow: hidden;
+    }
+
     body::before {
       content: "";
       position: fixed;
@@ -53,6 +58,16 @@
       z-index: 0;
     }
 
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      -webkit-tap-highlight-color: transparent;
+    }
+
     .topbar {
       position: sticky;
       top: 0;
@@ -62,7 +77,7 @@
       justify-content: space-between;
       gap: 16px;
       padding: 14px 28px;
-      background: rgba(3, 8, 16, 0.72);
+      background: rgba(3, 8, 16, 0.76);
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
@@ -131,6 +146,14 @@
       letter-spacing: 0.08em;
     }
 
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      min-width: 0;
+    }
+
     .status {
       display: inline-flex;
       align-items: center;
@@ -150,8 +173,102 @@
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #65e8a4;
+      background: var(--success);
       box-shadow: 0 0 12px rgba(101, 232, 164, 0.78);
+    }
+
+    .auth-actions {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .account-button,
+    .logout-button {
+      min-height: 36px;
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(107, 193, 255, 0.32);
+      background: rgba(66, 165, 255, 0.08);
+      color: #e7f5ff;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .account-button:hover,
+    .logout-button:hover {
+      transform: translateY(-1px);
+      background: rgba(66, 165, 255, 0.16);
+      border-color: rgba(107, 193, 255, 0.60);
+    }
+
+    .account-button.primary {
+      border-color: rgba(255, 173, 67, 0.45);
+      background: linear-gradient(135deg, rgba(255, 173, 67, 0.22), rgba(66, 165, 255, 0.16));
+      color: #fff3df;
+    }
+
+    .user-menu {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .user-pill {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+      padding: 6px 10px 6px 7px;
+      border-radius: 12px;
+      border: 1px solid rgba(107, 193, 255, 0.26);
+      background: rgba(7, 16, 30, 0.72);
+    }
+
+    .user-avatar {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #2f9fff, #176bd4);
+      color: white;
+      font-size: 12px;
+      font-weight: 900;
+      box-shadow: 0 0 16px rgba(55, 164, 255, 0.35);
+    }
+
+    .user-meta {
+      min-width: 0;
+      line-height: 1.15;
+    }
+
+    .user-name {
+      max-width: 150px;
+      overflow: hidden;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 800;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .user-plan {
+      margin-top: 3px;
+      color: #9fc9e8;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .user-plan.gift {
+      color: #ffd297;
     }
 
     .page {
@@ -221,7 +338,6 @@
       border-radius: 10px;
       background: rgba(66, 165, 255, 0.08);
       color: #d9efff;
-      font: inherit;
       font-size: 11px;
       font-weight: 800;
       letter-spacing: 0.06em;
@@ -340,7 +456,6 @@
       padding: 11px 4px 8px;
       background: transparent;
       color: #ffffff;
-      font: inherit;
       line-height: 1.45;
     }
 
@@ -396,6 +511,244 @@
       color: var(--blue);
     }
 
+    .auth-modal[hidden] {
+      display: none;
+    }
+
+    .auth-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(0, 3, 10, 0.78);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
+    .auth-card {
+      width: min(470px, 100%);
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      border: 1px solid rgba(88, 179, 255, 0.42);
+      border-radius: 22px;
+      background:
+        linear-gradient(180deg, rgba(8, 16, 31, 0.98), rgba(4, 9, 19, 0.98));
+      box-shadow: 0 30px 90px rgba(0, 0, 0, 0.70), 0 0 55px rgba(49, 149, 255, 0.12);
+    }
+
+    .auth-card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 20px 20px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    .auth-card-head h2 {
+      margin: 0;
+      font-size: 22px;
+    }
+
+    .auth-card-head p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .auth-close {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      flex: 0 0 auto;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.04);
+      color: #dbefff;
+      cursor: pointer;
+      font-size: 20px;
+    }
+
+    .auth-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 14px 20px 0;
+    }
+
+    .auth-tab {
+      padding: 10px 12px;
+      border: 1px solid rgba(107, 193, 255, 0.18);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.025);
+      color: #a9bdd0;
+      cursor: pointer;
+      font-weight: 800;
+    }
+
+    .auth-tab.active {
+      border-color: rgba(107, 193, 255, 0.55);
+      background: rgba(66, 165, 255, 0.13);
+      color: #ffffff;
+    }
+
+    .auth-body {
+      padding: 18px 20px 22px;
+    }
+
+    .auth-form[hidden] {
+      display: none;
+    }
+
+    .auth-form {
+      display: grid;
+      gap: 13px;
+    }
+
+    .auth-field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .auth-field label {
+      color: #dceeff;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .auth-field input {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid rgba(107, 193, 255, 0.25);
+      border-radius: 11px;
+      outline: 0;
+      background: rgba(2, 8, 18, 0.82);
+      color: #ffffff;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .auth-field input:focus {
+      border-color: rgba(107, 193, 255, 0.75);
+      box-shadow: 0 0 0 3px rgba(66, 165, 255, 0.10);
+    }
+
+    .auth-field input::placeholder {
+      color: #72849a;
+    }
+
+    .auth-help {
+      color: #8190a3;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .adult-check {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 10px 11px;
+      border: 1px solid rgba(255, 173, 67, 0.22);
+      border-radius: 11px;
+      background: rgba(255, 173, 67, 0.05);
+      color: #e7dac8;
+      font-size: 12px;
+      line-height: 1.45;
+      cursor: pointer;
+    }
+
+    .adult-check input {
+      margin-top: 2px;
+      accent-color: var(--gold);
+    }
+
+    .auth-submit {
+      min-height: 46px;
+      border: 1px solid rgba(107, 193, 255, 0.55);
+      border-radius: 12px;
+      background: linear-gradient(135deg, #218eea, #1557ac);
+      color: white;
+      cursor: pointer;
+      font-weight: 900;
+      letter-spacing: 0.03em;
+      box-shadow: 0 0 22px rgba(55, 164, 255, 0.22);
+    }
+
+    .auth-submit:disabled {
+      cursor: wait;
+      opacity: 0.58;
+    }
+
+    .auth-feedback {
+      display: none;
+      padding: 10px 11px;
+      border-radius: 10px;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .auth-feedback.visible {
+      display: block;
+    }
+
+    .auth-feedback.error {
+      border: 1px solid rgba(255, 118, 118, 0.30);
+      background: rgba(98, 21, 28, 0.48);
+      color: #ffd4d4;
+    }
+
+    .auth-feedback.success {
+      border: 1px solid rgba(101, 232, 164, 0.28);
+      background: rgba(19, 91, 59, 0.23);
+      color: #b9f7d6;
+    }
+
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 120;
+      max-width: min(360px, calc(100% - 36px));
+      padding: 11px 14px;
+      border: 1px solid rgba(107, 193, 255, 0.30);
+      border-radius: 12px;
+      background: rgba(6, 13, 26, 0.96);
+      color: #eef8ff;
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
+      font-size: 12px;
+      transform: translateY(20px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    @media (max-width: 820px) {
+      .topbar {
+        align-items: flex-start;
+      }
+
+      .topbar-right {
+        flex-wrap: wrap;
+      }
+
+      .status {
+        display: none;
+      }
+
+      .user-name {
+        max-width: 100px;
+      }
+    }
+
     @media (max-width: 680px) {
       body {
         background-attachment: scroll;
@@ -403,14 +756,38 @@
       }
 
       .topbar {
-        padding: 12px 14px;
+        padding: 10px 11px;
+        gap: 8px;
       }
 
       .brand-name {
-        font-size: 14px;
+        font-size: 13px;
       }
 
       .tagline {
+        display: none;
+      }
+
+      .mark {
+        width: 34px;
+      }
+
+      .auth-actions {
+        gap: 5px;
+      }
+
+      .account-button,
+      .logout-button {
+        min-height: 32px;
+        padding: 7px 8px;
+        font-size: 10px;
+      }
+
+      .user-pill {
+        padding-right: 7px;
+      }
+
+      .user-meta {
         display: none;
       }
 
@@ -449,6 +826,15 @@
         gap: 8px;
         padding-left: 12px;
       }
+
+      .auth-modal {
+        padding: 10px;
+      }
+
+      .auth-card {
+        max-height: calc(100vh - 20px);
+        border-radius: 17px;
+      }
     }
   </style>
 </head>
@@ -463,9 +849,27 @@
       </div>
     </div>
 
-    <div class="status">
-      <span class="status-dot"></span>
-      LIVE
+    <div class="topbar-right">
+      <div class="status" aria-label="Service status live">
+        <span class="status-dot"></span>
+        LIVE
+      </div>
+
+      <div id="signedOutActions" class="auth-actions">
+        <button id="signInButton" class="account-button" type="button">SIGN IN</button>
+        <button id="createAccountButton" class="account-button primary" type="button">CREATE ACCOUNT</button>
+      </div>
+
+      <div id="signedInActions" class="user-menu" hidden>
+        <div class="user-pill" title="UNBOUND AI account">
+          <div id="userAvatar" class="user-avatar">U</div>
+          <div class="user-meta">
+            <div id="userName" class="user-name">UNBOUND User</div>
+            <div id="userPlan" class="user-plan">FREE</div>
+          </div>
+        </div>
+        <button id="logoutButton" class="logout-button" type="button">LOG OUT</button>
+      </div>
     </div>
   </header>
 
@@ -482,11 +886,7 @@
         </div>
       </div>
 
-      <div id="messages" class="messages" aria-live="polite">
-        <div class="message assistant">
-          I’m UNBOUND AI. What do you want to explore?
-        </div>
-      </div>
+      <div id="messages" class="messages" aria-live="polite"></div>
 
       <div class="composer-wrap">
         <form id="chatForm" class="composer">
@@ -513,8 +913,75 @@
     </div>
   </main>
 
+  <div id="authModal" class="auth-modal" hidden>
+    <section class="auth-card" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <div class="auth-card-head">
+        <div>
+          <h2 id="authTitle">UNBOUND AI Account</h2>
+          <p>Sign in or create an 18+ account. Your password is never stored in plain text.</p>
+        </div>
+        <button id="authCloseButton" class="auth-close" type="button" aria-label="Close">×</button>
+      </div>
+
+      <div class="auth-tabs" role="tablist" aria-label="Account actions">
+        <button id="loginTab" class="auth-tab active" type="button" role="tab" aria-selected="true">SIGN IN</button>
+        <button id="registerTab" class="auth-tab" type="button" role="tab" aria-selected="false">CREATE ACCOUNT</button>
+      </div>
+
+      <div class="auth-body">
+        <div id="authFeedback" class="auth-feedback" role="status" aria-live="polite"></div>
+
+        <form id="loginForm" class="auth-form" autocomplete="on">
+          <div class="auth-field">
+            <label for="loginEmail">Email</label>
+            <input id="loginEmail" name="email" type="email" autocomplete="email" placeholder="you@example.com" required />
+          </div>
+
+          <div class="auth-field">
+            <label for="loginPassword">Password</label>
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Your password" required />
+          </div>
+
+          <button id="loginSubmit" class="auth-submit" type="submit">SIGN IN</button>
+        </form>
+
+        <form id="registerForm" class="auth-form" autocomplete="on" hidden>
+          <div class="auth-field">
+            <label for="registerName">Display name</label>
+            <input id="registerName" name="displayName" type="text" autocomplete="name" maxlength="60" placeholder="What should UNBOUND AI call you?" />
+          </div>
+
+          <div class="auth-field">
+            <label for="registerEmail">Email</label>
+            <input id="registerEmail" name="email" type="email" autocomplete="email" placeholder="you@example.com" required />
+          </div>
+
+          <div class="auth-field">
+            <label for="registerPassword">Password</label>
+            <input id="registerPassword" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="200" placeholder="At least 12 characters" required />
+            <div class="auth-help">Use at least 12 characters. A passphrase is easier to remember and harder to guess.</div>
+          </div>
+
+          <div class="auth-field">
+            <label for="registerPasswordConfirm">Confirm password</label>
+            <input id="registerPasswordConfirm" name="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="200" placeholder="Type it again" required />
+          </div>
+
+          <label class="adult-check" for="adultConfirmed">
+            <input id="adultConfirmed" name="adultConfirmed" type="checkbox" required />
+            <span>I confirm that I am 18 years of age or older and understand UNBOUND AI is an adults-only platform.</span>
+          </label>
+
+          <button id="registerSubmit" class="auth-submit" type="submit">CREATE ACCOUNT</button>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
   <script>
-    const STORAGE_KEY = "unbound-ai-chat-history-v1";
+    const STORAGE_KEY_BASE = "unbound-ai-chat-history-v1";
     const MAX_STORED_MESSAGES = 50;
     const MAX_CONTEXT_MESSAGES = 20;
 
@@ -524,7 +991,29 @@
     const newChatButton = document.getElementById("newChatButton");
     const messages = document.getElementById("messages");
 
-    let conversationHistory = loadConversation();
+    const signedOutActions = document.getElementById("signedOutActions");
+    const signedInActions = document.getElementById("signedInActions");
+    const signInButton = document.getElementById("signInButton");
+    const createAccountButton = document.getElementById("createAccountButton");
+    const logoutButton = document.getElementById("logoutButton");
+    const userAvatar = document.getElementById("userAvatar");
+    const userName = document.getElementById("userName");
+    const userPlan = document.getElementById("userPlan");
+
+    const authModal = document.getElementById("authModal");
+    const authCloseButton = document.getElementById("authCloseButton");
+    const loginTab = document.getElementById("loginTab");
+    const registerTab = document.getElementById("registerTab");
+    const loginForm = document.getElementById("loginForm");
+    const registerForm = document.getElementById("registerForm");
+    const loginSubmit = document.getElementById("loginSubmit");
+    const registerSubmit = document.getElementById("registerSubmit");
+    const authFeedback = document.getElementById("authFeedback");
+    const toast = document.getElementById("toast");
+
+    let currentUser = null;
+    let conversationHistory = [];
+    let toastTimer = null;
 
     function escapeHtml(value) {
       return String(value)
@@ -541,6 +1030,14 @@
       html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       html = html.replace(/\n/g, "<br>");
       return html;
+    }
+
+    function storageKey() {
+      if (currentUser && currentUser.id) {
+        return `${STORAGE_KEY_BASE}-user-${currentUser.id}`;
+      }
+
+      return `${STORAGE_KEY_BASE}-guest`;
     }
 
     function normalizeHistory(items) {
@@ -566,7 +1063,7 @@
 
     function loadConversation() {
       try {
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const saved = localStorage.getItem(storageKey());
 
         if (!saved) {
           return [];
@@ -582,10 +1079,15 @@
     function saveConversation() {
       try {
         conversationHistory = normalizeHistory(conversationHistory);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(conversationHistory));
+        localStorage.setItem(storageKey(), JSON.stringify(conversationHistory));
       } catch (error) {
         console.warn("Could not save UNBOUND AI chat history:", error);
       }
+    }
+
+    function switchConversationScope() {
+      conversationHistory = loadConversation();
+      renderConversation();
     }
 
     function addMessage(role, content, extraClass = "") {
@@ -606,7 +1108,9 @@
     function showWelcomeMessage() {
       addMessage(
         "assistant",
-        "I’m UNBOUND AI. What do you want to explore?"
+        currentUser
+          ? `Welcome back, **${currentUser.displayName || "UNBOUND User"}**. What do you want to explore?`
+          : "I’m UNBOUND AI. What do you want to explore?"
       );
     }
 
@@ -637,7 +1141,7 @@
 
       if (hasHistory) {
         const confirmed = window.confirm(
-          "Start a new chat? This will clear the conversation saved in this browser."
+          "Start a new chat? This will clear this conversation from this browser."
         );
 
         if (!confirmed) {
@@ -646,7 +1150,7 @@
       }
 
       conversationHistory = [];
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(storageKey());
       renderConversation();
       input.value = "";
       input.focus();
@@ -677,6 +1181,7 @@
       try {
         const response = await fetch("/api/chat", {
           method: "POST",
+          credentials: "same-origin",
           headers: {
             "Content-Type": "application/json"
           },
@@ -713,6 +1218,263 @@
       }
     }
 
+    function initialsForUser(user) {
+      const source = (user && (user.displayName || user.email)) || "U";
+      const parts = String(source).trim().split(/\s+/).filter(Boolean);
+
+      if (parts.length >= 2) {
+        return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+      }
+
+      return source.slice(0, 2).toUpperCase();
+    }
+
+    function planLabelForUser(user) {
+      if (!user) {
+        return "FREE";
+      }
+
+      if (user.complimentaryTopTier) {
+        return "COMPLIMENTARY TOP TIER";
+      }
+
+      return String(user.planTier || "free").replaceAll("_", " ").toUpperCase();
+    }
+
+    function renderAccountUi() {
+      if (currentUser) {
+        signedOutActions.hidden = true;
+        signedInActions.hidden = false;
+        userAvatar.textContent = initialsForUser(currentUser);
+        userName.textContent = currentUser.displayName || currentUser.email || "UNBOUND User";
+        userPlan.textContent = planLabelForUser(currentUser);
+        userPlan.classList.toggle("gift", Boolean(currentUser.complimentaryTopTier));
+        return;
+      }
+
+      signedOutActions.hidden = false;
+      signedInActions.hidden = true;
+      userAvatar.textContent = "U";
+      userName.textContent = "UNBOUND User";
+      userPlan.textContent = "FREE";
+      userPlan.classList.remove("gift");
+    }
+
+    function setAuthMode(mode) {
+      const isLogin = mode !== "register";
+
+      loginTab.classList.toggle("active", isLogin);
+      registerTab.classList.toggle("active", !isLogin);
+      loginTab.setAttribute("aria-selected", isLogin ? "true" : "false");
+      registerTab.setAttribute("aria-selected", isLogin ? "false" : "true");
+      loginForm.hidden = !isLogin;
+      registerForm.hidden = isLogin;
+      clearAuthFeedback();
+
+      window.setTimeout(() => {
+        const target = isLogin
+          ? document.getElementById("loginEmail")
+          : document.getElementById("registerName");
+        target?.focus();
+      }, 0);
+    }
+
+    function openAuth(mode = "login") {
+      authModal.hidden = false;
+      document.body.classList.add("modal-open");
+      setAuthMode(mode);
+    }
+
+    function closeAuth() {
+      authModal.hidden = true;
+      document.body.classList.remove("modal-open");
+      clearAuthFeedback();
+    }
+
+    function clearAuthFeedback() {
+      authFeedback.className = "auth-feedback";
+      authFeedback.textContent = "";
+    }
+
+    function showAuthFeedback(message, type = "error") {
+      authFeedback.className = `auth-feedback visible ${type}`;
+      authFeedback.textContent = message;
+    }
+
+    function setAuthBusy(isBusy) {
+      loginSubmit.disabled = isBusy;
+      registerSubmit.disabled = isBusy;
+      loginSubmit.textContent = isBusy ? "PLEASE WAIT..." : "SIGN IN";
+      registerSubmit.textContent = isBusy ? "PLEASE WAIT..." : "CREATE ACCOUNT";
+    }
+
+    function showToast(message) {
+      window.clearTimeout(toastTimer);
+      toast.textContent = message;
+      toast.classList.add("show");
+      toastTimer = window.setTimeout(() => {
+        toast.classList.remove("show");
+      }, 3200);
+    }
+
+    async function readJson(response) {
+      try {
+        return await response.json();
+      } catch (error) {
+        return {};
+      }
+    }
+
+    async function loadCurrentUser() {
+      try {
+        const response = await fetch("/api/auth/me", {
+          method: "GET",
+          credentials: "same-origin",
+          headers: {
+            "Accept": "application/json"
+          }
+        });
+
+        if (response.ok) {
+          const data = await readJson(response);
+          currentUser = data.user || null;
+        } else {
+          currentUser = null;
+        }
+      } catch (error) {
+        console.warn("Could not check UNBOUND AI account session:", error);
+        currentUser = null;
+      }
+
+      renderAccountUi();
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      clearAuthFeedback();
+
+      const email = document.getElementById("loginEmail").value.trim();
+      const password = document.getElementById("loginPassword").value;
+
+      if (!email || !password) {
+        showAuthFeedback("Enter your email and password.");
+        return;
+      }
+
+      setAuthBusy(true);
+
+      try {
+        const response = await fetch("/api/auth/login", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ email, password })
+        });
+
+        const data = await readJson(response);
+
+        if (!response.ok) {
+          throw new Error(data.error || "Sign in failed.");
+        }
+
+        currentUser = data.user || null;
+        renderAccountUi();
+        closeAuth();
+        switchConversationScope();
+        loginForm.reset();
+        showToast(`Signed in as ${currentUser?.displayName || currentUser?.email || "UNBOUND User"}.`);
+      } catch (error) {
+        showAuthFeedback(error.message || "Sign in failed.");
+      } finally {
+        setAuthBusy(false);
+      }
+    }
+
+    async function handleRegister(event) {
+      event.preventDefault();
+      clearAuthFeedback();
+
+      const displayName = document.getElementById("registerName").value.trim();
+      const email = document.getElementById("registerEmail").value.trim();
+      const password = document.getElementById("registerPassword").value;
+      const confirmPassword = document.getElementById("registerPasswordConfirm").value;
+      const adultConfirmed = document.getElementById("adultConfirmed").checked;
+
+      if (password.length < 12) {
+        showAuthFeedback("Your password must be at least 12 characters.");
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        showAuthFeedback("The two passwords do not match.");
+        return;
+      }
+
+      if (!adultConfirmed) {
+        showAuthFeedback("You must confirm that you are 18 or older.");
+        return;
+      }
+
+      setAuthBusy(true);
+
+      try {
+        const response = await fetch("/api/auth/register", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            displayName,
+            email,
+            password,
+            adultConfirmed
+          })
+        });
+
+        const data = await readJson(response);
+
+        if (!response.ok) {
+          throw new Error(data.error || "Account creation failed.");
+        }
+
+        currentUser = data.user || null;
+        renderAccountUi();
+        closeAuth();
+        switchConversationScope();
+        registerForm.reset();
+        showToast(`Welcome to UNBOUND AI, ${currentUser?.displayName || "UNBOUND User"}.`);
+      } catch (error) {
+        showAuthFeedback(error.message || "Account creation failed.");
+      } finally {
+        setAuthBusy(false);
+      }
+    }
+
+    async function handleLogout() {
+      logoutButton.disabled = true;
+
+      try {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Accept": "application/json"
+          }
+        });
+      } catch (error) {
+        console.warn("UNBOUND AI logout request failed:", error);
+      }
+
+      currentUser = null;
+      renderAccountUi();
+      switchConversationScope();
+      logoutButton.disabled = false;
+      showToast("You are signed out.");
+    }
+
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       sendMessage();
@@ -727,7 +1489,35 @@
       }
     });
 
-    renderConversation();
+    signInButton.addEventListener("click", () => openAuth("login"));
+    createAccountButton.addEventListener("click", () => openAuth("register"));
+    logoutButton.addEventListener("click", handleLogout);
+    authCloseButton.addEventListener("click", closeAuth);
+    loginTab.addEventListener("click", () => setAuthMode("login"));
+    registerTab.addEventListener("click", () => setAuthMode("register"));
+    loginForm.addEventListener("submit", handleLogin);
+    registerForm.addEventListener("submit", handleRegister);
+
+    authModal.addEventListener("click", (event) => {
+      if (event.target === authModal) {
+        closeAuth();
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !authModal.hidden) {
+        closeAuth();
+      }
+    });
+
+    async function initializePage() {
+      renderAccountUi();
+      await loadCurrentUser();
+      conversationHistory = loadConversation();
+      renderConversation();
+    }
+
+    initializePage();
   </script>
 </body>
 </html>
