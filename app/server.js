@@ -106,6 +106,19 @@ async function initializeDatabase() {
     );
   `);
 
+  const ownerEmail = normalizeEmail(process.env.OWNER_EMAIL);
+
+  if (ownerEmail) {
+    await pool.query(
+      `UPDATE users
+       SET role = 'admin',
+           plan_tier = 'top',
+           updated_at = NOW()
+       WHERE email = $1`,
+      [ownerEmail]
+    );
+  }
+
   databaseReady = true;
   databaseError = null;
   console.log("UNBOUND AI database connected and account tables are ready.");
