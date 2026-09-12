@@ -21,7 +21,9 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - name: Apply Unbound Mode migration
-        run: python scripts/migrate-unbound-mode-v021.py
+        run: |
+          python scripts/fix-unbound-capability-matcher-v021.py
+          python scripts/migrate-unbound-mode-v021.py
       - name: Install production dependencies
         working-directory: app
         run: npm ci
