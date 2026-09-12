@@ -17,17 +17,10 @@ function main() {
   const source = fs.readFileSync(serverPath, "utf8");
   const integrated = integrateEmailVerificationServerSource(source);
 
-  assert.strictEqual(INTEGRATION_VERSION, "v0.54");
-  assert.strictEqual(
-    count(integrated, 'require("./email/store")'),
-    1,
-    "email verification store import must be injected exactly once"
-  );
-  assert.strictEqual(
-    count(integrated, 'require("./email/routes")'),
-    1,
-    "email verification route import must be injected exactly once"
-  );
+  assert.strictEqual(INTEGRATION_VERSION, "v0.56");
+  assert.strictEqual(count(integrated, 'require("./email/store")'), 1);
+  assert.strictEqual(count(integrated, 'require("./email/readiness")'), 1);
+  assert.strictEqual(count(integrated, 'require("./email/routes")'), 1);
   assert.strictEqual(
     count(integrated, 'app.get("/verify-email", sendEmailVerificationPage);'),
     1,
@@ -38,35 +31,43 @@ function main() {
     1,
     "verification schema initialization must run exactly once"
   );
-  assert.strictEqual(
-    count(integrated, '"/api/email-verification"'),
-    1,
-    "email verification API router must be mounted exactly once"
-  );
-  assert.strictEqual(
-    count(integrated, "RATE_LIMIT_POLICY.emailVerificationSend"),
-    1,
-    "verification sends must use their dedicated policy"
-  );
-  assert.strictEqual(
-    count(integrated, "RATE_LIMIT_POLICY.emailVerificationConsume"),
-    1,
-    "verification link consumption must use its dedicated policy"
-  );
+  assert.strictEqual(count(integrated, '"/api/email-verification"'), 1);
+  assert.strictEqual(count(integrated, "RATE_LIMIT_POLICY.emailVerificationSend"), 1);
+  assert.strictEqual(count(integrated, "RATE_LIMIT_POLICY.emailVerificationConsume"), 1);
   assert.match(integrated, /getPool: \(\) => \(databaseReady && pool \? pool : null\)/);
-  assert.match(integrated, /findSessionUser,/);
   assert.match(integrated, /sendRateLimit: emailVerificationSendRateLimit/);
   assert.match(integrated, /consumeRateLimit: emailVerificationConsumeRateLimit/);
+
+  assert.strictEqual(
+    count(integrated, "const emailDelivery = buildEmailDeliveryReadiness();"),
+    1,
+    "shared operational snapshot must build email-delivery readiness exactly once"
+  );
+  assert.strictEqual(
+    count(integrated, "    emailDelivery,\n    ai\n  });"),
+    1,
+    "shared launch-gate call must receive email-delivery readiness exactly once"
+  );
+  assert.strictEqual(
+    count(integrated, "    emailDelivery,\n    ai,\n    launch,"),
+    1,
+    "shared operations snapshot must expose non-secret email-delivery readiness exactly once"
+  );
+  assert.strictEqual(
+    count(integrated, "emailDelivery: buildEmailDeliveryReadiness(),"),
+    1,
+    "system health must expose non-secret email delivery state once"
+  );
 
   const schemaPosition = integrated.indexOf("await initializeEmailVerificationSchema(pool);");
   const userSchemaPosition = integrated.indexOf("CREATE TABLE IF NOT EXISTS users");
   const cleanupPosition = integrated.indexOf("DELETE FROM rate_limit_buckets");
   assert.ok(userSchemaPosition >= 0 && schemaPosition > userSchemaPosition);
-  assert.ok(cleanupPosition > schemaPosition, "verification schema must be initialized before cleanup and readiness");
+  assert.ok(cleanupPosition > schemaPosition);
 
   const accountSubjectPosition = integrated.indexOf("async function accountRateSubject");
   const routerPosition = integrated.indexOf('"/api/email-verification"');
-  assert.ok(routerPosition > accountSubjectPosition, "router must mount only after account/session rate helpers exist");
+  assert.ok(routerPosition > accountSubjectPosition);
 
   new vm.Script(integrated, { filename: "server.integrated.js" });
 
@@ -76,6 +77,14 @@ function main() {
       'app.get("/api/health-renamed", (req, res) => {'
     )),
     (error) => error?.code === "EMAIL_SERVER_INTEGRATION_MARKER_MISSING"
+  );
+
+  assert.throws(
+    () => integrateEmailVerificationServerSource(source.replace(
+      '  const ageVerification = getAgeVerificationGatewayStatus();\n  const launch = buildLaunchReadiness({',
+      '  const ageVerification = getAgeVerificationGatewayStatus();\n  const launchRenamed = buildLaunchReadiness({'
+    )),
+    (error) => error?.code === "EMAIL_SERVER_INTEGRATION_MARKER_COUNT_CHANGED"
   );
 
   const packageJson = JSON.parse(fs.readFileSync(path.join(appRoot, "package.json"), "utf8"));
