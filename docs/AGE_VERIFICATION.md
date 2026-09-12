@@ -6,7 +6,7 @@ Selecting Yoti in code does not create a Yoti account, approve UNBOUND AI for pr
 
 ## Why Yoti AVS
 
-Yoti's current developer guidance explicitly recommends its Age Verification Service for adult-industry integrations. AVS provides a hosted user flow and can combine approved age-assurance methods while returning the relying business an age-check result rather than requiring the relying business to collect or retain the underlying evidence.
+Yoti currently markets Age Verification for adult-content services and describes use across sectors that include adult sites and AI chat. AVS provides a hosted user flow and can combine approved age-assurance methods while returning the relying business an age-check result rather than requiring the relying business to collect or retain the underlying evidence.
 
 UNBOUND AI therefore keeps the provider boundary strict:
 
@@ -14,6 +14,7 @@ UNBOUND AI therefore keeps the provider boundary strict:
 - UNBOUND does not request or store facial images or biometric templates.
 - UNBOUND does not store the user's exact age from the Yoti notification.
 - UNBOUND stores only the normalized verification state, threshold, timestamps, result code, and a hash of the Yoti session reference.
+- The production template must offer an approved non-biometric alternative when biometric processing is available; this is tracked as an explicit launch attestation rather than assumed from credentials.
 
 ## Production configuration
 
@@ -29,12 +30,13 @@ Required values:
 - `AGE_VERIFICATION_RETURN_URL` — optional HTTPS return URL after the hosted flow. If absent, the public app origin is used.
 - `AGE_VERIFICATION_CANCEL_URL` — optional HTTPS cancellation URL. If absent, the public app origin is used.
 - optional `YOTI_SESSION_TTL_SECONDS` — default 900 seconds; bounded to Yoti's supported session window.
-- optional `YOTI_VERIFICATION_VALID_DAYS` — default 365 days; controls UNBOUND's re-verification lifetime after a successful over-18 result.
+- optional `YOTI_VERIFICATION_VALID_DAYS` — default 365 days; controls UNBOUND's re-verification lifetime after a successful over-18 result. This is intentionally separate from the short hosted-session lifetime.
 
-Three production attestations are also required before the adapter reports itself configured:
+Four production attestations are also required before the adapter reports itself configured:
 
 - `YOTI_ADULT_INDUSTRY_ONBOARDING_VERIFIED=true`
 - `YOTI_OVER_18_TEMPLATE_VERIFIED=true`
+- `YOTI_NON_BIOMETRIC_FALLBACK_VERIFIED=true`
 - `YOTI_NOTIFICATION_SIGNATURE_VERIFIED=true`
 
 Set these only after the corresponding real provider/onboarding checks have been completed. API credentials alone must never make hard age verification report ready.
@@ -52,6 +54,8 @@ For each verification attempt, UNBOUND creates a new Yoti AVS session using the 
 The user is redirected only to Yoti's hosted `https://age.yoti.com/` flow using the returned session ID and configured SDK ID.
 
 UNBOUND never places an account email, user ID, password, session cookie, document image, selfie, or biometric template into the Yoti session request or verification URL.
+
+When Yoti returns an explicit session `expires_at`, UNBOUND uses it for the pending hosted session. If it is absent or invalid, the guarded local TTL is used as a fallback. A successful signed over-18 notification replaces that short pending-session expiry with the separate configured re-verification lifetime.
 
 ## Notification authentication
 
@@ -78,14 +82,14 @@ Yoti retries notifications when a successful HTTP response is not received. The 
 
 The adapter deliberately keeps Yoti-specific details out of the rest of the application.
 
-- completed + successful threshold result -> `verified`
-- completed + failed threshold result -> `failed`
-- explicit failure/error -> `failed`
-- expired/timeout -> `expired`
-- pending/processing -> `pending`
+- `COMPLETE` -> `verified`, unless the deprecated `result` field is explicitly present as `false`
+- `FAIL` / `ERROR` / `CANCELLED` -> `failed`
+- `EXPIRED` / timeout -> `expired`
+- pending / processing -> `pending`
 - revoked -> `revoked`
+- any unknown future provider state -> rejected fail-closed; it can never fall through to `verified`
 
-A `verified` result is accepted only when the signed notification explicitly reports a successful result from the production template. The gateway continues to enforce UNBOUND's hard minimum age of 18.
+Yoti documents the notification `result` field as deprecated, so a signed `COMPLETE` state remains authoritative even after that field is removed. The gateway continues to enforce UNBOUND's hard minimum age of 18.
 
 UNBOUND does not persist the notification's exact `age`, evidence ID, signature, or opaque user reference. The only provider reference used for account matching is Yoti's session key, and the existing server hashes that reference before storing it.
 
@@ -95,13 +99,14 @@ The adapter is code, not provider approval. Before hard 18+ verification can tru
 
 1. Complete Yoti onboarding for UNBOUND AI's actual adults-only / AI-assisted use case and planned launch jurisdictions.
 2. Confirm the production AVS template is approved and configured as an OVER-18 check using the methods Yoti/compliance require for the target jurisdictions.
-3. Obtain the production API key, SDK ID, template ID, and correct notification-signature public key.
-4. Configure HTTPS return/cancel URLs and the production notification URL.
-5. Store all provider credentials and keys only in Render environment variables; never commit them.
-6. Test valid over-18 completion, under-18/fail behavior, retries, expiry, cancellation, tampered signatures, duplicate notifications, stale notifications, and provider outages.
-7. Confirm Adult Mode remains inaccessible until the normalized server-side status is verified and unexpired.
-8. Decide and document the production re-verification interval for the jurisdictions being served.
-9. Only after those checks pass, set the three Yoti verification attestations to true.
-10. Include Yoti verification costs and jurisdiction-specific compliance costs in the final launch-cost model.
+3. Confirm the production template includes a suitable non-biometric alternative when biometric processing is offered, consistent with the applicable Yoti client terms and launch jurisdictions.
+4. Obtain the production API key, SDK ID, template ID, and correct notification-signature public key.
+5. Configure HTTPS return/cancel URLs and the production notification URL.
+6. Store all provider credentials and keys only in Render environment variables; never commit them.
+7. Test valid over-18 completion, under-18/fail behavior, retries, expiry, cancellation, unknown-state rejection, tampered signatures, duplicate notifications, stale notifications, and provider outages.
+8. Confirm Adult Mode remains inaccessible until the normalized server-side status is verified and unexpired.
+9. Decide and document the production re-verification interval for the jurisdictions being served.
+10. Only after those checks pass, set the four Yoti verification attestations to true.
+11. Include Yoti verification costs and jurisdiction-specific compliance costs in the final launch-cost model.
 
 Never bypass the hard age gate with a birth-date checkbox, self-attestation, client-side flag, or hard-coded green launch status.
