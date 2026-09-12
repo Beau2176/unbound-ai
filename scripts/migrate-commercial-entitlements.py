@@ -10,6 +10,13 @@ def replace_once(source, old, new, label):
         raise RuntimeError(f"{label}: expected 1 match, found {count}")
     return source.replace(old, new, 1)
 
+
+def replace_exact_count(source, old, new, expected, label):
+    count = source.count(old)
+    if count != expected:
+        raise RuntimeError(f"{label}: expected {expected} matches, found {count}")
+    return source.replace(old, new)
+
 server = replace_once(
     server,
     'const { generateChat, streamChat, getGatewayStatus } = require("./ai/gateway");',
@@ -273,11 +280,23 @@ server = replace_once(
     "health commercial status",
 )
 
-# Prove the central entitlement middleware controls one already-live protected capability.
-server = server.replace(
-    '  requireSignedIn,\n  async (req, res) => {',
-    '  requireSignedIn,\n  requireCapability("server_history"),\n  async (req, res) => {',
-    4,
+# Prove the central entitlement middleware controls the already-live history capability.
+for route in [
+    '"/api/conversations",',
+    '"/api/conversations/import",',
+]:
+    old = f'  {route}\n  requireDatabase,\n  requireSignedIn,\n'
+    new = f'  {route}\n  requireDatabase,\n  requireSignedIn,\n  requireCapability("server_history"),\n'
+    server = replace_once(server, old, new, f"history gate {route}")
+
+old_id = '  "/api/conversations/:id",\n  requireDatabase,\n  requireSignedIn,\n'
+new_id = '  "/api/conversations/:id",\n  requireDatabase,\n  requireSignedIn,\n  requireCapability("server_history"),\n'
+server = replace_exact_count(
+    server,
+    old_id,
+    new_id,
+    2,
+    "history gate conversation id routes",
 )
 
 path.write_text(server)
