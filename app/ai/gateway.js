@@ -28,6 +28,7 @@ function getGatewayStatus() {
       provider: name,
       configured: false,
       model: null,
+      streaming: false,
       error: "unsupported-provider"
     };
   }
@@ -36,6 +37,7 @@ function getGatewayStatus() {
     provider: provider.id,
     configured: provider.isConfigured(),
     model: provider.getModel(),
+    streaming: typeof provider.streamChat === "function",
     error: provider.isConfigured() ? null : "provider-not-configured"
   };
 }
@@ -45,8 +47,23 @@ async function generateChat({ instructions, input, model }) {
   return provider.generateChat({ instructions, input, model });
 }
 
+async function streamChat({ instructions, input, model, onDelta }) {
+  const provider = getProvider();
+
+  if (typeof provider.streamChat !== "function") {
+    const result = await provider.generateChat({ instructions, input, model });
+    if (onDelta && result.reply) {
+      await onDelta(result.reply);
+    }
+    return result;
+  }
+
+  return provider.streamChat({ instructions, input, model, onDelta });
+}
+
 module.exports = {
   generateChat,
+  streamChat,
   getGatewayStatus,
   normalizeProviderName
 };
