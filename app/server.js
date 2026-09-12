@@ -140,6 +140,17 @@ Product mode: CREATIVE MODE.
 - Do not claim web research or source verification unless a real research capability was actually invoked.
 `;
 
+const UNBOUND_MODE_PROMPT = `
+Product mode: UNBOUND MODE.
+- Be especially candid, direct, and natural. Answer the user's actual question instead of burying the answer under unnecessary caveats or boilerplate.
+- Discuss mature, controversial, uncomfortable, or unconventional subjects frankly when they can be discussed safely.
+- Match the user's preferred level of formality and language, including profanity when it naturally fits the conversation.
+- Prefer useful substance over moralizing, lecturing, or needless repetition.
+- Do not confuse candor with certainty: clearly state meaningful uncertainty, estimates, and factual limits.
+- Keep the platform's core safety boundaries around serious illegal harm, exploitation, abuse, minors, trafficking, and non-consensual sexual content.
+- Never claim tools, browsing, verification, or real-world actions that did not actually occur.
+`;
+
 app.disable("x-powered-by");
 app.use(createHttpSecurityMiddleware({ isProduction: IS_PRODUCTION }));
 app.use(
@@ -5025,6 +5036,7 @@ function normalizeProductMode(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "research") return "research";
   if (normalized === "creative") return "creative";
+  if (normalized === "unbound") return "unbound";
   return "standard";
 }
 
@@ -5093,6 +5105,9 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
     if (productMode === "creative") {
       await assertOptionalAccountCapability(req, "creative_mode");
     }
+    if (productMode === "unbound") {
+      await assertOptionalAccountCapability(req, "unbound_mode");
+    }
 
     const persistentChat = await preparePersistentChat(
       req,
@@ -5110,7 +5125,9 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
         ? RESEARCH_MODE_PROMPT
         : productMode === "creative"
           ? CREATIVE_MODE_PROMPT
-          : "";
+          : productMode === "unbound"
+            ? UNBOUND_MODE_PROMPT
+            : "";
 
     const input = [
       ...history,
@@ -5232,6 +5249,9 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
     if (productMode === "creative") {
       await assertOptionalAccountCapability(req, "creative_mode");
     }
+    if (productMode === "unbound") {
+      await assertOptionalAccountCapability(req, "unbound_mode");
+    }
 
     const persistentChat = await preparePersistentChat(
       req,
@@ -5245,7 +5265,11 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
     const depthInstructions =
       depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT;
     const modeInstructions =
-      productMode === "creative" ? CREATIVE_MODE_PROMPT : "";
+      productMode === "creative"
+        ? CREATIVE_MODE_PROMPT
+        : productMode === "unbound"
+          ? UNBOUND_MODE_PROMPT
+          : "";
     const input = [
       ...history,
       { role: "user", content: message.slice(0, 12000) }

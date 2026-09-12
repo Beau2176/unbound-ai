@@ -60,6 +60,12 @@ const CAPABILITY_CATALOG = Object.freeze({
     implemented: true,
     minimumPlan: "free"
   }),
+  unbound_mode: Object.freeze({
+    label: "Unbound Mode",
+    description: "Candid, direct conversation with fewer unnecessary caveats while retaining core safety boundaries.",
+    implemented: true,
+    minimumPlan: "free"
+  }),
   file_analysis: Object.freeze({
     label: "File analysis",
     description: "Upload and analyze supported documents and data files.",
