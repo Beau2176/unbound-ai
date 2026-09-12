@@ -118,8 +118,8 @@ function createCheckoutToken({
     pageref: config.payPageRef,
     fields: {
       amount: config.topAmount,
-      ubsubject1: split.part1,
-      ubsubject2: split.part2
+      REF1: split.part1,
+      REF2: split.part2
     }
   };
 
@@ -179,8 +179,8 @@ function parsePostbackParameters({ rawBody, query = null } = {}) {
 }
 
 function reconstructSubject(params) {
-  const part1 = safeText(params.ubsubject1, SUBJECT_CHUNK_SIZE);
-  const part2 = safeText(params.ubsubject2, SUBJECT_CHUNK_SIZE);
+  const part1 = safeText(params.ref1, SUBJECT_CHUNK_SIZE);
+  const part2 = safeText(params.ref2, SUBJECT_CHUNK_SIZE);
   if (!part1 || !part2) return null;
   const subject = part1 + part2;
   return /^[A-Za-z0-9._~-]{33,64}$/.test(subject) ? subject : null;
