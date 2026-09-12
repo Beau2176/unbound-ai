@@ -72,6 +72,12 @@ const CAPABILITY_CATALOG = Object.freeze({
     implemented: true,
     minimumPlan: "free"
   }),
+  data_export: Object.freeze({
+    label: "Download My Data",
+    description: "Download a privacy-safe JSON copy of account data and conversation history.",
+    implemented: true,
+    minimumPlan: "free"
+  }),
   file_analysis: Object.freeze({
     label: "File analysis",
     description: "Upload and analyze supported documents and data files.",

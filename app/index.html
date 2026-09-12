@@ -1511,6 +1511,9 @@
         </div>
         <div class="access-section-title">Capabilities</div>
         <div id="accessCapabilityList" class="capability-list"></div>
+        <div class="access-section-title">Your data</div>
+        <button id="dataExportButton" class="auth-submit secondary" type="button">DOWNLOAD MY DATA</button>
+        <p class="auth-note">Downloads a JSON copy of your account data and conversation history. Authentication secrets are excluded.</p>
       </div>
     </section>
   </div>
@@ -1811,6 +1814,7 @@
     const accessCapabilitySummary = document.getElementById("accessCapabilitySummary");
     const accessAgeVerification = document.getElementById("accessAgeVerification");
     const accessCapabilityList = document.getElementById("accessCapabilityList");
+    const dataExportButton = document.getElementById("dataExportButton");
 
     const signedOutActions = document.getElementById("signedOutActions");
     const signedInActions = document.getElementById("signedInActions");
@@ -2824,6 +2828,45 @@
       renderAccessPanel(); renderAccountUi(); return accountAccess;
     }
 
+
+    async function handleDataExport() {
+      if (!currentUser || dataExportButton.disabled) return;
+      dataExportButton.disabled = true;
+      dataExportButton.textContent = "BUILDING EXPORT...";
+      try {
+        const response = await fetch("/api/account/export", {
+          method: "GET",
+          credentials: "same-origin",
+          headers: { "Accept": "application/json" }
+        });
+        if (!response.ok) {
+          const data = await readJson(response);
+          throw new Error(data.error || "Could not download your data.");
+        }
+
+        const blob = await response.blob();
+        const disposition = response.headers.get("Content-Disposition") || "";
+        const match = disposition.match(/filename="?([^";]+)"?/i);
+        const filename = match?.[1] || "unbound-ai-data.json";
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast("Your UNBOUND AI data export is ready.");
+      } catch (error) {
+        accessFeedback.className = "auth-feedback visible error";
+        accessFeedback.textContent = error.message || "Could not download your data.";
+      } finally {
+        dataExportButton.disabled = false;
+        dataExportButton.textContent = "DOWNLOAD MY DATA";
+      }
+    }
+
     async function openAccess() {
       if (!currentUser) { showToast("Sign in to view account access."); openAuth("login"); return; }
       accessFeedback.className = "auth-feedback"; accessFeedback.textContent = "";
@@ -3684,7 +3727,8 @@
         "auth.password_failed": "Failed password sign-in",
         "auth.password_signed_in": "Password sign-in",
         "recovery.codes_generated": "Recovery codes generated",
-        "recovery.code_used": "Account recovered with recovery code"
+        "recovery.code_used": "Account recovered with recovery code",
+        "account.data_exported": "Account data exported"
       })[eventType] || String(eventType || "Security event").replaceAll(".", " ");
     }
 
@@ -4294,6 +4338,7 @@
 
     newChatButton.addEventListener("click", startNewChat);
     accessButton.addEventListener("click", openAccess);
+    dataExportButton.addEventListener("click", handleDataExport);
     accessCloseButton.addEventListener("click", closeAccess);
     historyButton.addEventListener("click", openHistory);
     historyCloseButton.addEventListener("click", closeHistory);
