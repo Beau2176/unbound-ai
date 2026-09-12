@@ -39,6 +39,20 @@ jobs:
           fi
       - name: Integrate Research capability with provider gateway
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('app/server.js')
+          text = path.read_text()
+          marker = 'app.post("/api/chat/stream"'
+          if text.count(marker) != 1:
+              raise SystemExit('Expected exactly one streaming chat route')
+          head, tail = text.split(marker, 1)
+          target = '    const history = cleanHistory(req.body.history);\n'
+          if tail.count(target) < 1:
+              raise SystemExit('Could not locate streaming history setup')
+          tail = tail.replace(target, '    const history = cleanHistory(req.body.history); // streaming path\n', 1)
+          path.write_text(head + marker + tail)
+          PY
           git show b2bd4f751ee10b53b48e8ac3179a8814c9f4bd7b:.research-integration/integrate.py > /tmp/integrate-research.py
           python3 /tmp/integrate-research.py
       - name: Install exact dependencies
