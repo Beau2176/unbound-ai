@@ -96,9 +96,15 @@ const CAPABILITY_CATALOG = Object.freeze({
     implemented: true,
     minimumPlan: "top"
   }),
+  image_understanding: Object.freeze({
+    label: "Image understanding",
+    description: "Upload an image for visual analysis without storing the raw upload in UNBOUND AI.",
+    implemented: true,
+    minimumPlan: "top"
+  }),
   image_tools: Object.freeze({
     label: "Image tools",
-    description: "Image understanding, generation, and editing workflows.",
+    description: "Image generation and editing workflows.",
     implemented: false,
     minimumPlan: "top"
   }),
