@@ -4,13 +4,17 @@ const Module = require("module");
 const {
   integrateEmailVerificationServerSource
 } = require("./email/server-integration");
+const {
+  integrateBillingServerSource
+} = require("./billing/server-integration");
 
 function compileIntegratedServer({
   serverPath = path.join(__dirname, "server.js"),
   parentModule = module
 } = {}) {
   const source = fs.readFileSync(serverPath, "utf8");
-  const integratedSource = integrateEmailVerificationServerSource(source);
+  const emailIntegratedSource = integrateEmailVerificationServerSource(source);
+  const integratedSource = integrateBillingServerSource(emailIntegratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
   runtimeModule.filename = serverPath;
