@@ -23,6 +23,7 @@ function buildLaunchReadiness({
   legal = null,
   billing = null,
   ageVerification = null,
+  emailDelivery = null,
   ai = null,
   nowMs = Date.now()
 } = {}) {
@@ -106,6 +107,17 @@ function buildLaunchReadiness({
     legal?.enforcementEnabled
       ? "Current policy acceptance and enforcement are enabled."
       : "Policy acceptance and enforcement must be enabled after final policies are published."
+  );
+
+  const emailReady = emailDelivery?.launchReady === true;
+  addCheck(
+    checks,
+    "transactional_email",
+    "Transactional account email verified",
+    emailReady,
+    emailReady
+      ? `Transactional email provider ${safeText(emailDelivery.provider, 80) || "configured"} has verified sender identity, production access, and a current delivery review.`
+      : emailDelivery?.blockers?.[0] || "Transactional account email delivery has not been verified end-to-end."
   );
 
   const billingReady = Boolean(
