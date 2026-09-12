@@ -887,7 +887,7 @@
       entitlementBody.innerHTML = (access.capabilities || []).map((capability) => {
         const override = overrides.get(capability.key);
         const source = override
-          ? `${override.enabled ? "OVERRIDE ENABLE" : "OVERRIDE DISABLE"}${override.expiresAt ? ` · until ${formatDateTime(override.expiresAt)}` : ""}${override.reason ? ` · ${override.reason}` : ""}`
+          ? `${override.active === false ? "EXPIRED OVERRIDE" : (override.enabled ? "OVERRIDE ENABLE" : "OVERRIDE DISABLE")}${override.expiresAt ? ` · until ${formatDateTime(override.expiresAt)}` : ""}${override.reason ? ` · ${override.reason}` : ""}${override.active === false ? ` · effective: ${capability.source || "plan"}` : ""}`
           : `PLAN · ${capability.source || "plan"}`;
         return `
           <tr>

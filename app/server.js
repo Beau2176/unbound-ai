@@ -720,6 +720,36 @@ async function assertRequestCapability(req, capabilityKey) {
   return { user, access, capability };
 }
 
+
+async function assertOptionalAccountCapability(req, capabilityKey) {
+  const hasSessionCookie = Boolean(parseCookies(req)[SESSION_COOKIE]);
+  if (!databaseReady || !pool) {
+    if (hasSessionCookie) {
+      const error = new Error("Account access is temporarily unavailable.");
+      error.statusCode = 503;
+      throw error;
+    }
+    return null;
+  }
+
+  const user = await findSessionUser(req);
+  if (!user) return null;
+
+  const access = await buildAccountAccess(user);
+  const capability = access?.capabilities.find((item) => item.key === capabilityKey);
+  if (!capability || !capability.usable) {
+    const error = new Error(
+      capability?.entitled && !capability?.available
+        ? "That capability is included in your access level but is not live yet."
+        : "Your current access level does not include that capability."
+    );
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return { user, access, capability };
+}
+
 async function requireSignedIn(req, res, next) {
   try {
     const user = await findSessionUser(req);
@@ -1616,8 +1646,12 @@ async function loadAdminTargetUser(userId, client = pool) {
 }
 
 function publicEntitlementOverride(row) {
+  const active =
+    !row.expires_at || new Date(row.expires_at).getTime() > Date.now();
+
   return {
     key: row.entitlement_key,
+    active,
     enabled: Boolean(row.enabled),
     reason: row.reason || null,
     expiresAt: row.expires_at || null,
@@ -2508,6 +2542,12 @@ app.post("/api/chat", async (req, res) => {
     const depthStyle = normalizeDepthStyle(req.body.depthStyle);
     const productMode = normalizeProductMode(req.body.productMode);
 
+    await assertOptionalAccountCapability(req, "chat");
+    await assertOptionalAccountCapability(
+      req,
+      depthStyle === "work" ? "work_mode" : "casual_mode"
+    );
+
     if (productMode === "research" && !gatewayStatus.research) {
       return res.status(503).json({
         error: "The active AI provider does not support Research Mode yet."
@@ -2516,6 +2556,7 @@ app.post("/api/chat", async (req, res) => {
 
     if (productMode === "research") {
       await assertRequestCapability(req, "web_research");
+      await assertRequestCapability(req, "citations");
     }
 
     const persistentChat = await preparePersistentChat(
@@ -2642,6 +2683,13 @@ app.post("/api/chat/stream", async (req, res) => {
         error: "Research Mode uses the sourced response endpoint instead of streaming."
       });
     }
+
+    await assertOptionalAccountCapability(req, "chat");
+    await assertOptionalAccountCapability(
+      req,
+      depthStyle === "work" ? "work_mode" : "casual_mode"
+    );
+    await assertOptionalAccountCapability(req, "streaming");
 
     const persistentChat = await preparePersistentChat(
       req,
