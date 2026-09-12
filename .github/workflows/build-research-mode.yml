@@ -5,7 +5,7 @@ on:
     branches:
       - feature-research-mode
     paths:
-      - .research-build/research.patch.gz.b64
+      - .research-build/**
 
 permissions:
   contents: write
