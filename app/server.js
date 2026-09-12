@@ -26,6 +26,11 @@ const {
   hashRateLimitSubject,
   getRateLimitStatus
 } = require("./security/rate-limit");
+const {
+  createHttpSecurityMiddleware,
+  createSameOriginApiGuard,
+  getHttpSecurityStatus
+} = require("./security/http-security");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -99,6 +104,13 @@ Product mode: RESEARCH MODE.
 `;
 
 app.disable("x-powered-by");
+app.use(createHttpSecurityMiddleware({ isProduction: IS_PRODUCTION }));
+app.use(
+  createSameOriginApiGuard({
+    isProduction: IS_PRODUCTION,
+    publicOrigin: process.env.PUBLIC_APP_ORIGIN || ""
+  })
+);
 app.use(express.json({ limit: "100kb" }));
 app.get("/index.html", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
 app.get("/admin.html", (req, res) => res.sendFile(path.join(__dirname, "admin.html")));
@@ -1458,7 +1470,11 @@ app.get("/api/health", (req, res) => {
     commercial: databaseReady ? "entitlements-ready" : "not-ready",
     billing: getBillingGatewayStatus(),
     ageVerification: getAgeVerificationGatewayStatus(),
-    abuseProtection: getRateLimitStatus()
+    abuseProtection: getRateLimitStatus(),
+    httpSecurity: getHttpSecurityStatus({
+      isProduction: IS_PRODUCTION,
+      publicOrigin: process.env.PUBLIC_APP_ORIGIN || ""
+    })
   });
 });
 
