@@ -77,9 +77,10 @@ function main() {
   const startSource = fs.readFileSync(path.join(appRoot, "start.js"), "utf8");
   assert.match(startSource, /integrateEmailVerificationServerSource/);
   assert.match(startSource, /integrateBillingServerSource/);
+  assert.match(startSource, /integrateFileAnalysisServerSource/);
   assert.match(
     startSource,
-    /emailIntegratedSource = integrateEmailVerificationServerSource\(source\)[\s\S]*integratedSource = integrateBillingServerSource\(emailIntegratedSource\)/
+    /emailIntegratedSource = integrateEmailVerificationServerSource\(source\)[\s\S]*billingIntegratedSource = integrateBillingServerSource\(emailIntegratedSource\)[\s\S]*integratedSource = integrateFileAnalysisServerSource\(billingIntegratedSource\)/
   );
   assert.match(startSource, /runtimeModule\._compile\(integratedSource, serverPath\)/);
 
