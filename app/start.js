@@ -7,11 +7,16 @@ const {
 const {
   integrateBillingServerSource
 } = require("./billing/server-integration");
+const {
+  registerBuiltInAgeVerificationProviders
+} = require("./age/providers/register");
 
 function compileIntegratedServer({
   serverPath = path.join(__dirname, "server.js"),
   parentModule = module
 } = {}) {
+  registerBuiltInAgeVerificationProviders();
+
   const source = fs.readFileSync(serverPath, "utf8");
   const emailIntegratedSource = integrateEmailVerificationServerSource(source);
   const integratedSource = integrateBillingServerSource(emailIntegratedSource);
