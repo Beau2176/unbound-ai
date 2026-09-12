@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#050913" />
+  <title>UNBOUND AI — Image Understanding</title>
+  <style>
+    :root { color-scheme: dark; --bg:#050913; --panel:rgba(7,14,27,.93); --text:#f7fbff; --muted:#aab8c9; --blue:#6bc1ff; --gold:#ffad43; --success:#65e8a4; --line:rgba(107,193,255,.26); }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; color:var(--text); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:linear-gradient(180deg,rgba(2,6,14,.22),rgba(2,6,14,.92)),url("/unbound-cosmic.png") center top/cover fixed no-repeat,var(--bg); }
+    button,input,textarea,select { font:inherit; }
+    :where(button,input,textarea,select,a[href]):focus-visible { outline:3px solid #ffd297; outline-offset:3px; }
+    .topbar { position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px clamp(16px,4vw,36px); border-bottom:1px solid rgba(255,255,255,.08); background:rgba(3,8,16,.82); backdrop-filter:blur(16px); }
+    .brand { font-weight:900; letter-spacing:.14em; } .brand span { color:#42a5ff; }
+    .nav { display:inline-flex; gap:8px; align-items:center; padding:8px 12px; border:1px solid var(--line); border-radius:10px; background:rgba(66,165,255,.08); color:#e8f6ff; text-decoration:none; font-size:12px; font-weight:850; }
+    main { width:min(1060px,calc(100% - 28px)); margin:0 auto; padding:38px 0 70px; }
+    .hero { margin-bottom:20px; } .eyebrow { color:var(--gold); font-size:12px; font-weight:900; letter-spacing:.12em; }
+    h1 { margin:8px 0; font-size:clamp(32px,6vw,54px); line-height:1.05; } .hero p { max-width:780px; margin:0; color:#c6d5e3; line-height:1.65; }
+    .layout { display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:18px; align-items:start; }
+    .card { border:1px solid var(--line); border-radius:20px; background:var(--panel); box-shadow:0 24px 70px rgba(0,0,0,.4); padding:clamp(18px,3vw,28px); }
+    .field { display:grid; gap:7px; margin-bottom:15px; } label { font-size:12px; font-weight:850; color:#eaf6ff; }
+    input[type="file"],textarea,select { width:100%; border:1px solid rgba(107,193,255,.25); border-radius:12px; background:rgba(0,0,0,.24); color:var(--text); padding:11px 12px; }
+    textarea { min-height:145px; resize:vertical; line-height:1.5; }
+    .help,.usage { color:var(--muted); font-size:11px; line-height:1.55; }
+    .preview { display:grid; place-items:center; min-height:220px; margin:12px 0 16px; border:1px solid rgba(255,255,255,.08); border-radius:14px; overflow:hidden; background:rgba(0,0,0,.28); }
+    .preview img { display:block; max-width:100%; max-height:420px; object-fit:contain; }
+    .preview-empty { color:var(--muted); font-size:12px; }
+    .actions { display:flex; gap:9px; flex-wrap:wrap; }
+    .primary,.secondary { min-height:43px; padding:10px 15px; border-radius:11px; cursor:pointer; font-weight:900; letter-spacing:.04em; }
+    .primary { border:1px solid rgba(255,173,67,.48); background:linear-gradient(135deg,rgba(255,173,67,.88),rgba(66,165,255,.8)); color:#07111c; }
+    .secondary { border:1px solid var(--line); background:rgba(66,165,255,.08); color:#e8f6ff; }
+    button:disabled { opacity:.52; cursor:not-allowed; }
+    .status { margin-bottom:14px; min-height:22px; color:var(--muted); font-size:12px; line-height:1.5; }
+    .status[data-kind="success"] { color:var(--success); } .status[data-kind="error"] { color:#ffb0b0; }
+    .result-head { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:12px; } .result-head h2 { margin:0; font-size:18px; }
+    .result { min-height:360px; max-height:72vh; overflow:auto; padding:16px; border:1px solid rgba(255,255,255,.08); border-radius:14px; background:rgba(0,0,0,.24); color:#edf7ff; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.65; font-size:14px; }
+    .privacy { margin-top:17px; padding:13px 14px; border-left:3px solid var(--gold); background:rgba(255,173,67,.06); color:#d6e2ed; font-size:11px; line-height:1.6; }
+    [hidden] { display:none !important; }
+    @media (max-width:800px) { .layout { grid-template-columns:1fr; } .result { min-height:250px; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">UNBOUND <span>AI</span> · IMAGES</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;"><a class="nav" href="/files.html">FILES</a><a class="nav" href="/">BACK TO CHAT</a></div>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="eyebrow">TOP · IMAGE UNDERSTANDING</div>
+      <h1>Show UNBOUND AI what you’re looking at.</h1>
+      <p>Upload an image and ask for description, visible-text reading, comparison, troubleshooting, pattern recognition, or other visual analysis. Image generation and editing are separate future tools and are not represented as finished here.</p>
+    </section>
+    <div class="layout">
+      <section class="card" aria-labelledby="imageFormTitle">
+        <h2 id="imageFormTitle" style="margin-top:0;">Image analysis</h2>
+        <div id="accessStatus" class="status" role="status" aria-live="polite">Checking TOP access…</div>
+        <form id="imageForm">
+          <div class="field">
+            <label for="imageInput">Choose an image</label>
+            <input id="imageInput" type="file" disabled />
+            <div id="acceptedTypes" class="help">Loading supported image types…</div>
+          </div>
+          <div class="preview"><span id="previewEmpty" class="preview-empty">No image selected.</span><img id="previewImage" alt="Selected image preview" hidden /></div>
+          <div class="field">
+            <label for="detailInput">Visual detail</label>
+            <select id="detailInput" disabled><option value="auto" selected>AUTO — recommended</option><option value="low">LOW — lower token use</option><option value="high">HIGH — small text and fine detail</option></select>
+          </div>
+          <div class="field">
+            <label for="promptInput">What should UNBOUND AI do with this image?</label>
+            <textarea id="promptInput" maxlength="4000" disabled placeholder="Example: Read the visible error message and tell me what it means."></textarea>
+            <div class="help">Leave blank for a general visual analysis. Text or instructions visible inside an image are treated as untrusted content, not commands to the AI.</div>
+          </div>
+          <div class="actions"><button id="analyzeButton" class="primary" type="submit" disabled>ANALYZE IMAGE</button><button id="clearButton" class="secondary" type="button" disabled>CLEAR</button></div>
+        </form>
+        <div class="privacy"><strong>Privacy boundary:</strong> UNBOUND AI does not write the raw image to its database or application filesystem. The selected image is sent to the configured AI provider only when you submit the analysis request. UNBOUND requests no provider-side Response storage for this request; provider abuse/safety handling can still apply under provider data controls.</div>
+      </section>
+      <section class="card" aria-labelledby="resultTitle">
+        <div class="result-head"><h2 id="resultTitle">Analysis</h2><button id="copyButton" class="secondary" type="button" disabled>COPY</button></div>
+        <div id="requestStatus" class="status" role="status" aria-live="polite">Choose an image when access is ready.</div>
+        <div id="analysisResult" class="result">No analysis yet.</div>
+        <div id="usage" class="usage"></div>
+      </section>
+    </div>
+  </main>
+  <script>
+    const form = document.getElementById("imageForm");
+    const imageInput = document.getElementById("imageInput");
+    const promptInput = document.getElementById("promptInput");
+    const detailInput = document.getElementById("detailInput");
+    const analyzeButton = document.getElementById("analyzeButton");
+    const clearButton = document.getElementById("clearButton");
+    const copyButton = document.getElementById("copyButton");
+    const accessStatus = document.getElementById("accessStatus");
+    const requestStatus = document.getElementById("requestStatus");
+    const result = document.getElementById("analysisResult");
+    const usage = document.getElementById("usage");
+    const acceptedTypes = document.getElementById("acceptedTypes");
+    const previewImage = document.getElementById("previewImage");
+    const previewEmpty = document.getElementById("previewEmpty");
+    let limits = null;
+    let busy = false;
+    let previewUrl = null;
+
+    function setStatus(element, message, kind = "") { element.textContent = message; element.dataset.kind = kind; }
+    function formatBytes(bytes) { if (!Number.isFinite(bytes)) return "—"; if (bytes < 1024) return `${bytes} B`; if (bytes < 1024*1024) return `${(bytes/1024).toFixed(1)} KB`; return `${(bytes/(1024*1024)).toFixed(2)} MB`; }
+    function extensionOf(name) { const index = String(name || "").lastIndexOf("."); return index >= 0 ? String(name).slice(index).toLowerCase() : ""; }
+    function selectedFileValid() { const file = imageInput.files?.[0]; return Boolean(file && limits && limits.acceptedExtensions.includes(extensionOf(file.name)) && file.size > 0 && file.size <= limits.maxImageBytes); }
+    function refreshControls() { const ready = Boolean(limits); imageInput.disabled = !ready || busy; promptInput.disabled = !ready || busy; detailInput.disabled = !ready || busy; analyzeButton.disabled = !ready || !selectedFileValid() || busy; clearButton.disabled = !ready || busy; copyButton.disabled = busy || !result.textContent || result.textContent === "No analysis yet."; }
+    function clearPreview() { if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null; previewImage.hidden = true; previewImage.removeAttribute("src"); previewEmpty.hidden = false; }
+    function clearWorkspace() { form.reset(); clearPreview(); result.textContent = "No analysis yet."; usage.textContent = ""; setStatus(requestStatus,"Choose an image when access is ready."); refreshControls(); }
+    function readBase64(file) { return new Promise((resolve,reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("The browser could not read that image.")); reader.onload = () => { const value = String(reader.result || ""); const comma = value.indexOf(","); if (comma < 0) return reject(new Error("The browser could not encode that image.")); resolve(value.slice(comma + 1)); }; reader.readAsDataURL(file); }); }
+
+    async function loadStatus() {
+      try {
+        const response = await fetch("/api/image-understanding/status", { credentials:"same-origin", headers:{Accept:"application/json"} });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          if (response.status === 401) throw new Error("Sign in from the main chat before using Image Understanding.");
+          if (response.status === 403) throw new Error("Image Understanding is a TOP capability. This account does not currently have usable TOP access.");
+          throw new Error(payload.error || "Image Understanding is not available right now.");
+        }
+        if (!payload.configured || !payload.limits) throw new Error("Image Understanding is not connected to an available AI provider yet.");
+        limits = payload.limits;
+        imageInput.accept = limits.acceptedExtensions.join(",");
+        promptInput.maxLength = Number(limits.maxPromptChars || 4000);
+        detailInput.value = limits.defaultDetail || "auto";
+        acceptedTypes.textContent = `${limits.acceptedExtensions.join(", ")} · maximum ${formatBytes(limits.maxImageBytes)}`;
+        setStatus(accessStatus, `Ready · ${String(payload.provider || "AI").toUpperCase()} · ${payload.model || "configured model"}`, "success");
+        refreshControls();
+      } catch (error) {
+        limits = null;
+        setStatus(accessStatus, error.message || "Image Understanding is unavailable.", "error");
+        setStatus(requestStatus, "Open the main chat to sign in or review Account Access.", "error");
+        refreshControls();
+      }
+    }
+
+    imageInput.addEventListener("change", () => {
+      clearPreview();
+      const file = imageInput.files?.[0];
+      if (!file) { refreshControls(); return; }
+      if (!selectedFileValid()) { setStatus(requestStatus, "That image type or size is not supported.", "error"); refreshControls(); return; }
+      previewUrl = URL.createObjectURL(file);
+      previewImage.src = previewUrl;
+      previewImage.hidden = false;
+      previewEmpty.hidden = true;
+      setStatus(requestStatus, `${file.name} · ${formatBytes(file.size)} · ready to analyze.`, "success");
+      refreshControls();
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const file = imageInput.files?.[0];
+      if (!file || !selectedFileValid() || busy) return;
+      busy = true; refreshControls(); setStatus(requestStatus, "Analyzing image…");
+      try {
+        const imageBase64 = await readBase64(file);
+        const response = await fetch("/api/image-understanding", {
+          method:"POST", credentials:"same-origin", headers:{Accept:"application/json","Content-Type":"application/json"},
+          body:JSON.stringify({ filename:file.name, imageBase64, prompt:promptInput.value, detail:detailInput.value })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || "The image could not be analyzed.");
+        result.textContent = payload.analysis || "The provider returned no text analysis.";
+        const u = payload.usage;
+        usage.textContent = u ? `Usage · input ${u.inputTokens.toLocaleString()} · output ${u.outputTokens.toLocaleString()} · total ${u.totalTokens.toLocaleString()}` : "";
+        setStatus(requestStatus, `Analysis complete · ${file.name}`, "success");
+      } catch (error) {
+        setStatus(requestStatus, error.message || "The image could not be analyzed.", "error");
+      } finally { busy = false; refreshControls(); }
+    });
+
+    clearButton.addEventListener("click", clearWorkspace);
+    copyButton.addEventListener("click", async () => { try { await navigator.clipboard.writeText(result.textContent || ""); setStatus(requestStatus,"Analysis copied.","success"); } catch { setStatus(requestStatus,"The browser could not copy the analysis.","error"); } });
+    window.addEventListener("beforeunload", clearPreview);
+    loadStatus();
+  </script>
+</body>
+</html>
