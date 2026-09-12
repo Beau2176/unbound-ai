@@ -3,12 +3,15 @@ const {
   registerBillingAdapter,
   getBillingGatewayStatus,
   startBillingCheckoutSession,
-  startBillingCustomerPortalSession
+  startBillingCustomerPortalSession,
+  processBillingWebhook
 } = require("../billing/gateway");
 
 const provider = "contract-billing";
 let checkoutInput = null;
 let portalInput = null;
+let webhookVerified = false;
+let webhookParsed = false;
 
 registerBillingAdapter(provider, {
   capabilities: {
@@ -35,6 +38,30 @@ registerBillingAdapter(provider, {
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       secret: "DO_NOT_LEAK"
     };
+  },
+  async verifyWebhook({ rawBody, headers }) {
+    webhookVerified = true;
+    assert.ok(Buffer.isBuffer(rawBody));
+    return headers["x-contract-signature"] === "valid";
+  },
+  async parseWebhook() {
+    webhookParsed = true;
+    assert.equal(webhookVerified, true, "Webhook must be signature-verified before parsing");
+    return {
+      eventId: "evt_billing_001",
+      eventType: "subscription.updated",
+      subject: "subject-opaque-123",
+      customerId: "cust_provider_123",
+      subscriptionId: "sub_provider_456",
+      status: "active",
+      planTier: "top",
+      currentPeriodStart: "2026-09-12T17:00:00Z",
+      currentPeriodEnd: "2026-10-12T17:00:00Z",
+      cancelAtPeriodEnd: false,
+      occurredAt: "2026-09-12T17:15:00Z",
+      cardNumber: "DO_NOT_LEAK",
+      secret: "DO_NOT_LEAK"
+    };
   }
 });
 
@@ -48,6 +75,7 @@ async function main() {
   assert.equal(notConfigured.configured, false);
   assert.equal(notConfigured.checkout, false);
   assert.equal(notConfigured.customerPortal, false);
+  assert.equal(notConfigured.webhooks, false);
 
   const env = {
     BILLING_PROVIDER: provider,
@@ -89,6 +117,34 @@ async function main() {
   assert.ok(!JSON.stringify(portal).includes("cust_provider_123"));
   assert.ok(!JSON.stringify(portal).includes("DO_NOT_LEAK"));
 
+  const webhook = await processBillingWebhook({
+    rawBody: Buffer.from('{"type":"subscription.updated"}'),
+    headers: { "x-contract-signature": "valid" },
+    requestId: "webhook-request",
+    env
+  });
+  assert.equal(webhookVerified, true);
+  assert.equal(webhookParsed, true);
+  assert.equal(webhook.providerEventId, "evt_billing_001");
+  assert.equal(webhook.subject, "subject-opaque-123");
+  assert.equal(webhook.status, "active");
+  assert.equal(webhook.planTier, "top");
+  assert.equal(webhook.cancelAtPeriodEnd, false);
+  assert.ok(!JSON.stringify(webhook).includes("DO_NOT_LEAK"));
+
+  webhookVerified = false;
+  webhookParsed = false;
+  await assert.rejects(
+    () => processBillingWebhook({
+      rawBody: Buffer.from("{}"),
+      headers: { "x-contract-signature": "invalid" },
+      env
+    }),
+    (error) => error?.code === "BILLING_WEBHOOK_SIGNATURE_INVALID" && error?.statusCode === 401
+  );
+  assert.equal(webhookVerified, true);
+  assert.equal(webhookParsed, false, "Invalid webhook must not be parsed");
+
   registerBillingAdapter("insecure-billing", {
     capabilities: { checkout: true, customerPortal: true, webhooks: false },
     isConfigured: () => true,
@@ -126,7 +182,7 @@ async function main() {
     (error) => error?.code === "BILLING_CHECKOUT_INPUT_INVALID" && error?.statusCode === 400
   );
 
-  console.log("PASS billing session contract: configured capabilities, HTTPS-only redirects, normalized inputs, secret-free outputs.");
+  console.log("PASS billing contract: HTTPS sessions, secret-free outputs, signature-first normalized webhooks.");
 }
 
 main().catch((error) => {

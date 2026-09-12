@@ -82,7 +82,11 @@ function getBillingGatewayStatus(env = process.env) {
       configured &&
       Boolean(capabilities.customerPortal) &&
       typeof adapter.startCustomerPortal === "function",
-    webhooks: configured && Boolean(capabilities.webhooks),
+    webhooks:
+      configured &&
+      Boolean(capabilities.webhooks) &&
+      typeof adapter.verifyWebhook === "function" &&
+      typeof adapter.parseWebhook === "function",
     state: configured ? "ready" : "adapter-not-configured"
   };
 }
@@ -124,6 +128,17 @@ function cleanFutureTimestamp(value) {
   const parsed = new Date(value);
   if (!Number.isFinite(parsed.getTime()) || parsed.getTime() <= Date.now()) return null;
   return parsed.toISOString();
+}
+
+function cleanTimestamp(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+}
+
+function normalizePlanTier(value) {
+  const plan = String(value || "").trim().toLowerCase();
+  return ["free", "top"].includes(plan) ? plan : null;
 }
 
 async function startBillingCheckoutSession({
@@ -236,6 +251,94 @@ async function startBillingCustomerPortalSession({
   };
 }
 
+async function processBillingWebhook({
+  rawBody,
+  headers = {},
+  requestId = null,
+  env = process.env
+} = {}) {
+  const gateway = getBillingGatewayStatus(env);
+  if (!gateway.provider || !gateway.configured || !gateway.webhooks) {
+    throw billingGatewayError(
+      "BILLING_WEBHOOK_UNAVAILABLE",
+      "Billing webhooks are not configured.",
+      503
+    );
+  }
+  if (!Buffer.isBuffer(rawBody) || rawBody.length === 0) {
+    throw billingGatewayError(
+      "BILLING_WEBHOOK_BODY_INVALID",
+      "Billing webhook body is invalid.",
+      400
+    );
+  }
+
+  const adapter = getBillingAdapter(gateway.provider);
+  const signatureValid = await adapter.verifyWebhook({
+    rawBody,
+    headers,
+    requestId: cleanOpaqueIdentifier(requestId, 128),
+    env
+  });
+  if (!signatureValid) {
+    throw billingGatewayError(
+      "BILLING_WEBHOOK_SIGNATURE_INVALID",
+      "Billing webhook signature is invalid.",
+      401
+    );
+  }
+
+  const parsed = await adapter.parseWebhook({
+    rawBody,
+    headers,
+    requestId: cleanOpaqueIdentifier(requestId, 128),
+    env
+  });
+  const providerEventId = cleanOpaqueIdentifier(parsed?.eventId || parsed?.providerEventId, 300);
+  const subject = cleanOpaqueIdentifier(parsed?.subject, 200);
+  const providerCustomerId = cleanOpaqueIdentifier(parsed?.customerId || parsed?.providerCustomerId, 300);
+  const providerSubscriptionId = cleanOpaqueIdentifier(
+    parsed?.subscriptionId || parsed?.providerSubscriptionId,
+    300
+  );
+  const status = normalizeSubscriptionStatus(parsed?.status);
+  const planTier = normalizePlanTier(parsed?.planTier);
+  const occurredAt = cleanTimestamp(parsed?.occurredAt || parsed?.createdAt);
+  const currentPeriodStart = cleanTimestamp(parsed?.currentPeriodStart);
+  const currentPeriodEnd = cleanTimestamp(parsed?.currentPeriodEnd);
+  const eventType = cleanOpaqueIdentifier(parsed?.eventType || "subscription.updated", 200);
+
+  if (
+    !providerEventId ||
+    !subject ||
+    !eventType ||
+    status === "none" ||
+    !planTier ||
+    !occurredAt
+  ) {
+    throw billingGatewayError(
+      "BILLING_WEBHOOK_PAYLOAD_INVALID",
+      "Billing webhook payload is invalid.",
+      400
+    );
+  }
+
+  return {
+    provider: gateway.provider,
+    providerEventId,
+    eventType,
+    subject,
+    providerCustomerId,
+    providerSubscriptionId,
+    status,
+    planTier,
+    currentPeriodStart,
+    currentPeriodEnd,
+    cancelAtPeriodEnd: Boolean(parsed?.cancelAtPeriodEnd),
+    occurredAt
+  };
+}
+
 module.exports = {
   BILLING_STATUSES,
   normalizeBillingProvider,
@@ -245,5 +348,6 @@ module.exports = {
   getBillingAdapter,
   getBillingGatewayStatus,
   startBillingCheckoutSession,
-  startBillingCustomerPortalSession
+  startBillingCustomerPortalSession,
+  processBillingWebhook
 };
