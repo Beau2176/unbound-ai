@@ -1,0 +1,133 @@
+name: Maintenance Controls v0.34
+
+on:
+  push:
+    branches:
+      - maintenance-controls-v0.34
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: maintenance-controls-v0.34
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Apply maintenance controls migration
+        run: python tools/apply_maintenance_controls_v034.py
+
+      - name: Install locked dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Run permanent CI checks
+        working-directory: app
+        run: npm run ci
+
+      - name: Verify maintenance policy
+        working-directory: app
+        run: |
+          node <<'NODE'
+          const assert = require('assert');
+          const {
+            getMaintenanceStatus,
+            maintenanceAllowsRequest
+          } = require('./ops/maintenance-mode');
+
+          const off = getMaintenanceStatus({});
+          assert.equal(off.mode, 'off');
+          assert.equal(off.active, false);
+
+          const readOnly = getMaintenanceStatus({
+            UNBOUND_MAINTENANCE_MODE: 'read_only',
+            UNBOUND_MAINTENANCE_RETRY_AFTER_SECONDS: '45',
+            UNBOUND_MAINTENANCE_MESSAGE: 'Database recovery in progress.'
+          });
+          assert.equal(readOnly.active, true);
+          assert.equal(readOnly.writeBlocked, true);
+          assert.equal(readOnly.retryAfterSeconds, 45);
+          assert.equal(
+            maintenanceAllowsRequest(readOnly, { method: 'GET', path: '/account/access' }),
+            true
+          );
+          assert.equal(
+            maintenanceAllowsRequest(readOnly, { method: 'POST', path: '/chat' }),
+            false
+          );
+
+          const offline = getMaintenanceStatus({ UNBOUND_MAINTENANCE_MODE: 'offline' });
+          assert.equal(offline.serviceUnavailable, true);
+          assert.equal(
+            maintenanceAllowsRequest(offline, { method: 'GET', path: '/system/status' }),
+            true
+          );
+          assert.equal(
+            maintenanceAllowsRequest(offline, { method: 'GET', path: '/account/access' }),
+            false
+          );
+          NODE
+
+      - name: Smoke test read-only maintenance
+        run: |
+          PORT=32190 NODE_ENV=test \
+            UNBOUND_MAINTENANCE_MODE=read_only \
+            UNBOUND_MAINTENANCE_MESSAGE='Recovery maintenance.' \
+            UNBOUND_MAINTENANCE_RETRY_AFTER_SECONDS=77 \
+            node app/server.js > /tmp/unbound-v034.log 2>&1 &
+          pid=$!
+          cleanup() { kill "$pid" 2>/dev/null || true; }
+          trap cleanup EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:32190/healthz >/dev/null; then break; fi
+            sleep 0.25
+          done
+          code="$(curl -sS -o /tmp/blocked.json -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/json' \
+            -d '{"message":"test"}' \
+            http://127.0.0.1:32190/api/chat)"
+          test "$code" = '503'
+          grep -q 'Recovery maintenance.' /tmp/blocked.json
+          grep -q '"mode":"read_only"' /tmp/blocked.json
+          status_code="$(curl -sS -o /tmp/status.json -w '%{http_code}' \
+            http://127.0.0.1:32190/api/system/status)"
+          test "$status_code" = '503'
+          grep -q '"status":"maintenance"' /tmp/status.json
+          grep -q '"operational":false' /tmp/status.json
+          grep -q '"mode":"read_only"' /tmp/status.json
+          kill -TERM "$pid"
+          set +e
+          wait "$pid"
+          exit_code=$?
+          set -e
+          trap - EXIT
+          test "$exit_code" -eq 0
+
+      - name: Verify source contract
+        run: |
+          grep -q 'createMaintenanceMiddleware' app/server.js
+          grep -q '"/api/admin/ops/maintenance"' app/server.js
+          grep -q 'maintenanceStatus: getMaintenanceStatus()' app/server.js
+          grep -q 'UNBOUND_MAINTENANCE_MODE=read_only' docs/INCIDENT_RECOVERY.md
+
+      - name: Commit completed v0.34 and remove one-time migration
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/ops/runtime-status.js app/ops/maintenance-mode.js docs/INCIDENT_RECOVERY.md
+          git rm tools/apply_maintenance_controls_v034.py .github/workflows/maintenance-controls-v034.yml
+          if git diff --cached --quiet; then
+            echo "No final changes to commit."
+          else
+            git commit -m "Add incident maintenance controls v0.34"
+            git push origin HEAD:maintenance-controls-v0.34
+          fi
