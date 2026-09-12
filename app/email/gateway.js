@@ -1,3 +1,5 @@
+const { awsSesProvider } = require("./providers/aws-ses");
+
 function normalizeProviderName(value) {
   return String(value || "none").trim().toLowerCase() || "none";
 }
@@ -24,6 +26,8 @@ function registerEmailProvider(provider) {
   providers.set(id, provider);
   return provider;
 }
+
+registerEmailProvider(awsSesProvider);
 
 function getProvider(env = process.env) {
   const name = normalizeProviderName(env.EMAIL_PROVIDER);
@@ -89,7 +93,8 @@ async function sendAccountVerification({ toEmail, displayName, verificationUrl, 
   const result = await provider.sendVerification({
     toEmail: email,
     displayName: String(displayName || "").trim().slice(0, 120),
-    verificationUrl: safeVerificationUrl
+    verificationUrl: safeVerificationUrl,
+    env
   });
 
   return {
