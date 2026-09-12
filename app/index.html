@@ -1016,6 +1016,8 @@
     const toast = document.getElementById("toast");
 
     let currentUser = null;
+    let chatBusy = false;
+    let accountReady = false;
     let conversationHistory = [];
     let toastTimer = null;
 
@@ -1161,12 +1163,21 @@
     }
 
     async function sendMessage() {
+      if (chatBusy || !accountReady) return;
       const message = input.value.trim();
 
       if (!message) {
         return;
       }
 
+      if (!currentUser) {
+        openAuth("login");
+        return;
+      }
+
+      chatBusy = true;
+      newChatButton.disabled = true;
+      logoutButton.disabled = true;
       const priorHistory = conversationHistory.slice(-MAX_CONTEXT_MESSAGES);
 
       addMessage("user", message);
@@ -1198,6 +1209,18 @@
         const data = await response.json();
         typingBubble.remove();
 
+        if (response.status === 401) {
+          conversationHistory.pop();
+          saveConversation();
+          currentUser = null;
+          renderAccountUi();
+          switchConversationScope();
+          if (!input.value) input.value = message;
+          openAuth("login");
+          showAuthFeedback("Your session expired. Sign in to send your message.");
+          return;
+        }
+
         if (!response.ok) {
           throw new Error(data.error || "Request failed.");
         }
@@ -1218,7 +1241,10 @@
           "error"
         );
       } finally {
+        chatBusy = false;
         sendButton.disabled = false;
+        newChatButton.disabled = false;
+        logoutButton.disabled = false;
       }
     }
 
@@ -1521,7 +1547,10 @@ adminButton.addEventListener("click", () => {
 
     async function initializePage() {
       renderAccountUi();
+      sendButton.disabled = true;
       await loadCurrentUser();
+      accountReady = true;
+      sendButton.disabled = false;
       conversationHistory = loadConversation();
       renderConversation();
     }
