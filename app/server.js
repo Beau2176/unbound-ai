@@ -151,6 +151,17 @@ Product mode: UNBOUND MODE.
 - Never claim tools, browsing, verification, or real-world actions that did not actually occur.
 `;
 
+const ADULT_MODE_PROMPT = `
+Product mode: ADULT MODE.
+- This mode is available only after the server has confirmed hard 18+ age verification for the signed-in account.
+- Discuss lawful adult relationships, sexuality, sexual health, dating, mature fiction, and other adult subjects candidly and without unnecessary euphemism when relevant to the user's request.
+- Treat all sexual or romantic participants as adults. Never sexualize minors or people whose age is ambiguous.
+- Keep firm boundaries around exploitation, trafficking, coercion, non-consensual sexual content, serious illegal harm, and abuse.
+- For medical, legal, or other high-stakes adult topics, clearly distinguish general information from personalized professional advice.
+- Do not claim that age verification occurred because of the conversation; the server-side gate is the authority for access to this mode.
+- Never claim tools, browsing, verification, or real-world actions that did not actually occur.
+`;
+
 app.disable("x-powered-by");
 app.use(createHttpSecurityMiddleware({ isProduction: IS_PRODUCTION }));
 app.use(
@@ -1331,7 +1342,18 @@ async function buildAccountAccess(user) {
   const capabilities = buildCapabilityAccess({
     planTier: effective.plan.id,
     overrides
+  }).map((item) => {
+    if (item.key !== "adult_mode") return item;
+    return {
+      ...item,
+      usable: Boolean(item.usable && ageVerification.verified),
+      ageVerificationRequired: true,
+      blockedReason: ageVerification.verified
+        ? null
+        : "hard-age-verification-required"
+    };
   });
+  const ageVerificationGateway = getAgeVerificationGatewayStatus();
 
   return {
     plan: {
@@ -1350,6 +1372,7 @@ async function buildAccountAccess(user) {
     },
     capabilities,
     ageVerification,
+    ageVerificationGateway,
     summary: {
       usable: capabilities.filter((item) => item.usable).length,
       entitledButNotLive: capabilities.filter(
@@ -5037,6 +5060,7 @@ function normalizeProductMode(value) {
   if (normalized === "research") return "research";
   if (normalized === "creative") return "creative";
   if (normalized === "unbound") return "unbound";
+  if (normalized === "adult") return "adult";
   return "standard";
 }
 
@@ -5108,6 +5132,10 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
     if (productMode === "unbound") {
       await assertOptionalAccountCapability(req, "unbound_mode");
     }
+    if (productMode === "adult") {
+      await assertAgeVerifiedAdult(req);
+      await assertRequestCapability(req, "adult_mode");
+    }
 
     const persistentChat = await preparePersistentChat(
       req,
@@ -5127,7 +5155,9 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
           ? CREATIVE_MODE_PROMPT
           : productMode === "unbound"
             ? UNBOUND_MODE_PROMPT
-            : "";
+            : productMode === "adult"
+              ? ADULT_MODE_PROMPT
+              : "";
 
     const input = [
       ...history,
@@ -5252,12 +5282,16 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
     if (productMode === "unbound") {
       await assertOptionalAccountCapability(req, "unbound_mode");
     }
+    if (productMode === "adult") {
+      await assertAgeVerifiedAdult(req);
+      await assertRequestCapability(req, "adult_mode");
+    }
 
     const persistentChat = await preparePersistentChat(
       req,
       message,
       depthStyle,
-      "standard"
+      productMode
     );
     const history = persistentChat
       ? persistentChat.history
@@ -5269,7 +5303,9 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
         ? CREATIVE_MODE_PROMPT
         : productMode === "unbound"
           ? UNBOUND_MODE_PROMPT
-          : "";
+          : productMode === "adult"
+            ? ADULT_MODE_PROMPT
+            : "";
     const input = [
       ...history,
       { role: "user", content: message.slice(0, 12000) }
@@ -5290,7 +5326,7 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
     writeEvent({
       type: "meta",
       depthStyle,
-      productMode: "standard",
+      productMode,
       provider: gatewayStatus.provider,
       model: gatewayStatus.model,
       conversationId: persistentChat?.conversationId || null
@@ -5312,7 +5348,7 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
         persistentChat,
         aiResponse.reply,
         depthStyle,
-        "standard",
+        productMode,
         { sources: [], citations: [], webSearchCalls: 0 }
       );
     }
@@ -5324,7 +5360,7 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
           userId: sessionUser?.id || null,
           provider: aiResponse.provider,
           model: aiResponse.model,
-          eventType: "chat_stream_standard_" + depthStyle,
+          eventType: "chat_stream_" + productMode + "_" + depthStyle,
           usage: aiResponse.usage,
           webSearchCalls: 0,
           estimatedCostMicros: estimateProviderCostMicros(
@@ -5341,7 +5377,7 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
     writeEvent({
       type: "done",
       depthStyle,
-      productMode: "standard",
+      productMode,
       provider: aiResponse.provider,
       model: aiResponse.model,
       conversationId: persistentChat?.conversationId || null

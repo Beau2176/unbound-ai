@@ -66,6 +66,12 @@ const CAPABILITY_CATALOG = Object.freeze({
     implemented: true,
     minimumPlan: "free"
   }),
+  adult_mode: Object.freeze({
+    label: "Adult Mode",
+    description: "Verified-18+ mature conversation protected by a server-side hard age-verification gate.",
+    implemented: true,
+    minimumPlan: "free"
+  }),
   file_analysis: Object.freeze({
     label: "File analysis",
     description: "Upload and analyze supported documents and data files.",

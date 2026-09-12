@@ -386,6 +386,7 @@
     .product-control {
       display: inline-flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 4px;
       padding: 4px;
       border: 1px solid rgba(174, 128, 255, 0.30);
@@ -428,6 +429,12 @@
       background: rgba(101, 232, 164, 0.15);
       color: #b8ffd8;
       box-shadow: inset 0 0 0 1px rgba(101, 232, 164, 0.28);
+    }
+
+    .product-button.active[data-product-mode="adult"] {
+      background: rgba(255, 118, 118, 0.16);
+      color: #ffd0d0;
+      box-shadow: inset 0 0 0 1px rgba(255, 118, 118, 0.30);
     }
 
     .new-chat {
@@ -1396,6 +1403,7 @@
           <div class="product-control" role="group" aria-label="Product mode">
             <button id="standardModeButton" class="product-button active" data-product-mode="standard" type="button" aria-pressed="true">STANDARD</button>
             <button id="unboundModeButton" class="product-button" data-product-mode="unbound" type="button" aria-pressed="false">UNBOUND</button>
+            <button id="adultModeButton" class="product-button locked" data-product-mode="adult" type="button" aria-pressed="false" aria-disabled="true">ADULT</button>
             <button id="creativeModeButton" class="product-button" data-product-mode="creative" type="button" aria-pressed="false">CREATIVE</button>
             <button id="researchModeButton" class="product-button" data-product-mode="research" type="button" aria-pressed="false">RESEARCH</button>
           </div>
@@ -1456,6 +1464,7 @@
           <div class="access-stat"><div class="access-label">Access source</div><div id="accessPlanSource" class="access-value">—</div></div>
           <div class="access-stat"><div class="access-label">Subscription</div><div id="accessSubscription" class="access-value">—</div></div>
           <div class="access-stat"><div class="access-label">Capabilities</div><div id="accessCapabilitySummary" class="access-value">—</div></div>
+          <div class="access-stat"><div class="access-label">Hard 18+ verification</div><div id="accessAgeVerification" class="access-value">—</div></div>
         </div>
         <div class="access-section-title">Capabilities</div>
         <div id="accessCapabilityList" class="capability-list"></div>
@@ -1732,6 +1741,7 @@
     const newChatButton = document.getElementById("newChatButton");
     const standardModeButton = document.getElementById("standardModeButton");
     const unboundModeButton = document.getElementById("unboundModeButton");
+    const adultModeButton = document.getElementById("adultModeButton");
     const creativeModeButton = document.getElementById("creativeModeButton");
     const researchModeButton = document.getElementById("researchModeButton");
     const productStatus = document.getElementById("productStatus");
@@ -1753,6 +1763,7 @@
     const accessPlanSource = document.getElementById("accessPlanSource");
     const accessSubscription = document.getElementById("accessSubscription");
     const accessCapabilitySummary = document.getElementById("accessCapabilitySummary");
+    const accessAgeVerification = document.getElementById("accessAgeVerification");
     const accessCapabilityList = document.getElementById("accessCapabilityList");
 
     const signedOutActions = document.getElementById("signedOutActions");
@@ -1881,6 +1892,7 @@
       if (value === "research") return "research";
       if (value === "creative") return "creative";
       if (value === "unbound") return "unbound";
+      if (value === "adult") return "adult";
       return "standard";
     }
 
@@ -1894,6 +1906,13 @@
       }
       if (normalized === "unbound" && currentUser) {
         return canUseCapability("unbound_mode");
+      }
+      if (normalized === "adult") {
+        return Boolean(
+          currentUser &&
+          canUseCapability("adult_mode") &&
+          accountAccess?.ageVerification?.verified
+        );
       }
       return true;
     }
@@ -1924,13 +1943,16 @@
       const isResearch = productMode === "research";
       const isCreative = productMode === "creative";
       const isUnbound = productMode === "unbound";
-      const isStandard = !isResearch && !isCreative && !isUnbound;
+      const isAdult = productMode === "adult";
+      const isStandard = !isResearch && !isCreative && !isUnbound && !isAdult;
       standardModeButton.classList.toggle("active", isStandard);
       unboundModeButton.classList.toggle("active", isUnbound);
+      adultModeButton.classList.toggle("active", isAdult);
       creativeModeButton.classList.toggle("active", isCreative);
       researchModeButton.classList.toggle("active", isResearch);
       standardModeButton.setAttribute("aria-pressed", isStandard ? "true" : "false");
       unboundModeButton.setAttribute("aria-pressed", isUnbound ? "true" : "false");
+      adultModeButton.setAttribute("aria-pressed", isAdult ? "true" : "false");
       creativeModeButton.setAttribute("aria-pressed", isCreative ? "true" : "false");
       researchModeButton.setAttribute("aria-pressed", isResearch ? "true" : "false");
       productStatus.textContent = isResearch
@@ -1939,7 +1961,9 @@
           ? "Creative Mode — Ideas, writing + worldbuilding"
           : isUnbound
             ? "Unbound Mode — Candid, direct conversation"
-            : "Standard Mode";
+            : isAdult
+              ? "Adult Mode — Verified 18+ mature conversation"
+              : "Standard Mode";
     }
 
     function setProductMode(value, { persist = true, announce = false } = {}) {
@@ -1954,7 +1978,9 @@
               ? "Creative Mode is active. UNBOUND will prioritize imaginative collaboration."
               : productMode === "unbound"
                 ? "Unbound Mode is active. UNBOUND will be especially candid and direct."
-                : "Standard Mode is active."
+                : productMode === "adult"
+                  ? "Adult Mode is active for this hard-verified 18+ account."
+                  : "Standard Mode is active."
         );
       }
     }
@@ -2601,6 +2627,7 @@
         accessPlanSource.textContent = "—";
         accessSubscription.textContent = "—";
         accessCapabilitySummary.textContent = "—";
+        accessAgeVerification.textContent = "—";
         accessCapabilityList.innerHTML = "";
         return;
       }
@@ -2608,6 +2635,13 @@
       accessPlanSource.textContent = accessSourceLabel(accountAccess.plan?.source);
       accessSubscription.textContent = subscriptionLabel(accountAccess.subscription);
       accessCapabilitySummary.textContent = `${accountAccess.summary?.usable || 0} live / ${accountAccess.summary?.catalogSize || 0} tracked`;
+      const ageState = accountAccess.ageVerification || {};
+      const ageGateway = accountAccess.ageVerificationGateway || {};
+      accessAgeVerification.textContent = ageState.verified
+        ? "VERIFIED 18+"
+        : ageGateway.configured
+          ? String(ageState.status || "unverified").replaceAll("_", " ").toUpperCase()
+          : "PROVIDER NOT CONNECTED";
       accessCapabilityList.innerHTML = "";
       for (const capability of accountAccess.capabilities || []) {
         const item = document.createElement("div"); item.className = "capability-item";
@@ -2617,6 +2651,7 @@
         copy.append(name, description);
         const badge = document.createElement("span"); badge.className = "capability-badge";
         if (capability.usable) { badge.classList.add("live"); badge.textContent = "LIVE"; }
+        else if (capability.key === "adult_mode" && capability.available && capability.entitled) { badge.classList.add("locked"); badge.textContent = "18+ VERIFY"; }
         else if (capability.available && !capability.entitled) { badge.classList.add("locked"); badge.textContent = `${String(capability.minimumPlan || "top").toUpperCase()} ACCESS`; }
         else if (capability.entitled && !capability.available) { badge.classList.add("planned"); badge.textContent = "INCLUDED • COMING"; }
         else { badge.classList.add("planned"); badge.textContent = "PLANNED"; }
@@ -2657,6 +2692,32 @@
       setProductMode("research", { announce: true });
     }
 
+    async function chooseAdultMode() {
+      if (!currentUser) {
+        showToast("Adult Mode requires a signed-in account with hard 18+ verification.");
+        openAuth("login");
+        return;
+      }
+      if (!accountAccess) await refreshAccountAccess({ silent: true });
+      const capability = capabilityAccess("adult_mode");
+      if (!capability?.entitled || !capability?.available) {
+        showToast("Adult Mode is not included in this account's current access.");
+        await openAccess();
+        return;
+      }
+      if (!accountAccess?.ageVerification?.verified) {
+        const gatewayReady = Boolean(accountAccess?.ageVerificationGateway?.configured);
+        showToast(
+          gatewayReady
+            ? "Complete hard 18+ age verification before using Adult Mode."
+            : "Adult Mode is locked until a hard 18+ verification provider is connected."
+        );
+        await openAccess();
+        return;
+      }
+      setProductMode("adult", { announce: true });
+    }
+
     function planLabelForUser(user) {
       if (!user) return "FREE";
       if (accountAccess?.plan?.displayName) return String(accountAccess.plan.displayName).toUpperCase();
@@ -2682,6 +2743,16 @@
         unboundModeButton.classList.toggle("locked", !unboundAllowed);
         unboundModeButton.setAttribute("aria-disabled", unboundAllowed ? "false" : "true");
         unboundModeButton.title = unboundAllowed ? "Unbound Mode" : "Unbound Mode is disabled for this account";
+        const adultVerified = Boolean(accountAccess?.ageVerification?.verified);
+        const adultAllowed = canUseCapability("adult_mode") && adultVerified;
+        const adultGatewayReady = Boolean(accountAccess?.ageVerificationGateway?.configured);
+        adultModeButton.classList.toggle("locked", !adultAllowed);
+        adultModeButton.setAttribute("aria-disabled", adultAllowed ? "false" : "true");
+        adultModeButton.title = adultAllowed
+          ? "Adult Mode"
+          : adultGatewayReady
+            ? "Adult Mode requires completed hard 18+ verification"
+            : "Adult Mode locked — hard age-verification provider is not connected yet";
         const creativeAllowed = canUseCapability("creative_mode");
         creativeModeButton.classList.toggle("locked", !creativeAllowed);
         creativeModeButton.setAttribute("aria-disabled", creativeAllowed ? "false" : "true");
@@ -2708,6 +2779,9 @@
       unboundModeButton.classList.remove("locked");
       unboundModeButton.setAttribute("aria-disabled", "false");
       unboundModeButton.title = "Unbound Mode";
+      adultModeButton.classList.add("locked");
+      adultModeButton.setAttribute("aria-disabled", "true");
+      adultModeButton.title = "Adult Mode requires a signed-in account with hard 18+ verification";
       creativeModeButton.classList.remove("locked");
       creativeModeButton.setAttribute("aria-disabled", "false");
       creativeModeButton.title = "Creative Mode";
@@ -4081,6 +4155,7 @@
       }
       setProductMode("unbound", { announce: true });
     });
+    adultModeButton.addEventListener("click", chooseAdultMode);
     creativeModeButton.addEventListener("click", () => {
       if (currentUser && !canUseCapability("creative_mode")) {
         showToast("Creative Mode is disabled for this account.");
