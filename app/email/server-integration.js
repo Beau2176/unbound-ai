@@ -79,7 +79,7 @@ function integrateEmailVerificationServerSource(serverSource) {
     source,
     '  const ageVerification = getAgeVerificationGatewayStatus();\n  const launch = buildLaunchReadiness({',
     '  const ageVerification = getAgeVerificationGatewayStatus();\n  const emailDelivery = buildEmailDeliveryReadiness();\n  const launch = buildLaunchReadiness({',
-    2,
+    1,
     "launch-email-delivery-state"
   );
 
@@ -87,7 +87,7 @@ function integrateEmailVerificationServerSource(serverSource) {
     source,
     '    billing,\n    ageVerification,\n    ai\n  });',
     '    billing,\n    ageVerification,\n    emailDelivery,\n    ai\n  });',
-    2,
+    1,
     "launch-email-delivery-argument"
   );
 
@@ -95,7 +95,7 @@ function integrateEmailVerificationServerSource(serverSource) {
     source,
     '    billing,\n    ageVerification,\n    ai,\n    launch,',
     '    billing,\n    ageVerification,\n    emailDelivery,\n    ai,\n    launch,',
-    2,
+    1,
     "ops-email-delivery-output"
   );
 

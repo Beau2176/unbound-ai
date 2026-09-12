@@ -40,18 +40,18 @@ function main() {
 
   assert.strictEqual(
     count(integrated, "const emailDelivery = buildEmailDeliveryReadiness();"),
-    2,
-    "both admin launch-readiness snapshots must build email-delivery readiness"
+    1,
+    "shared operational snapshot must build email-delivery readiness exactly once"
   );
   assert.strictEqual(
     count(integrated, "    emailDelivery,\n    ai\n  });"),
-    2,
-    "both launch gate calls must receive email-delivery readiness"
+    1,
+    "shared launch-gate call must receive email-delivery readiness exactly once"
   );
   assert.strictEqual(
     count(integrated, "    emailDelivery,\n    ai,\n    launch,"),
-    2,
-    "both operations snapshots must expose non-secret email-delivery readiness"
+    1,
+    "shared operations snapshot must expose non-secret email-delivery readiness exactly once"
   );
   assert.strictEqual(
     count(integrated, "emailDelivery: buildEmailDeliveryReadiness(),"),
