@@ -1,1 +1,1 @@
-Build the combined streaming + Research Mode integration from the latest synchronized baseline.
+Retry combined streaming + Research Mode integration with the streaming block explicitly protected.
