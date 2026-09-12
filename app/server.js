@@ -1632,8 +1632,12 @@ app.post(
       return res.status(400).json({ error: "Enter your current password." });
     }
 
-    const token = parseCookies(req)[SESSION_COOKIE];
-    const tokenHash = token ? hashSessionToken(token) : null;
+    const association = await associateCurrentSessionWithDevice(
+      req.user.id,
+      req,
+      res
+    );
+    const tokenHash = association.tokenHash;
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
