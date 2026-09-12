@@ -1,0 +1,35 @@
+name: Production CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify-production-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install locked production dependencies
+        run: npm ci
+      - name: Validate source syntax
+        run: npm run check
+      - name: Enforce security contracts
+        run: npm run security-check
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=moderate
