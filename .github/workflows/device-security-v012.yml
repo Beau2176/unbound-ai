@@ -25,6 +25,7 @@ jobs:
         run: npm ci
       - name: Apply device security migration
         run: |
+          python scripts/fix-device-migration-v012.py
           python scripts/migrate-device-security-v012.py
           python scripts/patch-device-cookie-v012.py
       - name: Validate JavaScript
