@@ -279,6 +279,27 @@ function testBrowserContracts() {
   requireText(indexHtml, 'fetch("/api/system/status"', "service status polling");
   requireText(indexHtml, 'class="skip-link"', "keyboard skip navigation");
   requireText(indexHtml, "prefers-reduced-motion", "reduced-motion support");
+  requireText(indexHtml, 'id="ageVerificationStartButton"', "hard-age verification action");
+  requireText(
+    indexHtml,
+    'fetch("/api/account/age-verification/start"',
+    "hard-age verification start endpoint usage"
+  );
+  requireText(
+    indexHtml,
+    "ageGateway.configured &&\n        ageGateway.startVerification",
+    "age-verification button requires configured start-capable gateway"
+  );
+  requireText(
+    indexHtml,
+    'verificationUrl.startsWith("https://")',
+    "age-verification redirect must require HTTPS"
+  );
+  requireText(
+    indexHtml,
+    "window.location.assign(verificationUrl)",
+    "age-verification provider navigation"
+  );
   forbidText(
     indexHtml,
     '<div class="status" aria-label="Service status live">',
