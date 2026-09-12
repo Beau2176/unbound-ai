@@ -1,0 +1,97 @@
+name: Build and validate secure account deletion
+
+on:
+  push:
+    branches:
+      - account-deletion-v0.9
+    paths:
+      - .account-delete-build/trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Apply account deletion feature
+        run: python3 .account-delete-build/apply.py
+
+      - name: Install exact dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Check server syntax
+        working-directory: app
+        run: node --check server.js
+
+      - name: Check browser JavaScript syntax
+        working-directory: app
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const blocks = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
+            .map((match) => match[1])
+            .filter(Boolean);
+          for (const [index, code] of blocks.entries()) {
+            try { new Function(code); }
+            catch (error) {
+              console.error(`index.html script ${index + 1}:`, error);
+              process.exit(1);
+            }
+          }
+          console.log('Browser JavaScript syntax OK.');
+          NODE
+
+      - name: Verify deletion safety wiring
+        run: |
+          grep -q 'app.delete(' app/server.js
+          grep -q '"/api/account"' app/server.js
+          grep -q 'confirmation !== "DELETE"' app/server.js
+          grep -q 'verifyPassword(' app/server.js
+          grep -q 'FOR UPDATE' app/server.js
+          grep -q "admin_email = 'deleted-account'" app/server.js
+          grep -q 'SET target_email = NULL' app/server.js
+          grep -q 'DELETE FROM users' app/server.js
+          grep -q 'clearSessionCookie(res)' app/server.js
+          grep -q 'owner account cannot be deleted' app/server.js
+          grep -q 'id="deleteAccountModal"' app/index.html
+          grep -q 'id="deleteAccountPassword"' app/index.html
+          grep -q 'id="deleteAccountConfirmation"' app/index.html
+          grep -q 'fetch("/api/account"' app/index.html
+          grep -q 'method: "DELETE"' app/index.html
+          grep -q 'localStorage.removeItem' app/index.html
+          ! grep -R -nE '^(<<<<<<<|=======|>>>>>>>)' app
+          git diff --check
+
+      - name: Verify existing major features remain
+        run: |
+          grep -q 'type: "web_search"' app/ai/providers/openai.js
+          grep -q 'app.post("/api/chat/stream"' app/server.js
+          grep -q 'research_sources JSONB' app/server.js
+          grep -q 'account_subscriptions' app/server.js
+          grep -q 'buildAccountAccess' app/server.js
+          grep -q 'data-product-mode="research"' app/index.html
+          ! grep -q 'express.static(__dirname)' app/server.js
+
+      - name: Audit production dependencies
+        working-directory: app
+        run: npm audit --omit=dev --audit-level=moderate
+
+      - name: Commit validated source
+        run: |
+          git config user.name "UNBOUND Account Privacy Builder"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/index.html
+          git commit -m "Add secure self-service account deletion"
+          git push
