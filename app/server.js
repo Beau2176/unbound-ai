@@ -466,6 +466,16 @@ function setDeviceCookie(res, token) {
   );
 }
 
+
+
+function clearDeviceCookie(res) {
+  const secure = IS_PRODUCTION ? "; Secure" : "";
+  res.append(
+    "Set-Cookie",
+    `${DEVICE_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure}`
+  );
+}
+
 function coarseDeviceLabel(req) {
   const ua = String(req?.headers?.["user-agent"] || "").toLowerCase();
   let browser = "Browser";
@@ -504,6 +514,32 @@ async function writeSecurityEvent(
      VALUES ($1, $2, $3, $4, $5::jsonb)`,
     [userId, deviceId, eventType, severity, JSON.stringify(details || {})]
   );
+}
+
+
+
+function publicSecurityEvent(row) {
+  const details = row?.details && typeof row.details === "object" ? row.details : {};
+  const publicDetails = {};
+  for (const key of [
+    "label",
+    "revokedDeviceId",
+    "revokedSessions",
+    "otherSessionsRevoked"
+  ]) {
+    if (details[key] !== undefined && details[key] !== null) {
+      publicDetails[key] = details[key];
+    }
+  }
+
+  return {
+    id: String(row.id),
+    eventType: row.event_type,
+    severity: row.severity || "info",
+    deviceLabel: row.device_label || null,
+    details: publicDetails,
+    createdAt: row.created_at
+  };
 }
 
 async function ensureDeviceForRequest(userId, req, res, client = pool) {
@@ -1573,6 +1609,39 @@ app.post(
 );
 
 
+
+app.get(
+  "/api/account/security/events",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    try {
+      const requested = Number(req.query.limit || 25);
+      const limit = Math.min(Math.max(Number.isFinite(requested) ? Math.trunc(requested) : 25, 1), 100);
+      const result = await pool.query(
+        `SELECT
+           e.id,
+           e.event_type,
+           e.severity,
+           e.details,
+           e.created_at,
+           d.device_label
+         FROM account_security_events e
+         LEFT JOIN account_devices d ON d.id = e.device_id AND d.user_id = e.user_id
+         WHERE e.user_id = $1
+         ORDER BY e.created_at DESC, e.id DESC
+         LIMIT $2`,
+        [req.user.id, limit]
+      );
+
+      return res.json({ events: result.rows.map(publicSecurityEvent) });
+    } catch (error) {
+      console.error("UNBOUND AI SECURITY EVENT HISTORY ERROR:", error);
+      return res.status(500).json({ error: "Could not load security activity." });
+    }
+  }
+);
+
 app.get(
   "/api/account/devices",
   requireDatabase,
@@ -1862,6 +1931,7 @@ app.delete(
 
       await client.query("COMMIT");
       clearSessionCookie(res);
+      clearDeviceCookie(res);
 
       return res.json({
         ok: true,
@@ -2698,6 +2768,70 @@ app.delete(
 
 
 
+
+
+app.get(
+  "/api/admin/security/summary",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const requested = Number(req.query.days || 30);
+      const days = Math.min(Math.max(Number.isFinite(requested) ? Math.trunc(requested) : 30, 1), 90);
+      const [eventTotalsResult, eventTypesResult, deviceResult, sessionResult] = await Promise.all([
+        pool.query(
+          `SELECT
+             COUNT(*)::int AS events,
+             COUNT(*) FILTER (WHERE severity = 'warning')::int AS warnings
+           FROM account_security_events
+           WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')`,
+          [days]
+        ),
+        pool.query(
+          `SELECT event_type, severity, COUNT(*)::int AS events
+           FROM account_security_events
+           WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+           GROUP BY event_type, severity
+           ORDER BY events DESC, event_type, severity`,
+          [days]
+        ),
+        pool.query(`
+          SELECT
+            COUNT(*) FILTER (WHERE revoked_at IS NULL)::int AS active_devices,
+            COUNT(*) FILTER (WHERE revoked_at IS NOT NULL)::int AS revoked_devices
+          FROM account_devices
+        `),
+        pool.query(`
+          SELECT COUNT(*)::int AS active_sessions
+          FROM user_sessions
+          WHERE expires_at > NOW()
+        `)
+      ]);
+
+      const eventTotals = eventTotalsResult.rows[0] || {};
+      const devices = deviceResult.rows[0] || {};
+      const sessions = sessionResult.rows[0] || {};
+      return res.json({
+        days,
+        totals: {
+          events: Number(eventTotals.events || 0),
+          warnings: Number(eventTotals.warnings || 0),
+          activeDevices: Number(devices.active_devices || 0),
+          revokedDevices: Number(devices.revoked_devices || 0),
+          activeSessions: Number(sessions.active_sessions || 0)
+        },
+        eventTypes: eventTypesResult.rows.map((row) => ({
+          eventType: row.event_type,
+          severity: row.severity || "info",
+          events: Number(row.events || 0)
+        }))
+      });
+    } catch (error) {
+      console.error("UNBOUND AI ADMIN SECURITY SUMMARY ERROR:", error);
+      return res.status(500).json({ error: "Could not load security operations summary." });
+    }
+  }
+);
 
 app.get(
   "/api/admin/age-verification/summary",

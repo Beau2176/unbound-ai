@@ -1194,6 +1194,20 @@
       font-weight: 850;
     }
 
+
+
+    .security-event-list { display: grid; gap: 8px; max-height: 260px; overflow-y: auto; }
+    .security-event-row {
+      padding: 10px 11px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 11px;
+      background: rgba(255,255,255,0.025);
+    }
+    .security-event-head { display:flex; justify-content:space-between; gap:10px; align-items:center; }
+    .security-event-name { color:#f3f9ff; font-size:12px; font-weight:850; }
+    .security-event-time { color:var(--muted); font-size:9px; white-space:nowrap; }
+    .security-event-detail { margin-top:4px; color:var(--muted); font-size:10px; line-height:1.4; }
+
     .delete-account-warning {
       margin: 0 0 16px;
       padding: 13px 14px;
@@ -1454,6 +1468,9 @@
         </div>
         <div id="deviceList" class="device-list"><div class="history-empty">Loading registered devices…</div></div>
 
+        <div class="access-section-title">Recent security activity</div>
+        <div id="securityEventList" class="security-event-list"><div class="history-empty">Loading security activity…</div></div>
+
         <form id="passwordChangeForm" class="auth-form" autocomplete="off">
           <div class="auth-field">
             <label for="currentPasswordForChange">Current password</label>
@@ -1598,6 +1615,7 @@
     const currentSessionExpiry = document.getElementById("currentSessionExpiry");
     const deviceList = document.getElementById("deviceList");
     const deviceRevokePassword = document.getElementById("deviceRevokePassword");
+    const securityEventList = document.getElementById("securityEventList");
     const passwordChangeForm = document.getElementById("passwordChangeForm");
     const currentPasswordForChange = document.getElementById("currentPasswordForChange");
     const newPassword = document.getElementById("newPassword");
@@ -1627,6 +1645,7 @@
     let depthStyle = "casual";
     let toastTimer = null;
     let securityDevices = [];
+    let securityEvents = [];
 
     function escapeHtml(value) {
       return String(value)
@@ -2783,6 +2802,67 @@
       securityFeedback.textContent = message;
     }
 
+
+
+    function securityEventLabel(eventType) {
+      return ({
+        "device.registered": "Device registered",
+        "device.revoked": "Device revoked",
+        "password.changed": "Password changed",
+        "sessions.others_revoked": "Other sessions logged out",
+        "sessions.all_revoked": "All sessions logged out"
+      })[eventType] || String(eventType || "Security event").replaceAll(".", " ");
+    }
+
+    function securityEventDetails(event) {
+      const details = event?.details || {};
+      const parts = [];
+      if (event?.deviceLabel) parts.push(event.deviceLabel);
+      else if (details.label) parts.push(details.label);
+      if (details.revokedSessions !== undefined) parts.push(`${Number(details.revokedSessions || 0)} session(s)`);
+      if (details.otherSessionsRevoked !== undefined) parts.push(`${Number(details.otherSessionsRevoked || 0)} other session(s)`);
+      return parts.join(" • ") || "Account security activity";
+    }
+
+    function renderSecurityEvents() {
+      securityEventList.innerHTML = "";
+      if (!securityEvents.length) {
+        securityEventList.innerHTML = '<div class="history-empty">No security activity has been recorded yet.</div>';
+        return;
+      }
+      for (const event of securityEvents) {
+        const row = document.createElement("div");
+        row.className = "security-event-row";
+        const head = document.createElement("div");
+        head.className = "security-event-head";
+        const name = document.createElement("div");
+        name.className = "security-event-name";
+        name.textContent = securityEventLabel(event.eventType);
+        const time = document.createElement("div");
+        time.className = "security-event-time";
+        const date = event.createdAt ? new Date(event.createdAt) : null;
+        time.textContent = date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : "—";
+        head.append(name, time);
+        const detail = document.createElement("div");
+        detail.className = "security-event-detail";
+        detail.textContent = securityEventDetails(event);
+        row.append(head, detail);
+        securityEventList.appendChild(row);
+      }
+    }
+
+    async function loadSecurityEvents() {
+      const response = await fetch("/api/account/security/events?limit=25", {
+        method: "GET",
+        credentials: "same-origin",
+        headers: { "Accept": "application/json" }
+      });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error || "Could not load security activity.");
+      securityEvents = Array.isArray(data.events) ? data.events : [];
+      renderSecurityEvents();
+    }
+
     function renderSecurityDevices() {
       deviceList.innerHTML = "";
       if (!securityDevices.length) {
@@ -2888,7 +2968,7 @@
       } else {
         currentSessionExpiry.textContent = "";
       }
-      await loadSecurityDevices();
+      await Promise.all([loadSecurityDevices(), loadSecurityEvents()]);
     }
 
     async function openSecurity() {
@@ -2915,6 +2995,7 @@
       logoutAllForm.reset();
       deviceRevokePassword.value = "";
       securityDevices = [];
+      securityEvents = [];
       clearSecurityFeedback();
       if (authModal.hidden && historyModal.hidden && accessModal.hidden && deleteAccountModal.hidden) {
         document.body.classList.remove("modal-open");
@@ -3037,6 +3118,7 @@
         accountAccess = null;
         activeConversationId = null;
         securityDevices = [];
+        securityEvents = [];
         document.body.classList.remove("modal-open");
         renderAccountUi();
         await switchConversationScope();

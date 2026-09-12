@@ -562,6 +562,38 @@
 
 
 
+
+
+    <section class="card section">
+      <div class="section-head">
+        <div>
+          <h2>Security Operations</h2>
+          <p>Aggregate account-security activity, registered devices, and active sessions. No IP addresses are stored by this system.</p>
+        </div>
+        <button class="btn" id="refreshSecurityOperations" type="button">Refresh Security</button>
+      </div>
+
+      <section class="stats">
+        <div class="card stat"><div class="label">Active Sessions</div><div class="value" id="securityActiveSessions">—</div></div>
+        <div class="card stat"><div class="label">Registered Devices</div><div class="value" id="securityActiveDevices">—</div></div>
+        <div class="card stat"><div class="label">Security Events 30d</div><div class="value" id="securityEvents30d">—</div></div>
+        <div class="card stat"><div class="label">Warnings 30d</div><div class="value" id="securityWarnings30d">—</div></div>
+      </section>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Event</th><th>Severity</th><th>Count</th></tr>
+          </thead>
+          <tbody id="securityOperationsBody">
+            <tr><td colspan="3" class="loading">Loading security operations…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="feedback" id="securityOperationsFeedback"></div>
+    </section>
+
+
     <section class="card section">
       <div class="section-head">
         <div>
@@ -745,6 +777,13 @@
     const ageUnavailable = document.getElementById("ageUnavailable");
     const ageVerificationBody = document.getElementById("ageVerificationBody");
     const ageVerificationFeedback = document.getElementById("ageVerificationFeedback");
+    const refreshSecurityOperations = document.getElementById("refreshSecurityOperations");
+    const securityActiveSessions = document.getElementById("securityActiveSessions");
+    const securityActiveDevices = document.getElementById("securityActiveDevices");
+    const securityEvents30d = document.getElementById("securityEvents30d");
+    const securityWarnings30d = document.getElementById("securityWarnings30d");
+    const securityOperationsBody = document.getElementById("securityOperationsBody");
+    const securityOperationsFeedback = document.getElementById("securityOperationsFeedback");
 
     let dashboard = null;
     let auditEvents = [];
@@ -753,6 +792,7 @@
     let selectedUserAccess = null;
     let billingSummary = null;
     let ageVerificationSummary = null;
+    let securityOperationsSummary = null;
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -881,6 +921,47 @@
 
 
 
+
+
+
+    function renderSecurityOperations() {
+      if (!securityOperationsSummary) return;
+      const totals = securityOperationsSummary.totals || {};
+      securityActiveSessions.textContent = formatInteger(totals.activeSessions);
+      securityActiveDevices.textContent = formatInteger(totals.activeDevices);
+      securityEvents30d.textContent = formatInteger(totals.events);
+      securityWarnings30d.textContent = formatInteger(totals.warnings);
+
+      const rows = Array.isArray(securityOperationsSummary.eventTypes)
+        ? securityOperationsSummary.eventTypes
+        : [];
+      if (!rows.length) {
+        securityOperationsBody.innerHTML = '<tr><td colspan="3" class="loading">No security events in this window yet.</td></tr>';
+      } else {
+        securityOperationsBody.innerHTML = rows.map((item) => `
+          <tr>
+            <td>${escapeHtml(String(item.eventType || "security event").replaceAll(".", " "))}</td>
+            <td><span class="badge ${item.severity === "warning" ? "gold" : ""}">${escapeHtml(item.severity || "info")}</span></td>
+            <td>${escapeHtml(formatInteger(item.events))}</td>
+          </tr>
+        `).join("");
+      }
+      setFeedback(
+        securityOperationsFeedback,
+        `Showing aggregate security activity for the last ${securityOperationsSummary.days || 30} days. Revoked devices retained: ${formatInteger(totals.revokedDevices)}.`,
+        "ok"
+      );
+    }
+
+    async function loadSecurityOperations() {
+      try {
+        securityOperationsSummary = await api("/api/admin/security/summary?days=30");
+        renderSecurityOperations();
+      } catch (error) {
+        securityOperationsBody.innerHTML = `<tr><td colspan="3" class="loading">${escapeHtml(error.message)}</td></tr>`;
+        setFeedback(securityOperationsFeedback, error.message, "error");
+      }
+    }
 
     function renderAgeVerification() {
       if (!ageVerificationSummary) return;
@@ -1338,7 +1419,7 @@
         renderStats();
         renderGiftSlots();
         renderUsers();
-        await Promise.all([loadUsage(), loadAudit(), loadBilling(), loadAgeVerification()]);
+        await Promise.all([loadUsage(), loadAudit(), loadBilling(), loadAgeVerification(), loadSecurityOperations()]);
         await initializeEntitlements();
       } catch (error) {
         if (error.status === 401 || error.status === 403) {
@@ -1394,6 +1475,7 @@
     refreshUsage.addEventListener("click", loadUsage);
     refreshBilling.addEventListener("click", loadBilling);
     refreshAgeVerification.addEventListener("click", loadAgeVerification);
+    refreshSecurityOperations.addEventListener("click", loadSecurityOperations);
 
     loadDashboard();
   </script>
