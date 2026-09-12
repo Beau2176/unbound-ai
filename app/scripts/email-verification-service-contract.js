@@ -97,8 +97,10 @@ async function main() {
   const url = service.buildVerificationUrl(TOKEN, env);
   assert.strictEqual(
     url,
-    "https://unbound.example/verify-email?token=raw-verification-token-must-not-leak"
+    "https://unbound.example/verify-email#token=raw-verification-token-must-not-leak"
   );
+  assert.ok(!new URL(url).search, "verification token must never be placed in the server-visible query string");
+  assert.ok(new URL(url).hash.includes(TOKEN), "verification token belongs only in the browser fragment");
   assert.throws(
     () => service.buildVerificationUrl(TOKEN, { PUBLIC_APP_ORIGIN: "http://unbound.example" }),
     (error) => error?.code === "EMAIL_VERIFICATION_ORIGIN_INVALID"
