@@ -3775,7 +3775,15 @@ app.post(
     try {
       const documentType = normalizeLegalDocumentType(req.body?.documentType);
       const requestedVersion = String(req.body?.version || "").trim();
-      const currentDocument = getLegalDocumentCatalog().find(
+      const legalStatus = buildLegalConsentStatus();
+
+      if (!legalStatus.acceptanceEnabled) {
+        return res.status(503).json({
+          error: "Legal acceptance is not enabled until final policy documents are published."
+        });
+      }
+
+      const currentDocument = legalStatus.documents.find(
         (document) => document.type === documentType
       );
 

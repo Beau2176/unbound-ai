@@ -10,6 +10,24 @@ function cleanVersion(value, fallback) {
   return version || fallback;
 }
 
+function enabledFlag(value) {
+  return ["1", "true", "yes", "on"].includes(
+    String(value || "").trim().toLowerCase()
+  );
+}
+
+function cleanPolicyUrl(value) {
+  const url = String(value || "").trim().slice(0, 500);
+  if (!url) return null;
+  if (url.startsWith("/") && !url.startsWith("//")) return url;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeLegalDocumentType(value) {
   const type = String(value || "").trim().toLowerCase();
   return LEGAL_DOCUMENT_TYPES.includes(type) ? type : null;
@@ -21,15 +39,35 @@ function getLegalDocumentCatalog(env = process.env) {
       type: "terms",
       label: "Terms of Use",
       version: cleanVersion(env.UNBOUND_TERMS_VERSION, DEFAULT_LEGAL_VERSIONS.terms),
+      url: cleanPolicyUrl(env.UNBOUND_TERMS_URL),
       required: true
     },
     {
       type: "privacy",
       label: "Privacy Notice",
       version: cleanVersion(env.UNBOUND_PRIVACY_VERSION, DEFAULT_LEGAL_VERSIONS.privacy),
+      url: cleanPolicyUrl(env.UNBOUND_PRIVACY_URL),
       required: true
     }
   ];
+}
+
+function legalPublishingState(env = process.env) {
+  const documents = getLegalDocumentCatalog(env);
+  const documentsPublished = documents.every(
+    (document) => document.url && !document.version.toLowerCase().includes("draft")
+  );
+  const acceptanceEnabled =
+    enabledFlag(env.UNBOUND_LEGAL_ACCEPTANCE_ENABLED) && documentsPublished;
+  const enforcementEnabled =
+    acceptanceEnabled && enabledFlag(env.UNBOUND_LEGAL_ENFORCEMENT_ENABLED);
+
+  return {
+    documents,
+    documentsPublished,
+    acceptanceEnabled,
+    enforcementEnabled
+  };
 }
 
 function buildLegalConsentStatus({ acceptedRows = [], env = process.env } = {}) {
@@ -45,7 +83,8 @@ function buildLegalConsentStatus({ acceptedRows = [], env = process.env } = {}) 
     });
   }
 
-  const documents = getLegalDocumentCatalog(env).map((document) => {
+  const publishing = legalPublishingState(env);
+  const documents = publishing.documents.map((document) => {
     const acceptance = acceptedMap.get(`${document.type}:${document.version}`) || null;
     return {
       ...document,
@@ -55,7 +94,9 @@ function buildLegalConsentStatus({ acceptedRows = [], env = process.env } = {}) 
   });
 
   return {
-    enforcementEnabled: false,
+    documentsPublished: publishing.documentsPublished,
+    acceptanceEnabled: publishing.acceptanceEnabled,
+    enforcementEnabled: publishing.enforcementEnabled,
     allCurrentAccepted: documents.every((document) => !document.required || document.accepted),
     documents
   };
@@ -66,5 +107,6 @@ module.exports = {
   DEFAULT_LEGAL_VERSIONS,
   normalizeLegalDocumentType,
   getLegalDocumentCatalog,
+  legalPublishingState,
   buildLegalConsentStatus
 };
