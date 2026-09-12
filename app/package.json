@@ -7,7 +7,7 @@
     "start": "node server.js",
     "check": "node scripts/validate-source.js",
     "security-check": "node scripts/security-contract.js",
-    "regression-check": "node scripts/regression-contract.js && node scripts/request-id-contract.js && node scripts/age-verification-contract.js",
+    "regression-check": "node scripts/regression-contract.js && node scripts/request-id-contract.js && node scripts/age-verification-contract.js && node scripts/billing-contract.js",
     "ci": "npm run check && npm run security-check && npm run regression-check && npm audit --omit=dev --audit-level=moderate"
   },
   "engines": {
