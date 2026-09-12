@@ -213,6 +213,17 @@
       color: #fff3df;
     }
 
+    .account-button.danger {
+      border-color: rgba(255, 118, 118, 0.34);
+      background: rgba(120, 24, 32, 0.22);
+      color: #ffd4d4;
+    }
+
+    .account-button.danger:hover {
+      border-color: rgba(255, 118, 118, 0.62);
+      background: rgba(142, 28, 38, 0.36);
+    }
+
     .user-menu {
       display: flex;
       align-items: center;
@@ -1087,6 +1098,40 @@
       text-align: center;
       line-height: 1.5;
     }
+
+    .delete-account-warning {
+      margin: 0 0 16px;
+      padding: 13px 14px;
+      border: 1px solid rgba(255, 118, 118, 0.30);
+      border-radius: 12px;
+      background: rgba(105, 18, 27, 0.24);
+      color: #ffd7d7;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .delete-account-warning strong {
+      color: #ffffff;
+    }
+
+    .delete-account-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin-top: 5px;
+    }
+
+    .auth-submit.danger {
+      border-color: rgba(255, 118, 118, 0.46);
+      background: linear-gradient(135deg, rgba(159, 35, 47, 0.86), rgba(100, 20, 29, 0.92));
+      color: #ffffff;
+    }
+
+    .auth-submit.secondary {
+      border-color: rgba(107, 193, 255, 0.24);
+      background: rgba(66, 165, 255, 0.08);
+      color: #d9efff;
+    }
   </style>
 </head>
 
@@ -1120,6 +1165,7 @@
           </div>
         </div>
         <button id="adminButton" class="account-button primary" type="button" hidden>ADMIN</button>
+        <button id="deleteAccountButton" class="account-button danger" type="button" hidden>DELETE ACCOUNT</button>
         <button id="logoutButton" class="logout-button" type="button">LOG OUT</button>
       </div>
     </div>
@@ -1258,6 +1304,46 @@
     </section>
   </div>
 
+
+
+  <div id="deleteAccountModal" class="auth-modal" hidden>
+    <section class="auth-card" role="dialog" aria-modal="true" aria-labelledby="deleteAccountTitle">
+      <div class="auth-card-head">
+        <div>
+          <h2 id="deleteAccountTitle">Delete UNBOUND AI Account</h2>
+          <p>This is permanent and cannot be undone.</p>
+        </div>
+        <button id="deleteAccountCloseButton" class="auth-close" type="button" aria-label="Close">×</button>
+      </div>
+
+      <div class="auth-body">
+        <div class="delete-account-warning">
+          <strong>This permanently deletes your account and saved conversations.</strong>
+          Active sessions, subscription records, entitlement overrides, and complimentary grants tied to the account are removed. Retained operational usage/audit records are detached from your user ID and identifying audit email fields are scrubbed.
+        </div>
+
+        <div id="deleteAccountFeedback" class="auth-feedback" role="status" aria-live="polite"></div>
+
+        <form id="deleteAccountForm" class="auth-form" autocomplete="off">
+          <div class="auth-field">
+            <label for="deleteAccountPassword">Current password</label>
+            <input id="deleteAccountPassword" name="password" type="password" autocomplete="current-password" maxlength="200" required />
+          </div>
+
+          <div class="auth-field">
+            <label for="deleteAccountConfirmation">Type DELETE to confirm</label>
+            <input id="deleteAccountConfirmation" name="confirmation" type="text" autocomplete="off" maxlength="20" placeholder="DELETE" required />
+          </div>
+
+          <div class="delete-account-actions">
+            <button id="deleteAccountCancelButton" class="auth-submit secondary" type="button">CANCEL</button>
+            <button id="deleteAccountSubmitButton" class="auth-submit danger" type="submit">DELETE FOREVER</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script>
@@ -1290,6 +1376,7 @@
     const signInButton = document.getElementById("signInButton");
     const adminButton = document.getElementById("adminButton");
     const createAccountButton = document.getElementById("createAccountButton");
+    const deleteAccountButton = document.getElementById("deleteAccountButton");
     const logoutButton = document.getElementById("logoutButton");
     const userAvatar = document.getElementById("userAvatar");
     const userName = document.getElementById("userName");
@@ -1304,6 +1391,14 @@
     const loginSubmit = document.getElementById("loginSubmit");
     const registerSubmit = document.getElementById("registerSubmit");
     const authFeedback = document.getElementById("authFeedback");
+    const deleteAccountModal = document.getElementById("deleteAccountModal");
+    const deleteAccountCloseButton = document.getElementById("deleteAccountCloseButton");
+    const deleteAccountCancelButton = document.getElementById("deleteAccountCancelButton");
+    const deleteAccountForm = document.getElementById("deleteAccountForm");
+    const deleteAccountPassword = document.getElementById("deleteAccountPassword");
+    const deleteAccountConfirmation = document.getElementById("deleteAccountConfirmation");
+    const deleteAccountSubmitButton = document.getElementById("deleteAccountSubmitButton");
+    const deleteAccountFeedback = document.getElementById("deleteAccountFeedback");
     const toast = document.getElementById("toast");
 
     let currentUser = null;
@@ -2037,6 +2132,7 @@
         userPlan.textContent = planLabelForUser(currentUser);
         userPlan.classList.toggle("gift", Boolean(currentUser.complimentaryTopTier));
         adminButton.hidden = currentUser.role !== "admin";
+        deleteAccountButton.hidden = currentUser.role === "admin";
         historyButton.hidden = false;
         return;
       }
@@ -2048,6 +2144,7 @@
       userPlan.textContent = "FREE";
       userPlan.classList.remove("gift");
       adminButton.hidden = true;
+      deleteAccountButton.hidden = true;
       historyButton.hidden = true;
     }
 
@@ -2358,6 +2455,110 @@
       }
     }
 
+
+
+    function clearDeleteAccountFeedback() {
+      deleteAccountFeedback.className = "auth-feedback";
+      deleteAccountFeedback.textContent = "";
+    }
+
+    function showDeleteAccountFeedback(message, type = "error") {
+      deleteAccountFeedback.className = `auth-feedback visible ${type}`;
+      deleteAccountFeedback.textContent = message;
+    }
+
+    function openDeleteAccount() {
+      if (!currentUser || currentUser.role === "admin") {
+        showToast("Account deletion is not available for this account here.");
+        return;
+      }
+
+      deleteAccountForm.reset();
+      clearDeleteAccountFeedback();
+      deleteAccountModal.hidden = false;
+      document.body.classList.add("modal-open");
+      window.setTimeout(() => deleteAccountPassword.focus(), 0);
+    }
+
+    function closeDeleteAccount() {
+      if (deleteAccountSubmitButton.disabled) return;
+      deleteAccountModal.hidden = true;
+      deleteAccountForm.reset();
+      clearDeleteAccountFeedback();
+      if (authModal.hidden && historyModal.hidden) {
+        document.body.classList.remove("modal-open");
+      }
+    }
+
+    function setDeleteAccountBusy(isBusy) {
+      deleteAccountSubmitButton.disabled = isBusy;
+      deleteAccountCancelButton.disabled = isBusy;
+      deleteAccountCloseButton.disabled = isBusy;
+      deleteAccountSubmitButton.textContent = isBusy
+        ? "DELETING..."
+        : "DELETE FOREVER";
+    }
+
+    async function handleDeleteAccount(event) {
+      event.preventDefault();
+      clearDeleteAccountFeedback();
+
+      if (!currentUser) {
+        closeDeleteAccount();
+        return;
+      }
+
+      const password = deleteAccountPassword.value;
+      const confirmation = deleteAccountConfirmation.value.trim();
+
+      if (!password) {
+        showDeleteAccountFeedback("Enter your current password.");
+        return;
+      }
+
+      if (confirmation !== "DELETE") {
+        showDeleteAccountFeedback("Type DELETE exactly to confirm.");
+        return;
+      }
+
+      const deletedUserId = String(currentUser.id || "");
+      setDeleteAccountBusy(true);
+
+      try {
+        const response = await fetch("/api/account", {
+          method: "DELETE",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password, confirmation })
+        });
+        const data = await readJson(response);
+
+        if (!response.ok || data.deleted !== true) {
+          throw new Error(data.error || "Account deletion failed.");
+        }
+
+        if (deletedUserId) {
+          localStorage.removeItem(`${STORAGE_KEY_BASE}-user-${deletedUserId}`);
+          localStorage.removeItem(`${DEPTH_STYLE_KEY_BASE}-user-${deletedUserId}`);
+          localStorage.removeItem(`${PRODUCT_MODE_KEY_BASE}-user-${deletedUserId}`);
+        }
+
+        deleteAccountModal.hidden = true;
+        deleteAccountForm.reset();
+        currentUser = null;
+        activeConversationId = null;
+        conversationHistory = [];
+        document.body.classList.remove("modal-open");
+        renderAccountUi();
+        await switchConversationScope();
+        showToast("Your UNBOUND AI account was permanently deleted.");
+      } catch (error) {
+        showDeleteAccountFeedback(error.message || "Account deletion failed.");
+      } finally {
+        setDeleteAccountBusy(false);
+      }
+    }
+
     async function handleLogout() {
       logoutButton.disabled = true;
 
@@ -2411,6 +2612,10 @@
 
     signInButton.addEventListener("click", () => openAuth("login"));
     createAccountButton.addEventListener("click", () => openAuth("register"));
+    deleteAccountButton.addEventListener("click", openDeleteAccount);
+    deleteAccountCloseButton.addEventListener("click", closeDeleteAccount);
+    deleteAccountCancelButton.addEventListener("click", closeDeleteAccount);
+    deleteAccountForm.addEventListener("submit", handleDeleteAccount);
     logoutButton.addEventListener("click", handleLogout); 
 adminButton.addEventListener("click", () => {
   window.location.href = "/admin.html";
@@ -2433,8 +2638,18 @@ adminButton.addEventListener("click", () => {
       }
     });
 
+    deleteAccountModal.addEventListener("click", (event) => {
+      if (event.target === deleteAccountModal) {
+        closeDeleteAccount();
+      }
+    });
+
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
+      if (!deleteAccountModal.hidden) {
+        closeDeleteAccount();
+        return;
+      }
       if (!historyModal.hidden) {
         closeHistory();
         return;

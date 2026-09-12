@@ -905,6 +905,122 @@ app.get(
   }
 );
 
+
+
+app.delete(
+  "/api/account",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    const password =
+      typeof req.body.password === "string" ? req.body.password : "";
+    const confirmation =
+      typeof req.body.confirmation === "string"
+        ? req.body.confirmation.trim()
+        : "";
+
+    if (confirmation !== "DELETE") {
+      return res.status(400).json({
+        error: 'Type DELETE exactly to confirm permanent account deletion.'
+      });
+    }
+
+    if (!password || password.length > 200) {
+      return res.status(400).json({
+        error: "Enter your current password to delete your account."
+      });
+    }
+
+    const ownerEmail = normalizeEmail(process.env.OWNER_EMAIL);
+    if (ownerEmail && normalizeEmail(req.user.email) === ownerEmail) {
+      return res.status(403).json({
+        error:
+          "The platform owner account cannot be deleted from the public account-deletion flow."
+      });
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const lockedUserResult = await client.query(
+        `SELECT id, email, password_hash
+         FROM users
+         WHERE id = $1
+         LIMIT 1
+         FOR UPDATE`,
+        [req.user.id]
+      );
+      const lockedUser = lockedUserResult.rows[0];
+
+      if (!lockedUser) {
+        await client.query("ROLLBACK");
+        clearSessionCookie(res);
+        return res.status(404).json({ error: "Account not found." });
+      }
+
+      const passwordMatches = await verifyPassword(
+        password,
+        lockedUser.password_hash
+      );
+
+      if (!passwordMatches) {
+        await client.query("ROLLBACK");
+        return res.status(401).json({ error: "Current password is incorrect." });
+      }
+
+      // Audit records are intentionally retained for platform integrity, but
+      // identifying account email fields are scrubbed before the user row is
+      // deleted. Foreign-key user IDs become NULL through ON DELETE SET NULL.
+      await client.query(
+        `UPDATE admin_audit_log
+         SET target_email = NULL
+         WHERE target_user_id = $1`,
+        [lockedUser.id]
+      );
+      await client.query(
+        `UPDATE admin_audit_log
+         SET admin_email = 'deleted-account'
+         WHERE admin_user_id = $1`,
+        [lockedUser.id]
+      );
+
+      const deleted = await client.query(
+        `DELETE FROM users
+         WHERE id = $1
+         RETURNING id`,
+        [lockedUser.id]
+      );
+
+      if (!deleted.rows[0]) {
+        throw new Error("Account deletion did not remove the user record.");
+      }
+
+      await client.query("COMMIT");
+      clearSessionCookie(res);
+
+      return res.json({
+        ok: true,
+        deleted: true
+      });
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error("UNBOUND AI ACCOUNT DELETE ROLLBACK ERROR:", rollbackError);
+      }
+
+      console.error("UNBOUND AI ACCOUNT DELETE ERROR:", error);
+      return res.status(500).json({
+        error: "Could not delete the account. No partial deletion was accepted."
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 /* ------------------------- CONVERSATION HISTORY ------------------------ */
 
 function conversationTitleFromMessage(value) {
