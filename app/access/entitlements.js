@@ -92,8 +92,8 @@ const CAPABILITY_CATALOG = Object.freeze({
   }),
   file_analysis: Object.freeze({
     label: "File analysis",
-    description: "Upload and analyze supported documents and data files.",
-    implemented: false,
+    description: "Upload and analyze supported documents and data files without storing the raw upload in UNBOUND AI.",
+    implemented: true,
     minimumPlan: "top"
   }),
   image_tools: Object.freeze({

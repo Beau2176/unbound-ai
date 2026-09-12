@@ -8,6 +8,9 @@ const {
   integrateBillingServerSource
 } = require("./billing/server-integration");
 const {
+  integrateFileAnalysisServerSource
+} = require("./files/server-integration");
+const {
   registerBuiltInAgeVerificationProviders
 } = require("./age/providers/register");
 
@@ -19,7 +22,8 @@ function compileIntegratedServer({
 
   const source = fs.readFileSync(serverPath, "utf8");
   const emailIntegratedSource = integrateEmailVerificationServerSource(source);
-  const integratedSource = integrateBillingServerSource(emailIntegratedSource);
+  const billingIntegratedSource = integrateBillingServerSource(emailIntegratedSource);
+  const integratedSource = integrateFileAnalysisServerSource(billingIntegratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
   runtimeModule.filename = serverPath;

@@ -23,6 +23,10 @@ function providerSupportsResearch(provider) {
   return typeof provider?.supportsResearch === "function" && provider.supportsResearch();
 }
 
+function providerSupportsFileAnalysis(provider) {
+  return typeof provider?.supportsFileAnalysis === "function" && provider.supportsFileAnalysis();
+}
+
 function getGatewayStatus() {
   const name = normalizeProviderName(process.env.AI_PROVIDER);
   const provider = providers.get(name);
@@ -34,6 +38,7 @@ function getGatewayStatus() {
       model: null,
       streaming: false,
       research: false,
+      fileAnalysis: false,
       error: "unsupported-provider"
     };
   }
@@ -44,6 +49,7 @@ function getGatewayStatus() {
     model: provider.getModel(),
     streaming: typeof provider.streamChat === "function",
     research: providerSupportsResearch(provider),
+    fileAnalysis: providerSupportsFileAnalysis(provider),
     error: provider.isConfigured() ? null : "provider-not-configured"
   };
 }
@@ -74,9 +80,20 @@ async function streamChat({ instructions, input, model, onDelta }) {
   return provider.streamChat({ instructions, input, model, onDelta });
 }
 
+async function analyzeFile(options = {}) {
+  const provider = getProvider();
+  if (!providerSupportsFileAnalysis(provider) || typeof provider.analyzeFile !== "function") {
+    const error = new Error(`AI provider '${provider.id}' does not support file analysis.`);
+    error.code = "AI_PROVIDER_FILE_ANALYSIS_UNSUPPORTED";
+    throw error;
+  }
+  return provider.analyzeFile(options);
+}
+
 module.exports = {
   generateChat,
   streamChat,
+  analyzeFile,
   getGatewayStatus,
   normalizeProviderName
 };

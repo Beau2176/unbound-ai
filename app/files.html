@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#050913" />
+  <title>UNBOUND AI — File Analysis</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #050913;
+      --panel: rgba(7, 14, 27, 0.93);
+      --panel-soft: rgba(11, 20, 36, 0.86);
+      --text: #f7fbff;
+      --muted: #aab8c9;
+      --blue: #6bc1ff;
+      --gold: #ffad43;
+      --success: #65e8a4;
+      --danger: #ff8888;
+      --line: rgba(107, 193, 255, 0.26);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        linear-gradient(180deg, rgba(2,6,14,.22), rgba(2,6,14,.92)),
+        url("/unbound-cosmic.png") center top / cover fixed no-repeat,
+        var(--bg);
+    }
+    a { color: var(--blue); }
+    button, input, textarea, select { font: inherit; }
+    :where(button, input, textarea, select, a[href]):focus-visible {
+      outline: 3px solid #ffd297;
+      outline-offset: 3px;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 14px clamp(16px, 4vw, 36px);
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      background: rgba(3,8,16,.82);
+      backdrop-filter: blur(16px);
+    }
+    .brand { font-weight: 900; letter-spacing: .16em; }
+    .brand span { color: #42a5ff; }
+    .nav {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(66,165,255,.08);
+      color: #e8f6ff;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 850;
+    }
+    main {
+      width: min(1000px, calc(100% - 28px));
+      margin: 0 auto;
+      padding: 38px 0 70px;
+    }
+    .hero { margin-bottom: 20px; }
+    .eyebrow { color: var(--gold); font-size: 12px; font-weight: 900; letter-spacing: .12em; }
+    h1 { margin: 8px 0; font-size: clamp(32px, 6vw, 54px); line-height: 1.05; }
+    .hero p { max-width: 760px; margin: 0; color: #c6d5e3; line-height: 1.65; }
+    .layout { display: grid; grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr); gap: 18px; align-items: start; }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--panel);
+      box-shadow: 0 24px 70px rgba(0,0,0,.4);
+      padding: clamp(18px, 3vw, 28px);
+    }
+    .field { display: grid; gap: 7px; margin-bottom: 15px; }
+    label { font-size: 12px; font-weight: 850; color: #eaf6ff; }
+    input[type="file"], textarea, select {
+      width: 100%;
+      border: 1px solid rgba(107,193,255,.25);
+      border-radius: 12px;
+      background: rgba(0,0,0,.24);
+      color: var(--text);
+      padding: 11px 12px;
+    }
+    input[type="file"] { padding: 10px; }
+    textarea { min-height: 150px; resize: vertical; line-height: 1.5; }
+    .help { color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .file-meta {
+      display: grid;
+      gap: 7px;
+      margin: 12px 0 15px;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255,255,255,.035);
+      color: #dceafa;
+      font-size: 11px;
+    }
+    .actions { display: flex; gap: 9px; flex-wrap: wrap; }
+    .primary, .secondary {
+      min-height: 43px;
+      padding: 10px 15px;
+      border-radius: 11px;
+      cursor: pointer;
+      font-weight: 900;
+      letter-spacing: .04em;
+    }
+    .primary {
+      border: 1px solid rgba(255,173,67,.48);
+      background: linear-gradient(135deg, rgba(255,173,67,.88), rgba(66,165,255,.8));
+      color: #07111c;
+    }
+    .secondary {
+      border: 1px solid var(--line);
+      background: rgba(66,165,255,.08);
+      color: #e8f6ff;
+    }
+    button:disabled { opacity: .52; cursor: not-allowed; }
+    .status {
+      margin-bottom: 14px;
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .status[data-kind="success"] { color: var(--success); }
+    .status[data-kind="error"] { color: #ffb0b0; }
+    .result-head { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:12px; }
+    .result-head h2 { margin: 0; font-size: 18px; }
+    .result {
+      min-height: 320px;
+      max-height: 70vh;
+      overflow: auto;
+      padding: 16px;
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 14px;
+      background: rgba(0,0,0,.24);
+      color: #edf7ff;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      line-height: 1.65;
+      font-size: 14px;
+    }
+    .privacy {
+      margin-top: 17px;
+      padding: 13px 14px;
+      border-left: 3px solid var(--gold);
+      background: rgba(255,173,67,.06);
+      color: #d6e2ed;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    .usage { margin-top: 10px; color: var(--muted); font-size: 10px; }
+    [hidden] { display: none !important; }
+    @media (max-width: 780px) {
+      .layout { grid-template-columns: 1fr; }
+      .topbar { align-items: flex-start; }
+      .result { min-height: 240px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">UNBOUND <span>AI</span> · FILES</div>
+    <a class="nav" href="/">BACK TO CHAT</a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="eyebrow">TOP CAPABILITY</div>
+      <h1>Analyze a file without keeping the raw upload.</h1>
+      <p>Ask UNBOUND AI to summarize, extract, compare, explain, or inspect supported documents. The browser sends the selected file only for the current analysis request; UNBOUND AI does not write the raw file to its database or application filesystem.</p>
+    </section>
+
+    <div class="layout">
+      <section class="card" aria-labelledby="fileFormTitle">
+        <h2 id="fileFormTitle" style="margin-top:0;">File analysis</h2>
+        <div id="accessStatus" class="status" role="status" aria-live="polite">Checking TOP access…</div>
+
+        <form id="fileAnalysisForm">
+          <div class="field">
+            <label for="fileInput">Choose a file</label>
+            <input id="fileInput" type="file" disabled />
+            <div id="acceptedTypes" class="help">Loading supported types…</div>
+          </div>
+
+          <div id="fileMeta" class="file-meta" hidden></div>
+
+          <div id="pdfDetailField" class="field" hidden>
+            <label for="pdfDetail">PDF visual detail</label>
+            <select id="pdfDetail">
+              <option value="low" selected>LOW — lower token cost</option>
+              <option value="auto">AUTO</option>
+              <option value="high">HIGH — best for small print, charts, diagrams</option>
+            </select>
+            <div class="help">PDF text is still included. Higher visual detail can use more input tokens.</div>
+          </div>
+
+          <div class="field">
+            <label for="analysisPrompt">What should UNBOUND AI do with this file?</label>
+            <textarea id="analysisPrompt" maxlength="4000" disabled placeholder="Example: Summarize this document and list the five most important action items."></textarea>
+            <div class="help">Leave blank for a general summary, key facts, issues, and practical takeaways.</div>
+          </div>
+
+          <div class="actions">
+            <button id="analyzeButton" class="primary" type="submit" disabled>ANALYZE FILE</button>
+            <button id="clearButton" class="secondary" type="button" disabled>CLEAR</button>
+          </div>
+        </form>
+
+        <div class="privacy">
+          <strong>Privacy boundary:</strong> this page does not save the raw file in UNBOUND AI history. File content is sent to the configured AI provider for analysis. UNBOUND requests no provider-side Response storage for these requests. Provider abuse/safety handling can still apply under the provider's data controls, including special handling for file/image inputs.
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="resultTitle">
+        <div class="result-head">
+          <h2 id="resultTitle">Analysis</h2>
+          <button id="copyButton" class="secondary" type="button" disabled>COPY</button>
+        </div>
+        <div id="requestStatus" class="status" role="status" aria-live="polite">Choose a supported file when access is ready.</div>
+        <div id="analysisResult" class="result">No analysis yet.</div>
+        <div id="usage" class="usage"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const form = document.getElementById("fileAnalysisForm");
+    const fileInput = document.getElementById("fileInput");
+    const promptInput = document.getElementById("analysisPrompt");
+    const detailInput = document.getElementById("pdfDetail");
+    const pdfDetailField = document.getElementById("pdfDetailField");
+    const analyzeButton = document.getElementById("analyzeButton");
+    const clearButton = document.getElementById("clearButton");
+    const copyButton = document.getElementById("copyButton");
+    const accessStatus = document.getElementById("accessStatus");
+    const requestStatus = document.getElementById("requestStatus");
+    const result = document.getElementById("analysisResult");
+    const usage = document.getElementById("usage");
+    const fileMeta = document.getElementById("fileMeta");
+    const acceptedTypes = document.getElementById("acceptedTypes");
+
+    let limits = null;
+    let busy = false;
+
+    function setStatus(element, message, kind = "") {
+      element.textContent = message;
+      element.dataset.kind = kind;
+    }
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes)) return "—";
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    }
+
+    function extensionOf(name) {
+      const index = String(name || "").lastIndexOf(".");
+      return index >= 0 ? String(name).slice(index).toLowerCase() : "";
+    }
+
+    function refreshControls() {
+      const file = fileInput.files?.[0] || null;
+      const accessReady = Boolean(limits);
+      fileInput.disabled = !accessReady || busy;
+      promptInput.disabled = !accessReady || busy;
+      analyzeButton.disabled = !accessReady || !file || busy;
+      clearButton.disabled = !accessReady || busy;
+      copyButton.disabled = busy || !result.textContent || result.textContent === "No analysis yet.";
+      pdfDetailField.hidden = extensionOf(file?.name) !== ".pdf";
+    }
+
+    function clearWorkspace() {
+      form.reset();
+      fileMeta.hidden = true;
+      fileMeta.textContent = "";
+      result.textContent = "No analysis yet.";
+      usage.textContent = "";
+      setStatus(requestStatus, "Choose a supported file when access is ready.");
+      refreshControls();
+    }
+
+    async function loadStatus() {
+      try {
+        const response = await fetch("/api/file-analysis/status", {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" }
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error("Sign in from the main chat before using File Analysis.");
+          }
+          if (response.status === 403) {
+            throw new Error("File Analysis is a TOP capability. This account does not currently have usable TOP file-analysis access.");
+          }
+          throw new Error(payload.error || "File Analysis is not available right now.");
+        }
+        if (!payload.configured || !payload.limits) {
+          throw new Error("File Analysis is not connected to an available AI provider yet.");
+        }
+
+        limits = payload.limits;
+        fileInput.accept = limits.acceptedExtensions.join(",");
+        acceptedTypes.textContent =
+          `${limits.acceptedExtensions.join(", ")} · maximum ${formatBytes(limits.maxFileBytes)}`;
+        promptInput.maxLength = Number(limits.maxPromptChars || 4000);
+        setStatus(
+          accessStatus,
+          `Ready · ${String(payload.provider || "AI").toUpperCase()} · ${payload.model || "configured model"}`,
+          "success"
+        );
+        refreshControls();
+      } catch (error) {
+        limits = null;
+        setStatus(accessStatus, error.message || "File Analysis is unavailable.", "error");
+        setStatus(requestStatus, "Open the main chat to sign in or review Account Access.", "error");
+        refreshControls();
+      }
+    }
+
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files?.[0] || null;
+      if (!file) {
+        fileMeta.hidden = true;
+        refreshControls();
+        return;
+      }
+
+      const extension = extensionOf(file.name);
+      const supported = limits?.acceptedExtensions?.includes(extension);
+      const sizeOkay = limits && file.size > 0 && file.size <= limits.maxFileBytes;
+      fileMeta.hidden = false;
+      fileMeta.textContent = `${file.name} · ${formatBytes(file.size)}${supported ? "" : " · unsupported type"}${sizeOkay ? "" : " · invalid size"}`;
+
+      if (!supported) {
+        setStatus(requestStatus, "That file type is not supported.", "error");
+      } else if (!sizeOkay) {
+        setStatus(requestStatus, `Choose a non-empty file no larger than ${formatBytes(limits.maxFileBytes)}.`, "error");
+      } else {
+        setStatus(requestStatus, "Ready to analyze.", "success");
+      }
+      refreshControls();
+      if (!supported || !sizeOkay) analyzeButton.disabled = true;
+    });
+
+    function readFileBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const value = String(reader.result || "");
+          const comma = value.indexOf(",");
+          if (comma < 0) return reject(new Error("Could not encode that file."));
+          resolve(value.slice(comma + 1));
+        };
+        reader.onerror = () => reject(new Error("Could not read that file."));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (busy || !limits) return;
+      const file = fileInput.files?.[0];
+      if (!file) return;
+
+      const extension = extensionOf(file.name);
+      if (!limits.acceptedExtensions.includes(extension) || file.size <= 0 || file.size > limits.maxFileBytes) {
+        setStatus(requestStatus, "Choose a supported file within the size limit.", "error");
+        return;
+      }
+
+      busy = true;
+      refreshControls();
+      result.textContent = "Analyzing…";
+      usage.textContent = "";
+      setStatus(requestStatus, "Reading the file in your browser…");
+
+      try {
+        const fileBase64 = await readFileBase64(file);
+        setStatus(requestStatus, "Sending this file for one analysis request…");
+        const response = await fetch("/api/file-analysis", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json"
+          },
+          body: JSON.stringify({
+            filename: file.name,
+            fileBase64,
+            prompt: promptInput.value,
+            detail: extension === ".pdf" ? detailInput.value : undefined
+          })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.error || "UNBOUND AI could not analyze that file.");
+        }
+
+        result.textContent = payload.analysis || "The provider returned no analysis text.";
+        const tokenUsage = payload.usage;
+        usage.textContent = tokenUsage
+          ? `Model: ${payload.model || "—"} · input ${tokenUsage.inputTokens.toLocaleString()} tokens · output ${tokenUsage.outputTokens.toLocaleString()} tokens · total ${tokenUsage.totalTokens.toLocaleString()} tokens`
+          : `Model: ${payload.model || "—"}`;
+        setStatus(requestStatus, `Analysis complete · ${payload.file?.name || file.name}`, "success");
+      } catch (error) {
+        result.textContent = "No analysis available.";
+        setStatus(requestStatus, error.message || "File analysis failed.", "error");
+      } finally {
+        busy = false;
+        refreshControls();
+      }
+    });
+
+    clearButton.addEventListener("click", clearWorkspace);
+
+    copyButton.addEventListener("click", async () => {
+      const text = result.textContent || "";
+      if (!text || text === "No analysis yet.") return;
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus(requestStatus, "Analysis copied.", "success");
+      } catch {
+        setStatus(requestStatus, "Could not copy automatically. Select the analysis text manually.", "error");
+      }
+    });
+
+    loadStatus();
+  </script>
+</body>
+</html>
