@@ -51,6 +51,11 @@ const {
   buildNewDeviceAlert,
   getSecurityAlertStatus
 } = require("./security/alerts");
+const {
+  getSignInRiskConfig,
+  buildRepeatedFailureAlert,
+  getSignInRiskStatus
+} = require("./security/signin-risk");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -62,6 +67,7 @@ const GUEST_RATE_COOKIE = "unbound_guest_rate";
 const GUEST_RATE_DAYS = 1;
 const PASSKEY_FLOW_COOKIE = "unbound_passkey_flow";
 const RATE_LIMIT_POLICY = getRateLimitPolicy();
+const SIGNIN_RISK_CONFIG = getSignInRiskConfig();
 const RATE_LIMIT_SECRET =
   process.env.RATE_LIMIT_HASH_SECRET ||
   process.env.DATABASE_URL ||
@@ -707,6 +713,62 @@ async function writeSecurityAlert(
     ]
   );
   return result.rows[0] || null;
+}
+
+
+async function recordFailedPasswordSignIn(userId, req) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock($1::bigint)", [userId]);
+
+    await writeSecurityEvent(
+      client,
+      userId,
+      "auth.password_failed",
+      null,
+      { label: coarseDeviceLabel(req) },
+      "warning"
+    );
+
+    const countResult = await client.query(
+      `SELECT COUNT(*)::int AS failures
+       FROM account_security_events
+       WHERE user_id = $1
+         AND event_type = 'auth.password_failed'
+         AND created_at >= NOW() - ($2::int * INTERVAL '1 minute')`,
+      [userId, SIGNIN_RISK_CONFIG.failedPasswordWindowMinutes]
+    );
+    const failures = Number(countResult.rows[0]?.failures || 0);
+
+    if (failures >= SIGNIN_RISK_CONFIG.failedPasswordThreshold) {
+      const existingAlert = await client.query(
+        `SELECT id
+         FROM account_security_alerts
+         WHERE user_id = $1
+           AND event_type = 'auth.repeated_failed_sign_in'
+           AND created_at >= NOW() - ($2::int * INTERVAL '1 minute')
+         LIMIT 1`,
+        [userId, SIGNIN_RISK_CONFIG.failedPasswordWindowMinutes]
+      );
+
+      if (!existingAlert.rows[0]) {
+        const alert = buildRepeatedFailureAlert({
+          count: failures,
+          windowMinutes: SIGNIN_RISK_CONFIG.failedPasswordWindowMinutes
+        });
+        await writeSecurityAlert(client, userId, alert);
+      }
+    }
+
+    await client.query("COMMIT");
+    return failures;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch (_) {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 function publicSecurityAlert(row) {
@@ -1797,7 +1859,8 @@ app.get("/api/health", (req, res) => {
     }),
     passkeys: getPasskeyStatus(),
     recovery: getRecoveryStatus(),
-    securityAlerts: getSecurityAlertStatus()
+    securityAlerts: getSecurityAlertStatus(),
+    signInRisk: getSignInRiskStatus()
   });
 });
 
@@ -1886,12 +1949,30 @@ app.post("/api/auth/login", requireDatabase, loginRateLimit, async (req, res) =>
       : false;
 
     if (!user || !passwordMatches) {
+      if (user && !passwordMatches) {
+        try {
+          await recordFailedPasswordSignIn(user.id, req);
+        } catch (securityError) {
+          console.error("UNBOUND AI FAILED SIGN-IN SECURITY LOG ERROR:", securityError);
+        }
+      }
       return res.status(401).json({
         error: "Email or password is incorrect."
       });
     }
 
-    await createSession(user.id, res, req);
+    const sessionResult = await createSession(user.id, res, req);
+    try {
+      await writeSecurityEvent(
+        pool,
+        user.id,
+        "auth.password_signed_in",
+        sessionResult?.device?.id || null,
+        { label: sessionResult?.device?.device_label || coarseDeviceLabel(req) }
+      );
+    } catch (securityError) {
+      console.error("UNBOUND AI SIGN-IN SECURITY LOG ERROR:", securityError);
+    }
 
     const grantResult = await pool.query(
       `SELECT EXISTS (
