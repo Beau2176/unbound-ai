@@ -48,7 +48,7 @@ function createEmailVerificationService(dependencies = {}) {
     }
 
     const url = new URL("/verify-email", origin);
-    url.searchParams.set("token", String(token || ""));
+    url.hash = new URLSearchParams({ token: String(token || "") }).toString();
     return url.toString();
   }
 
