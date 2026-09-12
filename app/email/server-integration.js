@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v0.56";
+const INTEGRATION_VERSION = "v0.57";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const firstIndex = source.indexOf(marker);
@@ -44,8 +44,16 @@ function integrateEmailVerificationServerSource(serverSource) {
   source = replaceExactlyOnce(
     source,
     importMarker,
-    `${importMarker}\nconst { initializeEmailVerificationSchema } = require("./email/store");\nconst { buildEmailDeliveryReadiness } = require("./email/readiness");\nconst {\n  createEmailVerificationRouter,\n  sendEmailVerificationPage\n} = require("./email/routes");`,
+    `${importMarker}\nconst { initializeEmailVerificationSchema } = require("./email/store");\nconst { buildEmailDeliveryReadiness } = require("./email/readiness");\nconst {\n  createEmailVerificationRouter,\n  sendEmailVerificationPage\n} = require("./email/routes");\nconst {\n  sendAccountIndexPage,\n  sendEmailAccountUiScript\n} = require("./email/account-page");`,
     "imports"
+  );
+
+  const indexRouteMarker = `app.get("/index.html", (req, res) => {\n  res.setHeader("Cache-Control", "no-cache");\n  return res.sendFile(path.join(__dirname, "index.html"));\n});`;
+  source = replaceExactlyOnce(
+    source,
+    indexRouteMarker,
+    `app.get("/index.html", sendAccountIndexPage);\napp.get("/email-account-ui.js", sendEmailAccountUiScript);`,
+    "account-index-route"
   );
 
   const pageMarker = 'app.get("/unbound-cosmic.png", (req, res) => {';
@@ -97,6 +105,14 @@ function integrateEmailVerificationServerSource(serverSource) {
     '    billing,\n    ageVerification,\n    emailDelivery,\n    ai,\n    launch,',
     1,
     "ops-email-delivery-output"
+  );
+
+  const rootRouteMarker = `app.get("/", (req, res) => {\n  res.setHeader("Cache-Control", "no-cache");\n  return res.sendFile(path.join(__dirname, "index.html"));\n});`;
+  source = replaceExactlyOnce(
+    source,
+    rootRouteMarker,
+    'app.get("/", sendAccountIndexPage);',
+    "account-root-route"
   );
 
   return source;
