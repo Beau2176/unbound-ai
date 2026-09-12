@@ -247,6 +247,12 @@ function readyLaunchFixture() {
       webhooks: true,
       webhookSecret: "REGRESSION_SECRET_MUST_NOT_LEAK"
     },
+    emailDelivery: {
+      launchReady: true,
+      provider: "test-email",
+      blockers: [],
+      secretAccessKey: "REGRESSION_SECRET_MUST_NOT_LEAK"
+    },
     ai: {
       configured: true,
       provider: "openai",
@@ -274,6 +280,11 @@ function testLaunchGate() {
       acceptanceEnabled: false,
       enforcementEnabled: false
     },
+    emailDelivery: {
+      launchReady: false,
+      provider: "none",
+      blockers: ["Email delivery not verified."]
+    },
     billing: {
       configured: false,
       checkout: false,
@@ -296,6 +307,7 @@ function testLaunchGate() {
     "database_recovery",
     "legal_published",
     "legal_enforcement",
+    "transactional_email",
     "billing_gateway",
     "age_verification_gateway"
   ]) {
