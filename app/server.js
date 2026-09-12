@@ -11,6 +11,11 @@ const {
   isKnownCapability,
   buildCapabilityAccess
 } = require("./access/entitlements");
+const {
+  normalizeSubscriptionStatus,
+  subscriptionStatusAllowsAccess,
+  getBillingGatewayStatus
+} = require("./billing/gateway");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -211,6 +216,26 @@ async function initializeDatabase() {
 
     CREATE INDEX IF NOT EXISTS account_subscriptions_status_idx
       ON account_subscriptions(status, plan_tier);
+
+    CREATE TABLE IF NOT EXISTS billing_webhook_events (
+      id BIGSERIAL PRIMARY KEY,
+      provider TEXT NOT NULL,
+      provider_event_id TEXT NOT NULL,
+      event_type TEXT,
+      status TEXT NOT NULL DEFAULT 'received',
+      payload_sha256 TEXT NOT NULL,
+      error_text TEXT,
+      received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      processed_at TIMESTAMPTZ,
+      UNIQUE(provider, provider_event_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS billing_webhook_events_received_idx
+      ON billing_webhook_events(received_at DESC);
+
+    CREATE INDEX IF NOT EXISTS billing_webhook_events_provider_status_idx
+      ON billing_webhook_events(provider, status, received_at DESC);
+
 
     CREATE TABLE IF NOT EXISTS account_entitlement_overrides (
       id BIGSERIAL PRIMARY KEY,
@@ -552,12 +577,6 @@ async function recordUsageEvent({
 }
 
 
-function subscriptionStatusAllowsAccess(status) {
-  return ["active", "trialing"].includes(
-    String(status || "").trim().toLowerCase()
-  );
-}
-
 async function loadAccountSubscription(userId, client = pool) {
   const result = await client.query(
     `SELECT
@@ -639,7 +658,7 @@ async function buildAccountAccess(user) {
     subscription: {
       connected: Boolean(subscription && subscription.provider),
       provider: subscription?.provider || null,
-      status: subscription?.status || "none",
+      status: normalizeSubscriptionStatus(subscription?.status),
       planTier: subscription ? normalizePlanTier(subscription.plan_tier) : null,
       currentPeriodStart: subscription?.current_period_start || null,
       currentPeriodEnd: subscription?.current_period_end || null,
@@ -802,7 +821,8 @@ app.get("/api/health", (req, res) => {
     database: databaseReady ? "connected" : "not-connected",
     accounts: databaseReady ? "ready" : "not-ready",
     ai: getGatewayStatus(),
-    commercial: databaseReady ? "entitlements-ready" : "not-ready"
+    commercial: databaseReady ? "entitlements-ready" : "not-ready",
+    billing: getBillingGatewayStatus()
   });
 });
 
@@ -2116,6 +2136,69 @@ app.delete(
 );
 
 
+
+
+app.get(
+  "/api/admin/billing/summary",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const [totalsResult, subscriptionsResult, webhookResult] = await Promise.all([
+        pool.query(`
+          SELECT
+            COUNT(*)::int AS records,
+            COUNT(*) FILTER (WHERE LOWER(status) IN ('active', 'trialing'))::int AS active_or_trialing,
+            COUNT(*) FILTER (WHERE cancel_at_period_end IS TRUE)::int AS cancel_at_period_end
+          FROM account_subscriptions
+        `),
+        pool.query(`
+          SELECT
+            COALESCE(NULLIF(provider, ''), 'unassigned') AS provider,
+            status,
+            plan_tier,
+            COUNT(*)::int AS records
+          FROM account_subscriptions
+          GROUP BY COALESCE(NULLIF(provider, ''), 'unassigned'), status, plan_tier
+          ORDER BY records DESC, provider, status, plan_tier
+        `),
+        pool.query(`
+          SELECT
+            COUNT(*)::int AS events_30d,
+            COUNT(*) FILTER (WHERE status = 'processed')::int AS processed_30d,
+            COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_30d
+          FROM billing_webhook_events
+          WHERE received_at >= NOW() - INTERVAL '30 days'
+        `)
+      ]);
+
+      const totals = totalsResult.rows[0] || {};
+      const webhookTotals = webhookResult.rows[0] || {};
+
+      return res.json({
+        gateway: getBillingGatewayStatus(),
+        totals: {
+          subscriptionRecords: Number(totals.records || 0),
+          activeOrTrialing: Number(totals.active_or_trialing || 0),
+          cancelAtPeriodEnd: Number(totals.cancel_at_period_end || 0),
+          webhookEvents30d: Number(webhookTotals.events_30d || 0),
+          webhookProcessed30d: Number(webhookTotals.processed_30d || 0),
+          webhookFailed30d: Number(webhookTotals.failed_30d || 0)
+        },
+        subscriptions: subscriptionsResult.rows.map((row) => ({
+          provider: row.provider,
+          status: normalizeSubscriptionStatus(row.status),
+          rawStatus: row.status,
+          planTier: normalizePlanTier(row.plan_tier),
+          records: Number(row.records || 0)
+        }))
+      });
+    } catch (error) {
+      console.error("UNBOUND AI ADMIN BILLING SUMMARY ERROR:", error);
+      return res.status(500).json({ error: "Could not load billing foundation status." });
+    }
+  }
+);
 
 app.get(
   "/api/admin/overview",

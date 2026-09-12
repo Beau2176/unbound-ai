@@ -558,6 +558,43 @@
     </section>
 
 
+
+
+    <section class="card section">
+      <div class="section-head">
+        <div>
+          <h2>Billing Foundation</h2>
+          <p>Provider-neutral subscription state and webhook-readiness. No payment processor is selected until compatibility is approved.</p>
+        </div>
+        <button class="btn" id="refreshBilling" type="button">Refresh Billing</button>
+      </div>
+
+      <section class="stats">
+        <div class="card stat"><div class="label">Billing Adapter</div><div class="value" id="billingAdapter">—</div></div>
+        <div class="card stat"><div class="label">Subscription Records</div><div class="value" id="billingRecords">—</div></div>
+        <div class="card stat"><div class="label">Active / Trialing</div><div class="value" id="billingActive">—</div></div>
+        <div class="card stat"><div class="label">Webhook Events 30d</div><div class="value" id="billingWebhooks">—</div></div>
+      </section>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Status</th>
+              <th>Plan</th>
+              <th>Records</th>
+            </tr>
+          </thead>
+          <tbody id="billingSubscriptionsBody">
+            <tr><td colspan="4" class="loading">Loading billing foundation…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="feedback" id="billingFeedback"></div>
+    </section>
+
+
     <section class="card section">
       <div class="section-head">
         <div>
@@ -658,12 +695,20 @@
     const entitlementUserSummary = document.getElementById("entitlementUserSummary");
     const entitlementBody = document.getElementById("entitlementBody");
     const entitlementFeedback = document.getElementById("entitlementFeedback");
+    const refreshBilling = document.getElementById("refreshBilling");
+    const billingAdapter = document.getElementById("billingAdapter");
+    const billingRecords = document.getElementById("billingRecords");
+    const billingActive = document.getElementById("billingActive");
+    const billingWebhooks = document.getElementById("billingWebhooks");
+    const billingSubscriptionsBody = document.getElementById("billingSubscriptionsBody");
+    const billingFeedback = document.getElementById("billingFeedback");
 
     let dashboard = null;
     let auditEvents = [];
     let usageSummary = null;
     let entitlementCatalog = [];
     let selectedUserAccess = null;
+    let billingSummary = null;
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -787,6 +832,57 @@
     function formatInteger(value) {
       const number = Number(value || 0);
       return Number.isFinite(number) ? number.toLocaleString() : "0";
+    }
+
+
+
+    function renderBilling() {
+      if (!billingSummary) return;
+      const gateway = billingSummary.gateway || {};
+      const totals = billingSummary.totals || {};
+      billingAdapter.textContent = gateway.configured
+        ? String(gateway.provider || "READY").toUpperCase()
+        : gateway.provider
+          ? `${String(gateway.provider).toUpperCase()} / SETUP`
+          : "NOT SELECTED";
+      billingRecords.textContent = formatInteger(totals.subscriptionRecords);
+      billingActive.textContent = formatInteger(totals.activeOrTrialing);
+      billingWebhooks.textContent = formatInteger(totals.webhookEvents30d);
+
+      const rows = Array.isArray(billingSummary.subscriptions)
+        ? billingSummary.subscriptions
+        : [];
+      if (!rows.length) {
+        billingSubscriptionsBody.innerHTML =
+          '<tr><td colspan="4" class="loading">No external subscription records yet.</td></tr>';
+      } else {
+        billingSubscriptionsBody.innerHTML = rows.map((item) => `
+          <tr>
+            <td>${escapeHtml(item.provider || "unassigned")}</td>
+            <td><span class="badge">${escapeHtml(item.status || "none")}</span></td>
+            <td><span class="badge ${item.planTier === "top" ? "gold" : ""}">${escapeHtml(item.planTier || "free")}</span></td>
+            <td>${escapeHtml(formatInteger(item.records))}</td>
+          </tr>
+        `).join("");
+      }
+
+      const message = gateway.configured
+        ? `Billing adapter ${gateway.provider} is configured. Checkout: ${gateway.checkout ? "ready" : "not available"}; webhooks: ${gateway.webhooks ? "ready" : "not available"}.`
+        : gateway.state === "adapter-not-installed"
+          ? `Billing provider ${gateway.provider} is selected, but its adapter is not installed yet.`
+          : "No payment processor is selected yet. The provider-neutral billing foundation is ready for an approved adapter.";
+      setFeedback(billingFeedback, message, gateway.configured ? "ok" : "");
+    }
+
+    async function loadBilling() {
+      try {
+        billingSummary = await api("/api/admin/billing/summary");
+        renderBilling();
+      } catch (error) {
+        billingSubscriptionsBody.innerHTML =
+          `<tr><td colspan="4" class="loading">${escapeHtml(error.message)}</td></tr>`;
+        setFeedback(billingFeedback, error.message, "error");
+      }
     }
 
     function formatMicrosUsd(value, priced) {
@@ -1148,7 +1244,7 @@
         renderStats();
         renderGiftSlots();
         renderUsers();
-        await Promise.all([loadUsage(), loadAudit()]);
+        await Promise.all([loadUsage(), loadAudit(), loadBilling()]);
         await initializeEntitlements();
       } catch (error) {
         if (error.status === 401 || error.status === 403) {
@@ -1202,6 +1298,7 @@
 
     refreshAudit.addEventListener("click", loadAudit);
     refreshUsage.addEventListener("click", loadUsage);
+    refreshBilling.addEventListener("click", loadBilling);
 
     loadDashboard();
   </script>
