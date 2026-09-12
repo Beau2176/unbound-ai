@@ -52,31 +52,34 @@ for (const forbidden of [
 }
 
 const ageWebhookPath = 'const AGE_VERIFICATION_WEBHOOK_PATH = "/api/webhooks/age-verification";';
+const billingWebhookPath = 'const BILLING_WEBHOOK_PATH = "/api/webhooks/billing";';
 requireText(server, ageWebhookPath, "exact age-verification webhook path constant");
+requireText(server, billingWebhookPath, "exact billing webhook path constant");
 requireText(
   server,
-  "exemptPaths: [AGE_VERIFICATION_WEBHOOK_PATH]",
-  "age webhook exact same-origin exemption"
+  "exemptPaths: [AGE_VERIFICATION_WEBHOOK_PATH, BILLING_WEBHOOK_PATH]",
+  "exact provider-webhook same-origin exemptions"
 );
+const rawParserCount = (
+  server.match(/express\.raw\(\{ type: "\*\/\*", limit: "100kb" \}\)/g) || []
+).length;
+if (rawParserCount < 2) {
+  throw new Error("Security contract missing: both provider webhooks must preserve raw request bytes");
+}
 requireText(
   server,
-  'express.raw({ type: "*/*", limit: "100kb" })',
-  "age webhook raw-body parser"
-);
-requireText(
-  server,
-  "if (req.path === AGE_VERIFICATION_WEBHOOK_PATH) return next();",
-  "age webhook JSON-parser bypass"
+  "req.path === AGE_VERIFICATION_WEBHOOK_PATH ||\n    req.path === BILLING_WEBHOOK_PATH",
+  "provider webhooks must bypass JSON body parsing"
 );
 
-const webhookStart = server.indexOf("app.post(\n  AGE_VERIFICATION_WEBHOOK_PATH");
-const webhookEnd = webhookStart >= 0
-  ? server.indexOf("/* ----------------------------- ADMIN API", webhookStart)
-  : -1;
-if (webhookStart < 0 || webhookEnd <= webhookStart) {
+const ageWebhookStart = server.indexOf("app.post(\n  AGE_VERIFICATION_WEBHOOK_PATH");
+const billingWebhookStart = server.indexOf("app.post(\n  BILLING_WEBHOOK_PATH");
+const adminStart = server.indexOf("/* ----------------------------- ADMIN API");
+const ageWebhookEnd = billingWebhookStart > ageWebhookStart ? billingWebhookStart : adminStart;
+if (ageWebhookStart < 0 || ageWebhookEnd <= ageWebhookStart) {
   throw new Error("Security contract missing: authenticated age-verification webhook route");
 }
-const ageWebhookRoute = server.slice(webhookStart, webhookEnd);
+const ageWebhookRoute = server.slice(ageWebhookStart, ageWebhookEnd);
 requireText(
   ageWebhookRoute,
   "processAgeVerificationWebhook({",
@@ -104,24 +107,67 @@ requireText(
 );
 requireText(
   ageWebhookRoute,
-  'error_text = \'ignored-stale-event\'',
+  "ignored-stale-event",
   "age webhook stale-event protection"
 );
-forbidText(
-  ageWebhookRoute,
-  "providerReference:",
-  "age webhook response must not expose provider reference"
+forbidText(ageWebhookRoute, "providerReference:", "age webhook response must not expose provider reference");
+forbidText(ageWebhookRoute, "userId:", "age webhook response must not expose account user ID");
+
+if (billingWebhookStart < 0 || adminStart <= billingWebhookStart) {
+  throw new Error("Security contract missing: authenticated billing webhook route");
+}
+const billingWebhookRoute = server.slice(billingWebhookStart, adminStart);
+requireText(
+  billingWebhookRoute,
+  "processBillingWebhook({",
+  "billing webhook must verify and normalize provider callback through adapter"
 );
-forbidText(
-  ageWebhookRoute,
-  "userId:",
-  "age webhook response must not expose account user ID"
+requireText(
+  billingWebhookRoute,
+  'crypto.createHash("sha256").update(rawBody).digest("hex")',
+  "billing webhook raw payload hash"
 );
-forbidText(
-  ageWebhookRoute,
-  "rawBody,\n           received_at",
-  "age webhook must not persist raw payload"
+requireText(
+  billingWebhookRoute,
+  "ON CONFLICT (provider, provider_event_id) DO NOTHING",
+  "billing webhook event deduplication"
 );
+requireText(
+  billingWebhookRoute,
+  "provider_subject_hash = $2",
+  "billing webhook privacy-safe subject lookup"
+);
+requireText(
+  billingWebhookRoute,
+  "provider_subscription_id = $2",
+  "billing webhook subscription-reference lookup"
+);
+requireText(
+  billingWebhookRoute,
+  "ignored-stale-event",
+  "billing webhook stale-event protection"
+);
+requireText(
+  billingWebhookRoute,
+  "subscription-reference-not-found",
+  "billing webhook unmatched-event retry state"
+);
+forbidText(billingWebhookRoute, "checkoutUrl:", "billing webhook must not create checkout redirects");
+forbidText(billingWebhookRoute, "portalUrl:", "billing webhook must not create portal redirects");
+
+const checkoutStart = server.indexOf('app.post(\n  "/api/account/billing/checkout"');
+const portalStart = server.indexOf('app.post(\n  "/api/account/billing/portal"');
+if (checkoutStart < 0 || portalStart <= checkoutStart) {
+  throw new Error("Security contract missing: signed-in billing checkout route");
+}
+const checkoutRoute = server.slice(checkoutStart, portalStart);
+requireText(checkoutRoute, "requireSignedIn", "billing checkout must require a signed-in account");
+requireText(checkoutRoute, "securityActionRateLimit", "billing checkout must be rate-limited");
+requireText(checkoutRoute, "billingSubject(req.user.id)", "billing checkout must use an opaque account subject");
+requireText(checkoutRoute, "provider_subject_hash", "billing checkout must persist only hashed provider subject linkage");
+requireText(checkoutRoute, "status,\n           plan_tier", "billing checkout provisional subscription columns");
+requireText(checkoutRoute, "VALUES ($1, $2, $3, 'incomplete', 'top'", "billing checkout must start locally incomplete");
+forbidText(checkoutRoute, "status: \"active\"", "browser checkout must never mark subscription active");
 
 if (pkg.overrides?.qs !== "6.16.0") {
   throw new Error("Security contract violation: qs must remain pinned to patched 6.16.0");
