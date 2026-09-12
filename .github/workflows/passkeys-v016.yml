@@ -22,6 +22,7 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Apply passkey migrations
         run: |
+          python scripts/fix-passkey-health-matcher-v016.py
           python scripts/migrate-passkeys-server-v016.py
           python scripts/migrate-passkeys-index-v016.py
       - name: Install pinned WebAuthn verifier
