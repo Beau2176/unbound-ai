@@ -24,10 +24,12 @@ const summaryReplacement = `          <div class="access-stat"><div class="acces
         <div class="access-section-title">Capabilities</div>`;
 html = replaceOnce(html, summaryAnchor, summaryReplacement, "age verification action markup");
 
-const cssAnchor = `    .feedback.ok { color: var(--success); }
-    .feedback.error { color: #ffb0b0; }`;
-const cssReplacement = `    .feedback.ok { color: var(--success); }
-    .feedback.error { color: #ffb0b0; }
+const cssAnchor = `    .auth-feedback.visible {
+      display: block;
+    }`;
+const cssReplacement = `    .auth-feedback.visible {
+      display: block;
+    }
 
     .access-age-actions {
       display: grid;
