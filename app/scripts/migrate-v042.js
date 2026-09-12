@@ -54,7 +54,11 @@ app.use(
   AGE_VERIFICATION_WEBHOOK_PATH,
   express.raw({ type: "*/*", limit: "100kb" })
 );
-app.use(express.json({ limit: "100kb" }));`;
+const jsonBodyParser = express.json({ limit: "100kb" });
+app.use((req, res, next) => {
+  if (req.path === AGE_VERIFICATION_WEBHOOK_PATH) return next();
+  return jsonBodyParser(req, res, next);
+});`;
 server = replaceOnce(server, oldGuard, newGuard, "same-origin exemption and raw body parser");
 
 const adminAnchor = `/* ----------------------------- ADMIN API ----------------------------- */`;
