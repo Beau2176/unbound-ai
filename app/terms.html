@@ -20,7 +20,6 @@
     p, li { color:#d9e5ef; }
     .muted { color:var(--muted); }
     .warning { margin:18px 0; padding:14px 16px; border-left:3px solid var(--gold); background:rgba(255,173,67,.06); }
-    code { color:#d9efff; }
   </style>
 </head>
 <body>
@@ -30,46 +29,54 @@
       <span class="draft">DRAFT — NOT YET IN FORCE</span>
       <h1>Terms of Use</h1>
       <p class="muted">Draft version: 2026-09-draft</p>
-      <div class="warning"><strong>Review required before launch.</strong> This page is an operational draft for product and legal review. It is not enabled as the binding Terms of Use, and UNBOUND AI's launch gate must remain blocked until a reviewed, non-draft version is published and acceptance enforcement is deliberately enabled.</div>
+      <div class="warning"><strong>Professional review required before launch.</strong> This page is a product/legal working draft. It is not the binding Terms of Use. UNBOUND AI's launch gate must remain blocked until a reviewed non-draft version is deliberately published and the matching acceptance/enforcement controls are enabled.</div>
 
-      <h2>1. Eligibility and adults-only platform</h2>
-      <p>UNBOUND AI is designed for adults age 18 or older. Creating an account requires an age confirmation, and age-restricted features such as Adult Mode may require separate hard age verification through an approved verification provider.</p>
+      <h2>1. Eligibility and adults-only service</h2>
+      <p>UNBOUND AI is intended only for people age 18 or older. Account creation and access to age-restricted features may be subject to age controls. Adult Mode is designed to remain unavailable until the server records a current hard 18+ verification result from the configured age-verification provider.</p>
 
       <h2>2. Accounts and security</h2>
-      <p>You are responsible for protecting your account credentials and for activity performed through your account. UNBOUND AI may offer passwords, passkeys, recovery codes, session controls, device revocation, and other security features. Do not share recovery codes or authentication secrets.</p>
+      <p>You are responsible for protecting account credentials and for activity performed through your account. UNBOUND AI may provide passwords, passkeys, recovery codes, session controls, device revocation, security alerts, and other safeguards. Do not share passwords, recovery codes, session credentials, or other authentication secrets.</p>
 
-      <h2>3. AI output and user responsibility</h2>
-      <p>AI output can be incomplete, inaccurate, outdated, or unsuitable for a particular purpose. You are responsible for evaluating output before relying on it, especially for medical, legal, financial, safety-critical, or other high-stakes decisions. UNBOUND AI does not promise that generated content is error-free.</p>
+      <h2>3. AI service and output</h2>
+      <p>UNBOUND AI uses external AI services to generate requested responses and features. The current production architecture is designed around the OpenAI API, although providers and models may change before or after launch. AI output can be inaccurate, incomplete, outdated, or unsuitable for a particular purpose. You are responsible for evaluating output before relying on it, particularly for medical, legal, financial, safety-critical, or other high-stakes decisions.</p>
 
       <h2>4. Acceptable use</h2>
-      <p>UNBOUND AI is intended to support broad, candid adult conversation and creative work. The platform may still restrict use involving serious illegal harm, exploitation, abuse, minors, trafficking, non-consensual sexual content, attempts to compromise the service, fraud against the platform, or other conduct that creates material safety or security risks.</p>
+      <p>UNBOUND AI is designed for broad, candid adult conversation, research, and creative work. The service may restrict or suspend use involving serious illegal harm, exploitation, abuse, minors, trafficking, non-consensual sexual content, attempts to compromise the service, fraud against the platform or its providers, or other conduct that creates material legal, safety, security, or operational risk.</p>
 
       <h2>5. User content</h2>
-      <p>You remain responsible for content you submit. You represent that you have the rights and permissions needed to provide that content and to request the processing you ask UNBOUND AI to perform.</p>
+      <p>You remain responsible for content you submit. You represent that you have the rights and permissions needed to provide that content and request the processing you ask UNBOUND AI to perform. The final reviewed Terms must address the license necessary to operate requested features and the treatment of generated output under applicable law and provider terms.</p>
 
-      <h2>6. Paid plans and billing</h2>
-      <p>If paid subscriptions are enabled, checkout and subscription management may be provided by a third-party payment processor. Prices, renewal terms, cancellation terms, taxes, refunds, and any trial terms must be shown in the purchase flow and reflected in the final reviewed Terms before commercial launch.</p>
+      <h2>6. Paid plans, Segpay, renewal, and cancellation</h2>
+      <p>UNBOUND AI's current production-target billing provider is Segpay. If paid subscriptions are enabled, payment details are intended to be entered into Segpay's hosted payment flow rather than stored by UNBOUND AI. UNBOUND AI is designed to receive and retain limited subscription/accounting state needed to grant or remove paid access.</p>
+      <p><strong>Commercial terms are not final.</strong> Before publication, the reviewed Terms and checkout must state the actual TOP-plan price, billing frequency, automatic-renewal terms, cancellation method, refund policy, taxes, trial terms if any, and any disclosures required for the jurisdictions offered.</p>
 
-      <h2>7. Age verification</h2>
-      <p>Hard age verification may be performed by a third-party provider. UNBOUND AI is designed to retain only minimal verification state and an opaque or hashed provider reference rather than raw identity documents or biometric templates. The final Terms should identify the selected provider and any provider-specific terms that apply.</p>
+      <h2>7. Hard 18+ verification through Yoti</h2>
+      <p>UNBOUND AI's current production-target hard age-verification provider is Yoti Age Verification Service. Depending on the approved Yoti template and the method a user selects, Yoti or its providers may process evidence needed to determine age. UNBOUND AI is designed to receive and store only a normalized age-threshold result and limited provider/session metadata, not raw identity-document images, selfies, exact age, or biometric templates.</p>
+      <p>The final Terms and Privacy Notice must reflect the actual approved Yoti flow, available non-biometric alternative, supported jurisdictions, re-verification period, and any provider-specific terms or notices required at launch.</p>
 
-      <h2>8. Service changes and availability</h2>
-      <p>Features may change, be added, be removed, or become temporarily unavailable for maintenance, security, legal, or operational reasons. UNBOUND AI may suspend access when needed to protect users, the service, or third parties.</p>
+      <h2>8. Account email verification</h2>
+      <p>UNBOUND AI's current production-target transactional email service is Amazon Simple Email Service (Amazon SES). If enabled, UNBOUND AI may use SES to send account-verification and security-related messages. Users are responsible for maintaining access to the email address associated with their account.</p>
 
-      <h2>9. Account termination and deletion</h2>
-      <p>You may request permanent account deletion through the product. If an external paid subscription remains open, deletion may be blocked until the subscription reaches a safe canceled state so billing cannot continue against a deleted account. Some operational records may be retained in de-identified or legally required form as described in the Privacy Notice.</p>
+      <h2>9. Hosting and availability</h2>
+      <p>The current service is hosted using Render infrastructure. Features may change, be added, be removed, or become temporarily unavailable for maintenance, security, legal, provider, or operational reasons. UNBOUND AI does not promise uninterrupted availability in this draft. Final uptime, support, and service-level commitments, if any, must match the production infrastructure actually purchased and operated.</p>
 
-      <h2>10. Intellectual property</h2>
-      <p>UNBOUND AI's software, branding, interface, and other service materials are protected by applicable intellectual-property laws. The final Terms must define the license granted to users and the treatment of AI-generated output under the laws and provider terms that apply at launch.</p>
+      <h2>10. Account termination and deletion</h2>
+      <p>You may request permanent account deletion through the product when that feature is available to your account. If an external paid subscription remains open, deletion may be blocked until the subscription reaches a safe canceled state so billing cannot continue against a deleted account. Certain records may need to be retained for security, fraud prevention, accounting, dispute resolution, or legal obligations as described in the final Privacy Notice.</p>
 
-      <h2>11. Disclaimers and limitation of liability</h2>
-      <p><strong>To be finalized with legal counsel.</strong> Any warranty disclaimers, limitation-of-liability language, indemnity terms, and exclusions must be reviewed for the jurisdictions where UNBOUND AI will operate before this document becomes binding.</p>
+      <h2>11. Intellectual property</h2>
+      <p>UNBOUND AI's software, branding, interface, and service materials are protected by applicable intellectual-property laws. The final Terms must define the license granted to users, ownership of user-provided material, and the treatment of generated output under applicable law and the terms of the AI providers used at launch.</p>
 
-      <h2>12. Governing law and disputes</h2>
-      <p><strong>To be completed before publication.</strong> The operator's legal name, business address, governing law, dispute process, arbitration/class-action provisions if any, and required consumer-law notices must be selected and reviewed before launch.</p>
+      <h2>12. Third-party services</h2>
+      <p>The service currently relies or plans to rely on third parties including Render for hosting/database infrastructure, OpenAI for AI processing, Amazon SES for transactional email, Segpay for commercial billing, and Yoti for hard age verification. Those services operate under their own terms and privacy practices. The final reviewed Terms must address any third-party conditions that need to be passed through to users and must be rechecked if providers change.</p>
 
-      <h2>13. Contact and changes</h2>
-      <p><strong>Contact information to be completed before publication.</strong> A final Terms version should include an effective date, a version identifier, notice rules for material changes, and a working contact method.</p>
+      <h2>13. Disclaimers, indemnity, and limitation of liability</h2>
+      <p><strong>To be finalized with qualified legal counsel.</strong> Warranty disclaimers, limitation-of-liability language, indemnity provisions, exclusions, and any mandatory consumer protections vary by jurisdiction and must not be copied into force without review.</p>
+
+      <h2>14. Governing law and disputes</h2>
+      <p><strong>To be completed before publication.</strong> The operator's legal name, business address, governing law, dispute process, arbitration/class-action provisions if any, venue, and required consumer notices must be selected and reviewed before launch.</p>
+
+      <h2>15. Contact, effective date, and changes</h2>
+      <p><strong>Operator and contact information must be completed before publication.</strong> A final Terms version must include an effective date, version identifier, working support/legal contact, and a reviewed process for notifying users of material changes and obtaining renewed acceptance when required.</p>
     </article>
   </main>
 </body>

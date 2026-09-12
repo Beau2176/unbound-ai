@@ -29,55 +29,64 @@
       <span class="draft">DRAFT — NOT YET IN FORCE</span>
       <h1>Privacy Notice</h1>
       <p class="muted">Draft version: 2026-09-draft</p>
-      <div class="warning"><strong>Review required before launch.</strong> This is a product and legal-review draft. It is not the binding Privacy Notice. UNBOUND AI's launch gate must remain blocked until a reviewed, non-draft version is deliberately published.</div>
+      <div class="warning"><strong>Professional review required before launch.</strong> This is a product/legal working draft, not the binding Privacy Notice. UNBOUND AI's launch gate must remain blocked until the operator, jurisdictions, retention schedule, rights process, provider terms, and final disclosures have been reviewed and a non-draft version is deliberately published.</div>
 
-      <h2>1. Scope</h2>
-      <p>This draft describes how the UNBOUND AI service is designed to handle personal information. The final notice must identify the legal operator, applicable jurisdictions, effective date, contact details, and any rights or disclosures required by law where the service is offered.</p>
+      <h2>1. Scope and operator</h2>
+      <p>This draft describes how the UNBOUND AI service is currently designed to handle personal information. The final notice must identify the legal operator/controller, business and privacy contact information, applicable jurisdictions, effective date, lawful bases where required, and any jurisdiction-specific notices or rights that apply.</p>
 
-      <h2>2. Account information</h2>
-      <p>UNBOUND AI may process account information such as email address, display name, account role, plan tier, account creation timestamps, subscription state, preferences, and settings needed to provide and secure the service.</p>
+      <h2>2. Account and profile information</h2>
+      <p>UNBOUND AI may process information such as email address, display name, account role, plan tier, account creation timestamps, preferences, settings, legal-consent records, subscription state, and security/account-recovery information needed to provide and protect the service.</p>
 
-      <h2>3. Conversations and user content</h2>
-      <p>Messages, conversation history, research sources, citations, and other content you submit or create may be stored so the service can provide chat history, account features, data export, and continuity. Content may be sent to configured AI or research providers when needed to perform the feature you request.</p>
+      <h2>3. Conversations, research, and user content</h2>
+      <p>Messages, conversation history, research queries, source metadata, citations, preferences, and other content you submit or create may be stored so the service can provide chat history, continuity, account features, exports, and requested AI functionality. Content needed to perform a request may be transmitted to configured AI or research providers.</p>
 
-      <h2>4. AI and research providers</h2>
-      <p>UNBOUND AI may transmit the minimum content needed to configured AI, search, or other processing providers to generate responses and perform requested features. The final Privacy Notice should identify the providers used at launch, the purposes for which information is shared, and any provider-specific retention or processing terms that apply.</p>
+      <h2>4. OpenAI API processing</h2>
+      <p>The current production architecture is designed to use the OpenAI API for AI generation and related model capabilities. UNBOUND AI may send prompts, conversation context, mode instructions, and other information needed to perform the feature you request. The final notice must reflect the OpenAI products/endpoints actually enabled at launch, the account's retention configuration, and the then-current provider terms and privacy commitments.</p>
+      <p>UNBOUND AI should avoid sending credentials, recovery codes, raw billing secrets, raw age-verification evidence, or unrelated account data to the AI provider merely because those values exist elsewhere in the service.</p>
 
-      <h2>5. Security and authentication data</h2>
-      <p>UNBOUND AI may store password hashes, session records, device labels, security events, security alerts, passkey public-credential metadata, and hashed recovery codes. Fingerprints, face scans, device PINs, passkey private keys, and similar local authenticator secrets remain with the device or credential provider and are not stored by UNBOUND AI.</p>
+      <h2>5. Render hosting and database infrastructure</h2>
+      <p>The current application and PostgreSQL database are hosted using Render infrastructure. Information stored or transmitted through UNBOUND AI therefore passes through hosting, database, network, logging, and security systems operated by Render as needed to run and protect the service. The final notice must match the production Render plan, regions, backup arrangement, and data-processing terms actually in use at launch.</p>
 
-      <h2>6. Operational logs and network data</h2>
-      <p>The application is designed to keep structured request logs privacy-minimized. Application request logs use generated request IDs, normalized request paths, methods, status codes, and timing, and are designed not to include request bodies, cookies, query-string secrets, raw email addresses, user-agent strings, or raw IP addresses. Hosting, network, database, security, or infrastructure providers may independently process network metadata necessary to operate and protect their services; the final notice should identify relevant providers and disclosures.</p>
+      <h2>6. Authentication, device, and security information</h2>
+      <p>UNBOUND AI may store password hashes, session records, device labels, passkey public-credential metadata, hashed recovery codes, security events and alerts, rate-limit state, and limited audit information. Passkey private keys, device PINs, and local biometric unlock data remain with the user's device/authenticator and are not stored by UNBOUND AI.</p>
 
-      <h2>7. Hard 18+ age verification</h2>
-      <p>Age-restricted features may use a third-party age-verification provider. UNBOUND AI is designed to retain minimal verification state, an 18+ threshold result, timestamps, expiration state, result codes, and an opaque or hashed provider reference. UNBOUND AI is not designed to store raw identity-document images, face scans, or biometric templates from the age-verification process. The final notice must identify the selected provider and explain its independent processing practices.</p>
+      <h2>7. Operational logs and network data</h2>
+      <p>The application is designed to keep its own structured request logs privacy-minimized by using generated request IDs, normalized paths, methods, status codes, and timing rather than request bodies or raw authentication secrets. Infrastructure, network, security, and provider systems may independently process network or device metadata needed to operate, secure, diagnose, and prevent abuse of their services. Final disclosures must reflect the production stack actually used.</p>
 
-      <h2>8. Billing and subscriptions</h2>
-      <p>If paid plans are enabled, a third-party payment processor may handle checkout and payment details. UNBOUND AI is designed to store subscription status, plan tier, billing periods, cancellation state, opaque provider customer/subscription identifiers, and webhook event metadata needed to administer access. The application is intentionally designed not to store full payment-card numbers or raw payment-method details.</p>
+      <h2>8. Yoti hard 18+ age verification</h2>
+      <p>The current production-target hard age-verification provider is Yoti Age Verification Service. UNBOUND AI sends Yoti an opaque verification reference plus the approved hosted-flow configuration. Depending on the age-checking method available in the approved Yoti template and selected by the user, Yoti or its subprocessors may process information such as a facial image, identity document, payment-card check, mobile-provider information, database-check information, or other age-assurance evidence.</p>
+      <p>UNBOUND AI is designed not to receive or store that raw evidence. The application retains a normalized verification status, the 18+ threshold, verification/expiry timestamps, a limited result code, and a hash of the provider session reference. The production template must be reviewed for the age methods offered, including an appropriate non-biometric alternative where required.</p>
 
-      <h2>9. Usage and cost metering</h2>
-      <p>UNBOUND AI may record model/provider identifiers, request counts, token usage, web-search call counts, estimated cost fields, and related timestamps for service operation, abuse prevention, capacity planning, and billing administration.</p>
+      <h2>9. Segpay billing and subscriptions</h2>
+      <p>The current production-target billing provider is Segpay. UNBOUND AI's hosted-checkout integration is designed to send a signed price and opaque account reference to Segpay. Users enter payment information in Segpay's payment flow, and UNBOUND AI is intentionally designed not to store full payment-card numbers or CVV values.</p>
+      <p>UNBOUND AI may retain subscription status, plan tier, billing periods, cancellation state, opaque provider customer/subscription identifiers, and normalized/idempotent webhook metadata needed to grant or remove paid access, investigate billing state, and safely handle account deletion.</p>
 
-      <h2>10. Legal consent and administrative audit records</h2>
-      <p>The service may record policy-version acceptance, timestamps, administrator actions, entitlement changes, and other audit information needed for security, compliance, account administration, and dispute investigation. The final retention rules for these records must be reviewed before launch.</p>
+      <h2>10. Amazon SES account email</h2>
+      <p>The current production-target transactional email service is Amazon Simple Email Service (Amazon SES). If enabled, UNBOUND AI may transmit the recipient email address, limited display-name information, and the content needed for an account-verification or security email. Verification links use one-time tokens; UNBOUND AI stores only a cryptographic token hash in its database rather than the raw token.</p>
 
-      <h2>11. Retention, export, and deletion</h2>
-      <p>Signed-in users may be offered a data export and permanent account deletion. Deletion removes or detaches account-linked information according to the service's deletion flow. Certain operational, fraud-prevention, audit, security, tax, accounting, or legally required records may need to be retained in de-identified or limited form. Exact retention periods must be finalized before publication.</p>
+      <h2>11. Usage, entitlement, and cost metering</h2>
+      <p>UNBOUND AI may record model/provider identifiers, request counts, token usage, research or web-call counts, entitlement state, estimated cost fields, and related timestamps for service operation, capacity planning, abuse prevention, product administration, and billing.</p>
 
-      <h2>12. Service providers</h2>
-      <p>UNBOUND AI may rely on hosting, database, AI, search, email, billing, age-verification, analytics, security, and other service providers. The final notice must list or appropriately describe the providers actually used at launch and the categories of information disclosed to them.</p>
+      <h2>12. Legal consent and administrative audit records</h2>
+      <p>The service may record policy-version acceptance, acceptance timestamps, administrator actions, entitlement changes, security actions, and other audit information needed for account administration, security, compliance, and dispute investigation. The final notice must set reviewed retention rules for these records.</p>
 
-      <h2>13. Security</h2>
-      <p>UNBOUND AI uses technical and organizational measures intended to protect information, including encrypted transport, authentication controls, passkeys, recovery controls, rate limiting, least-privilege access patterns, privacy-minimized logging, and operational monitoring. No system can guarantee absolute security.</p>
+      <h2>13. Retention, export, and deletion</h2>
+      <p>Signed-in users may be offered data export and permanent account deletion. Deletion removes or detaches account-linked information according to the service's deletion flow, subject to records that must be retained for security, fraud prevention, billing/accounting, disputes, legal obligations, or other reviewed purposes. Exact retention periods are not finalized in this draft and must be documented before publication.</p>
 
-      <h2>14. Adults-only service</h2>
-      <p>UNBOUND AI is intended for people age 18 or older. The final notice must specify how reports involving underage accounts are handled and any legally required deletion or escalation process.</p>
+      <h2>14. Service providers and changes</h2>
+      <p>The current production-target stack includes Render for hosting/database infrastructure, OpenAI for AI processing, Amazon SES for transactional email, Segpay for commercial billing, and Yoti for hard age verification. Provider selection or configuration may change. The final notice must be rechecked against the providers, subprocessors, regions, contracts, and data flows actually active at launch, and material later changes must be handled under the reviewed notice/change process.</p>
 
-      <h2>15. International transfers and regional privacy rights</h2>
-      <p><strong>To be completed with legal review.</strong> The final notice must address applicable regional privacy rights, lawful bases where required, international data transfers, appeal processes, authorized agents, and jurisdiction-specific notices based on where UNBOUND AI operates and where users are located.</p>
+      <h2>15. Security</h2>
+      <p>UNBOUND AI uses technical and organizational measures intended to reduce risk, including encrypted transport, authentication controls, passkeys, recovery controls, rate limiting, privacy-minimized application logs, webhook authentication, hashed opaque provider references, least-privilege design goals, and operational monitoring. No system can guarantee absolute security.</p>
 
-      <h2>16. Contact and changes</h2>
-      <p><strong>Operator and privacy-contact details must be completed before publication.</strong> The final Privacy Notice should include an effective date, version identifier, contact method, and a process for notifying users of material changes.</p>
+      <h2>16. Adults-only service and underage accounts</h2>
+      <p>UNBOUND AI is intended only for people age 18 or older. The final policy must specify the reviewed process for reports or evidence involving an underage account, including access restriction, deletion, preservation where legally required, provider coordination, appeals, and any mandatory reporting or escalation obligations.</p>
+
+      <h2>17. International transfers and privacy rights</h2>
+      <p><strong>To be completed with qualified legal review.</strong> The final notice must address applicable access, correction, deletion, portability, objection/opt-out, appeal, authorized-agent, sensitive-data, and other regional rights; lawful bases where required; international transfer mechanisms; and any processor/controller obligations based on the actual operator and markets served.</p>
+
+      <h2>18. Contact, effective date, and changes</h2>
+      <p><strong>Operator and privacy-contact details must be completed before publication.</strong> The final Privacy Notice must include an effective date, version identifier, working rights-request/contact method, response process, and a reviewed mechanism for notifying users of material changes.</p>
     </article>
   </main>
 </body>
