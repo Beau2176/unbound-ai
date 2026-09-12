@@ -1,0 +1,79 @@
+name: Account Access UI
+
+on:
+  push:
+    branches:
+      - account-access-ui-v0.8.1
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+      - name: Apply Account Access migration
+        run: python scripts/migrate-account-access-ui.py
+      - name: Validate server JavaScript
+        run: |
+          node --check app/server.js
+          node --check app/access/entitlements.js
+          node --check app/ai/gateway.js
+          node --check app/ai/providers/openai.js
+      - name: Validate browser JavaScript
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          html = Path('app/index.html').read_text()
+          start = html.rfind('<script>')
+          end = html.rfind('</script>')
+          if start == -1 or end == -1 or end <= start:
+              raise SystemExit('script block not found')
+          Path('/tmp/unbound-index.js').write_text(html[start + len('<script>'):end])
+          PY
+          node --check /tmp/unbound-index.js
+      - name: Validate access UI wiring
+        run: |
+          grep -q 'id="accessButton"' app/index.html
+          grep -q 'id="accessModal"' app/index.html
+          grep -q 'fetch("/api/account/access"' app/index.html
+          grep -q 'chooseResearchMode' app/index.html
+          grep -q 'Research Mode requires TOP access' app/index.html
+          grep -q 'assertRequestCapability(req, "web_research")' app/server.js
+          grep -q 'const RESEARCH_MODE_PROMPT' app/server.js
+          grep -q 'research_sources' app/server.js
+      - name: Validate Research entitlement behavior
+        run: |
+          node <<'NODE'
+          const e = require('./app/access/entitlements');
+          const freeResearch = e.buildCapabilityAccess({ planTier: 'free' }).find(x => x.key === 'web_research');
+          const topResearch = e.buildCapabilityAccess({ planTier: 'top' }).find(x => x.key === 'web_research');
+          if (!freeResearch?.available || freeResearch?.usable) throw new Error('Free Research should be live but locked.');
+          if (!topResearch?.available || !topResearch?.usable) throw new Error('TOP Research should be live and usable.');
+          console.log('Research entitlement behavior verified.');
+          NODE
+      - name: Dependency audit
+        working-directory: app
+        run: npm audit --omit=dev --audit-level=high
+      - name: Commit migrated source
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/index.html
+          if git diff --cached --quiet; then
+            echo "No migration changes to commit."
+            exit 0
+          fi
+          git commit -m "Add Account Access UI and enforce Research entitlement"
+          git push
