@@ -15,6 +15,7 @@ const {
   databaseRetryDelay
 } = require("../ops/database-resilience");
 const { buildRecoveryReadiness } = require("../ops/recovery-readiness");
+const { buildInfrastructureReadiness } = require("../ops/infrastructure-readiness");
 const {
   getMaintenanceStatus,
   maintenanceAllowsRequest
@@ -139,6 +140,44 @@ function testRecoveryReadiness() {
   assert.equal(protectedState.backup.externalBackup, true);
 }
 
+function testInfrastructureReadiness() {
+  const now = Date.parse("2026-09-12T18:00:00Z");
+  const blocked = buildInfrastructureReadiness({ env: {}, nowMs: now });
+  assert.equal(blocked.launchReady, false);
+  assert.equal(blocked.profile, "development");
+  assert.ok(blocked.blockers.length >= 5);
+
+  const ready = buildInfrastructureReadiness({
+    env: {
+      UNBOUND_INFRA_PROFILE: "production",
+      UNBOUND_INFRA_PRODUCTION_READY: "true",
+      UNBOUND_INFRA_ALWAYS_ON_COMPUTE: "true",
+      UNBOUND_INFRA_DURABLE_DATABASE: "true",
+      UNBOUND_INFRA_HEALTH_CHECK_CONFIGURED: "true",
+      UNBOUND_INFRA_REVIEWED_AT: "2026-09-12T17:00:00Z"
+    },
+    nowMs: now
+  });
+  assert.equal(ready.launchReady, true);
+  assert.equal(ready.status, "ready");
+  assert.equal(ready.review.fresh, true);
+
+  const stale = buildInfrastructureReadiness({
+    env: {
+      UNBOUND_INFRA_PROFILE: "production",
+      UNBOUND_INFRA_PRODUCTION_READY: "true",
+      UNBOUND_INFRA_ALWAYS_ON_COMPUTE: "true",
+      UNBOUND_INFRA_DURABLE_DATABASE: "true",
+      UNBOUND_INFRA_HEALTH_CHECK_CONFIGURED: "true",
+      UNBOUND_INFRA_REVIEWED_AT: "2026-01-01T00:00:00Z",
+      UNBOUND_INFRA_REVIEW_MAX_AGE_DAYS: "30"
+    },
+    nowMs: now
+  });
+  assert.equal(stale.launchReady, false);
+  assert.equal(stale.review.fresh, false);
+}
+
 function testMaintenancePolicy() {
   const readOnly = getMaintenanceStatus({
     UNBOUND_MAINTENANCE_MODE: "read_only",
@@ -185,6 +224,7 @@ function readyLaunchFixture() {
   return {
     runtime: { ready: true, operational: true, status: "ready" },
     maintenance: { active: false, mode: "off" },
+    infrastructure: { launchReady: true, blockers: [] },
     recovery: { launchReady: true, blockers: [] },
     legal: {
       documentsPublished: true,
@@ -227,6 +267,7 @@ function testLaunchGate() {
 
   const blocked = buildLaunchReadiness({
     ...readyLaunchFixture(),
+    infrastructure: { launchReady: false, blockers: ["Infrastructure not verified."] },
     recovery: { launchReady: false, blockers: ["Recovery not verified."] },
     legal: {
       documentsPublished: false,
@@ -251,6 +292,7 @@ function testLaunchGate() {
   assert.equal(blocked.launchReady, false);
   const keys = new Set(blocked.blockers.map((item) => item.key));
   for (const requiredKey of [
+    "infrastructure_production",
     "database_recovery",
     "legal_published",
     "legal_enforcement",
@@ -340,6 +382,7 @@ const tests = [
   ["runtime status", testRuntimeStatus],
   ["database resilience", testDatabaseResilience],
   ["recovery readiness", testRecoveryReadiness],
+  ["infrastructure readiness", testInfrastructureReadiness],
   ["maintenance policy", testMaintenancePolicy],
   ["observability privacy", testObservabilityPrivacy],
   ["launch readiness", testLaunchGate],
