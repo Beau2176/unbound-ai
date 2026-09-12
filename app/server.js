@@ -1799,7 +1799,14 @@ async function assertOptionalAccountCapability(req, capabilityKey) {
   }
 
   const user = await findSessionUser(req);
-  if (!user) return null;
+  if (!user) {
+    if (hasSessionCookie) {
+      const error = new Error("Your session expired. Sign in again to continue.");
+      error.statusCode = 401;
+      throw error;
+    }
+    return null;
+  }
 
   const access = await buildAccountAccess(user);
   const capability = access?.capabilities.find((item) => item.key === capabilityKey);
