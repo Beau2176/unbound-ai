@@ -66,6 +66,7 @@ function getYotiConfig(env = process.env) {
   );
   const adultIndustryOnboardingVerified = truthy(env.YOTI_ADULT_INDUSTRY_ONBOARDING_VERIFIED);
   const over18TemplateVerified = truthy(env.YOTI_OVER_18_TEMPLATE_VERIFIED);
+  const nonBiometricFallbackVerified = truthy(env.YOTI_NON_BIOMETRIC_FALLBACK_VERIFIED);
   const notificationSignatureVerified = truthy(env.YOTI_NOTIFICATION_SIGNATURE_VERIFIED);
 
   return {
@@ -78,6 +79,7 @@ function getYotiConfig(env = process.env) {
     verificationValidDays,
     adultIndustryOnboardingVerified,
     over18TemplateVerified,
+    nonBiometricFallbackVerified,
     notificationSignatureVerified,
     configured: Boolean(
       apiKey &&
@@ -87,6 +89,7 @@ function getYotiConfig(env = process.env) {
       notificationPublicKey &&
       adultIndustryOnboardingVerified &&
       over18TemplateVerified &&
+      nonBiometricFallbackVerified &&
       notificationSignatureVerified
     )
   };
@@ -106,6 +109,14 @@ async function parseJsonResponse(response) {
   } catch {
     throw yotiError("YOTI_RESPONSE_INVALID", "Yoti returned an invalid response.");
   }
+}
+
+function normalizeFutureTimestamp(value, fallbackMs) {
+  const parsed = new Date(value);
+  if (Number.isFinite(parsed.getTime()) && parsed.getTime() > Date.now()) {
+    return parsed.toISOString();
+  }
+  return new Date(fallbackMs).toISOString();
 }
 
 async function startVerification({
@@ -187,7 +198,10 @@ async function startVerification({
   return {
     verificationUrl: verificationUrl.toString(),
     reference: sessionId,
-    expiresAt: new Date(Date.now() + config.ttlSeconds * 1000).toISOString()
+    expiresAt: normalizeFutureTimestamp(
+      payload?.expires_at,
+      Date.now() + config.ttlSeconds * 1000
+    )
   };
 }
 
@@ -242,11 +256,11 @@ function verifyNotificationSignature({ rawBody, env = process.env } = {}) {
 function normalizeNotificationStatus(parsed) {
   const state = String(parsed?.state || "").trim().toUpperCase();
   if (["EXPIRED", "TIMEOUT"].includes(state)) return "expired";
-  if (["REVOKED"].includes(state)) return "revoked";
+  if (state === "REVOKED") return "revoked";
   if (["PENDING", "PROCESSING", "IN_PROGRESS"].includes(state)) return "pending";
-  if (state === "COMPLETE") return parsed?.result === true ? "verified" : "failed";
-  if (["FAIL", "FAILED", "ERROR"].includes(state)) return "failed";
-  return parsed?.result === true ? "verified" : "failed";
+  if (state === "COMPLETE") return parsed?.result === false ? "failed" : "verified";
+  if (["FAIL", "FAILED", "ERROR", "CANCELLED"].includes(state)) return "failed";
+  return "unverified";
 }
 
 function epochSecondsToIso(value) {
@@ -292,7 +306,7 @@ async function parseWebhook({ rawBody, env = process.env } = {}) {
     reference: providerReference,
     eventType: `verification.${status}`,
     status,
-    meetsMinimumAge: status === "verified" && parsed?.result === true,
+    meetsMinimumAge: status === "verified",
     occurredAt,
     verifiedAt: status === "verified" ? occurredAt : null,
     expiresAt:
