@@ -457,6 +457,69 @@
       </div>
       <div class="feedback" id="userFeedback"></div>
     </section>
+
+    <section class="card section">
+      <div class="section-head">
+        <div>
+          <h2>Usage & Cost Metering</h2>
+          <p>Rolling 30-day AI request, token, model, and estimated-cost totals.</p>
+        </div>
+        <button class="btn" id="refreshUsage" type="button">Refresh Usage</button>
+      </div>
+
+      <section class="stats">
+        <div class="card stat"><div class="label">AI Requests</div><div class="value" id="usageRequests">—</div></div>
+        <div class="card stat"><div class="label">Input Tokens</div><div class="value" id="usageInputTokens">—</div></div>
+        <div class="card stat"><div class="label">Output Tokens</div><div class="value" id="usageOutputTokens">—</div></div>
+        <div class="card stat"><div class="label">Estimated Cost</div><div class="value" id="usageCost">—</div></div>
+      </section>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Model</th>
+              <th>Requests</th>
+              <th>Total Tokens</th>
+              <th>Estimated Cost</th>
+            </tr>
+          </thead>
+          <tbody id="usageModelsBody">
+            <tr><td colspan="5" class="loading">Loading usage…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="feedback" id="usageFeedback"></div>
+    </section>
+
+    <section class="card section">
+      <div class="section-head">
+        <div>
+          <h2>Administrator Audit Log</h2>
+          <p>Recent plan changes and complimentary TOP-tier grant/revoke activity.</p>
+        </div>
+        <button class="btn" id="refreshAudit" type="button">Refresh Log</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Administrator</th>
+              <th>Action</th>
+              <th>Target</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="auditBody">
+            <tr><td colspan="5" class="loading">Loading audit log…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="feedback" id="auditFeedback"></div>
+    </section>
   </main>
 
   <script>
@@ -472,8 +535,20 @@
     const usersBody = document.getElementById("usersBody");
     const userFeedback = document.getElementById("userFeedback");
     const search = document.getElementById("search");
+    const auditBody = document.getElementById("auditBody");
+    const auditFeedback = document.getElementById("auditFeedback");
+    const refreshAudit = document.getElementById("refreshAudit");
+    const refreshUsage = document.getElementById("refreshUsage");
+    const usageRequests = document.getElementById("usageRequests");
+    const usageInputTokens = document.getElementById("usageInputTokens");
+    const usageOutputTokens = document.getElementById("usageOutputTokens");
+    const usageCost = document.getElementById("usageCost");
+    const usageModelsBody = document.getElementById("usageModelsBody");
+    const usageFeedback = document.getElementById("usageFeedback");
 
     let dashboard = null;
+    let auditEvents = [];
+    let usageSummary = null;
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -518,6 +593,130 @@
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return "—";
       return date.toLocaleDateString();
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "—";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "—";
+      return date.toLocaleString();
+    }
+
+    function auditActionLabel(action) {
+      const labels = {
+        "user.plan.changed": "Plan changed",
+        "complimentary_top_tier.granted": "Gift TOP granted",
+        "complimentary_top_tier.revoked": "Gift TOP revoked"
+      };
+
+      return labels[action] || action || "Unknown action";
+    }
+
+    function auditDetailsText(details) {
+      if (!details || typeof details !== "object") return "—";
+
+      const parts = [];
+      if (details.previousPlanTier || details.newPlanTier) {
+        parts.push(
+          `${details.previousPlanTier || "—"} → ${details.newPlanTier || "—"}`
+        );
+      }
+      if (details.slot) parts.push(`slot #${details.slot}`);
+      if (details.removedComplimentarySlot) {
+        parts.push(`removed gift slot #${details.removedComplimentarySlot}`);
+      }
+      if (details.resultingPlanTier) {
+        parts.push(`result: ${details.resultingPlanTier}`);
+      }
+
+      return parts.length ? parts.join(" · ") : "—";
+    }
+
+    function renderAudit() {
+      if (!auditEvents.length) {
+        auditBody.innerHTML =
+          '<tr><td colspan="5" class="loading">No administrator actions have been recorded yet.</td></tr>';
+        return;
+      }
+
+      auditBody.innerHTML = auditEvents.map((event) => `
+        <tr>
+          <td>${escapeHtml(formatDateTime(event.createdAt))}</td>
+          <td>${escapeHtml(event.adminEmail || "—")}</td>
+          <td><span class="badge gold">${escapeHtml(auditActionLabel(event.action))}</span></td>
+          <td>${escapeHtml(event.targetEmail || "—")}</td>
+          <td>${escapeHtml(auditDetailsText(event.details))}</td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadAudit() {
+      try {
+        const result = await api("/api/admin/audit?limit=100");
+        auditEvents = Array.isArray(result.events) ? result.events : [];
+        renderAudit();
+        setFeedback(auditFeedback, `Showing ${auditEvents.length} recent action${auditEvents.length === 1 ? "" : "s"}.`, "ok");
+      } catch (error) {
+        auditBody.innerHTML =
+          `<tr><td colspan="5" class="loading">${escapeHtml(error.message)}</td></tr>`;
+        setFeedback(auditFeedback, error.message, "error");
+      }
+    }
+
+    function formatInteger(value) {
+      const number = Number(value || 0);
+      return Number.isFinite(number) ? number.toLocaleString() : "0";
+    }
+
+    function formatMicrosUsd(value, priced) {
+      if (!priced) return "Not configured";
+      const micros = Number(value || 0);
+      if (!Number.isFinite(micros)) return "—";
+      return `$${(micros / 1_000_000).toFixed(4)}`;
+    }
+
+    function renderUsage() {
+      if (!usageSummary) return;
+
+      usageRequests.textContent = formatInteger(usageSummary.totals.requests);
+      usageInputTokens.textContent = formatInteger(usageSummary.totals.inputTokens);
+      usageOutputTokens.textContent = formatInteger(usageSummary.totals.outputTokens);
+      usageCost.textContent = formatMicrosUsd(
+        usageSummary.totals.estimatedCostMicros,
+        usageSummary.pricingConfigured
+      );
+
+      if (!usageSummary.models.length) {
+        usageModelsBody.innerHTML =
+          '<tr><td colspan="5" class="loading">No metered AI requests yet.</td></tr>';
+      } else {
+        usageModelsBody.innerHTML = usageSummary.models.map((item) => `
+          <tr>
+            <td>${escapeHtml(item.provider)}</td>
+            <td><strong>${escapeHtml(item.model)}</strong></td>
+            <td>${escapeHtml(formatInteger(item.requests))}</td>
+            <td>${escapeHtml(formatInteger(item.totalTokens))}</td>
+            <td>${escapeHtml(formatMicrosUsd(item.estimatedCostMicros, usageSummary.pricingConfigured))}</td>
+          </tr>
+        `).join("");
+      }
+
+      const pricingMessage = usageSummary.pricingConfigured
+        ? "Cost estimate is based on the configured per-million-token rates."
+        : "Token metering is active. Set OPENAI_INPUT_USD_PER_MILLION and OPENAI_OUTPUT_USD_PER_MILLION to enable dollar cost estimates.";
+
+      setFeedback(usageFeedback, pricingMessage, usageSummary.pricingConfigured ? "ok" : "");
+    }
+
+    async function loadUsage() {
+      try {
+        usageSummary = await api("/api/admin/usage/summary?days=30");
+        renderUsage();
+      } catch (error) {
+        usageModelsBody.innerHTML =
+          `<tr><td colspan="5" class="loading">${escapeHtml(error.message)}</td></tr>`;
+        setFeedback(usageFeedback, error.message, "error");
+      }
     }
 
     function renderStats() {
@@ -683,6 +882,7 @@
         renderStats();
         renderGiftSlots();
         renderUsers();
+        await Promise.all([loadUsage(), loadAudit()]);
       } catch (error) {
         if (error.status === 401 || error.status === 403) {
           window.location.href = "/";
@@ -729,8 +929,10 @@
       if (dashboard) renderUsers();
     });
 
+    refreshAudit.addEventListener("click", loadAudit);
+    refreshUsage.addEventListener("click", loadUsage);
+
     loadDashboard();
   </script>
 </body>
 </html>
-ff
