@@ -83,6 +83,10 @@ const {
   databaseRetryDelay
 } = require("./ops/database-resilience");
 const { buildRecoveryReadiness } = require("./ops/recovery-readiness");
+const {
+  getMaintenanceStatus,
+  createMaintenanceMiddleware
+} = require("./ops/maintenance-mode");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -207,6 +211,7 @@ app.use(
   })
 );
 app.use(express.json({ limit: "100kb" }));
+app.use("/api", createMaintenanceMiddleware());
 app.use("/api", (req, res, next) => {
   res.setHeader("Cache-Control", "no-store");
   next();
@@ -249,6 +254,7 @@ app.get("/readyz", (req, res) => {
     databaseReady,
     databaseError,
     shuttingDown,
+    maintenanceStatus: getMaintenanceStatus(),
     aiStatus: getGatewayStatus()
   });
 
@@ -261,6 +267,7 @@ app.get("/api/system/status", (req, res) => {
     databaseReady,
     databaseError,
     shuttingDown,
+    maintenanceStatus: getMaintenanceStatus(),
     aiStatus: getGatewayStatus()
   });
 
@@ -4556,6 +4563,17 @@ app.get(
   async (req, res) => {
     return res.json({
       recovery: buildRecoveryReadiness()
+    });
+  }
+);
+
+app.get(
+  "/api/admin/ops/maintenance",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    return res.json({
+      maintenance: getMaintenanceStatus()
     });
   }
 );

@@ -34,6 +34,7 @@ function buildReadinessStatus({
   databaseConfigured = false,
   databaseError = null,
   shuttingDown = false,
+  maintenanceStatus = null,
   aiStatus = null
 } = {}) {
   const database = {
@@ -51,16 +52,36 @@ function buildReadinessStatus({
   };
 
   const ready = !shuttingDown && database.configured && database.ready;
+  const maintenance = {
+    mode: cleanValue(maintenanceStatus?.mode, 40) || "off",
+    active: Boolean(maintenanceStatus?.active),
+    writeBlocked: Boolean(maintenanceStatus?.writeBlocked),
+    serviceUnavailable: Boolean(maintenanceStatus?.serviceUnavailable),
+    retryAfterSeconds: Math.max(
+      0,
+      Math.floor(Number(maintenanceStatus?.retryAfterSeconds) || 0)
+    ),
+    message: cleanValue(maintenanceStatus?.message, 500)
+  };
+  const operational = ready && !maintenance.active;
 
   return {
-    status: shuttingDown ? "draining" : ready ? "ready" : "not_ready",
+    status: shuttingDown
+      ? "draining"
+      : maintenance.active
+        ? "maintenance"
+        : ready
+          ? "ready"
+          : "not_ready",
     ready,
+    operational,
     shuttingDown: Boolean(shuttingDown),
     runtime: getRuntimeIdentity(env),
     uptimeSeconds: Math.max(0, Math.floor(Number(uptimeSeconds) || 0)),
     timestamp: new Date().toISOString(),
     components: {
       database,
+      maintenance,
       ai: {
         configured: Boolean(aiStatus?.configured),
         provider: cleanValue(aiStatus?.provider, 80),
