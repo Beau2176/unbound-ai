@@ -28,10 +28,7 @@ function main() {
     1,
     "billing webhook must accept both GET and POST"
   );
-  assert.strictEqual(
-    count(integrated, `app.post(\n  BILLING_WEBHOOK_PATH,`),
-    0
-  );
+  assert.strictEqual(count(integrated, `app.post(\n  BILLING_WEBHOOK_PATH,`), 0);
   assert.strictEqual(
     count(integrated, `app.post(\n  AGE_VERIFICATION_WEBHOOK_PATH,`),
     1,
@@ -78,9 +75,10 @@ function main() {
   assert.match(startSource, /integrateEmailVerificationServerSource/);
   assert.match(startSource, /integrateBillingServerSource/);
   assert.match(startSource, /integrateFileAnalysisServerSource/);
+  assert.match(startSource, /integrateImageUnderstandingServerSource/);
   assert.match(
     startSource,
-    /emailIntegratedSource = integrateEmailVerificationServerSource\(source\)[\s\S]*billingIntegratedSource = integrateBillingServerSource\(emailIntegratedSource\)[\s\S]*integratedSource = integrateFileAnalysisServerSource\(billingIntegratedSource\)/
+    /emailIntegratedSource = integrateEmailVerificationServerSource\(source\)[\s\S]*billingIntegratedSource = integrateBillingServerSource\(emailIntegratedSource\)[\s\S]*fileIntegratedSource = integrateFileAnalysisServerSource\(billingIntegratedSource\)[\s\S]*integratedSource = integrateImageUnderstandingServerSource\(fileIntegratedSource\)/
   );
   assert.match(startSource, /runtimeModule\._compile\(integratedSource, serverPath\)/);
 
