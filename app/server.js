@@ -72,6 +72,7 @@ const {
 const {
   normalizeLegalDocumentType,
   getLegalDocumentCatalog,
+  legalPublishingState,
   buildLegalConsentStatus
 } = require("./privacy/legal-consent");
 const {
@@ -91,6 +92,7 @@ const {
   getRequestObservabilitySnapshot,
   createRequestObservabilityMiddleware
 } = require("./ops/request-observability");
+const { buildLaunchReadiness } = require("./ops/launch-readiness");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -4559,6 +4561,44 @@ app.delete(
   }
 );
 
+function buildCurrentOperationalSnapshot() {
+  const maintenance = getMaintenanceStatus();
+  const ai = getGatewayStatus();
+  const runtime = buildReadinessStatus({
+    databaseConfigured: Boolean(process.env.DATABASE_URL),
+    databaseReady,
+    databaseError,
+    shuttingDown,
+    maintenanceStatus: maintenance,
+    aiStatus: ai
+  });
+  const recovery = buildRecoveryReadiness();
+  const legal = legalPublishingState();
+  const billing = getBillingGatewayStatus();
+  const ageVerification = getAgeVerificationGatewayStatus();
+  const launch = buildLaunchReadiness({
+    runtime,
+    maintenance,
+    recovery,
+    legal,
+    billing,
+    ageVerification,
+    ai
+  });
+
+  return {
+    runtime,
+    maintenance,
+    recovery,
+    legal,
+    billing,
+    ageVerification,
+    ai,
+    launch,
+    http: getRequestObservabilitySnapshot()
+  };
+}
+
 /* ----------------------------- ADMIN API ----------------------------- */
 
 app.get(
@@ -4584,24 +4624,21 @@ app.get(
 );
 
 app.get(
+  "/api/admin/ops/launch-readiness",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    const snapshot = buildCurrentOperationalSnapshot();
+    return res.json({ launch: snapshot.launch });
+  }
+);
+
+app.get(
   "/api/admin/ops/status",
   requireDatabase,
   requireAdmin,
   async (req, res) => {
-    const maintenance = getMaintenanceStatus();
-    return res.json({
-      runtime: buildReadinessStatus({
-        databaseConfigured: Boolean(process.env.DATABASE_URL),
-        databaseReady,
-        databaseError,
-        shuttingDown,
-        maintenanceStatus: maintenance,
-        aiStatus: getGatewayStatus()
-      }),
-      maintenance,
-      recovery: buildRecoveryReadiness(),
-      http: getRequestObservabilitySnapshot()
-    });
+    return res.json(buildCurrentOperationalSnapshot());
   }
 );
 
