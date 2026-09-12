@@ -40,7 +40,7 @@ jobs:
           for (const needle of [
             'buildInfrastructureReadiness',
             'infrastructure,\n    recovery',
-            'infrastructure,\n    legal'
+            'infrastructure,\n    recovery,\n    legal'
           ]) {
             if (!server.includes(needle)) throw new Error(`Server infrastructure contract missing: ${needle}`);
           }
