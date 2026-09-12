@@ -1,0 +1,78 @@
+name: Commercial entitlement sync
+
+on:
+  push:
+    branches:
+      - commercial-entitlements-v0.8-sync
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+      - name: Apply synced entitlement migration
+        run: python scripts/migrate-commercial-entitlements-sync.py
+      - name: Validate JavaScript syntax
+        run: |
+          node --check app/server.js
+          node --check app/access/entitlements.js
+          node --check app/ai/gateway.js
+          node --check app/ai/providers/openai.js
+      - name: Validate entitlement behavior
+        run: |
+          node <<'NODE'
+          const e = require('./app/access/entitlements');
+          const free = e.buildCapabilityAccess({ planTier: 'free' });
+          const top = e.buildCapabilityAccess({ planTier: 'top' });
+          const freeHistory = free.find((item) => item.key === 'server_history');
+          const freeResearch = free.find((item) => item.key === 'web_research');
+          const topResearch = top.find((item) => item.key === 'web_research');
+          const topCitations = top.find((item) => item.key === 'citations');
+          if (!freeHistory?.usable) throw new Error('Free history must remain usable.');
+          if (freeResearch?.entitled) throw new Error('Free research must not be entitled by the catalog.');
+          if (!topResearch?.implemented && topResearch?.available !== true) throw new Error('Research must be marked live.');
+          if (!topResearch?.entitled || !topResearch?.available || !topResearch?.usable) throw new Error('TOP research must be live and usable.');
+          if (!topCitations?.usable) throw new Error('TOP citations must be live and usable.');
+          console.log('Entitlement behavior verified.');
+          NODE
+      - name: Prove Research Mode survived merge
+        run: |
+          grep -q 'const RESEARCH_MODE_PROMPT' app/server.js
+          grep -q 'web_search_calls' app/server.js
+          grep -q 'research_sources' app/server.js
+          grep -q 'supportsResearch' app/ai/providers/openai.js
+          grep -q 'request.tools = \[{ type: "web_search" }\]' app/ai/providers/openai.js
+      - name: Validate commercial wiring
+        run: |
+          grep -q 'CREATE TABLE IF NOT EXISTS account_subscriptions' app/server.js
+          grep -q 'CREATE TABLE IF NOT EXISTS account_entitlement_overrides' app/server.js
+          grep -q '"/api/account/access"' app/server.js
+          grep -q 'requireCapability("server_history")' app/server.js
+          grep -q 'commercial: databaseReady ? "entitlements-ready"' app/server.js
+      - name: Dependency audit
+        working-directory: app
+        run: npm audit --omit=dev --audit-level=high
+      - name: Commit merged production source
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js
+          if git diff --cached --quiet; then
+            echo "No server migration changes to commit."
+            exit 0
+          fi
+          git commit -m "Merge commercial entitlements with Research Mode"
+          git push
