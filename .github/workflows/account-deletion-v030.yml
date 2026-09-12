@@ -1,0 +1,100 @@
+name: Account Deletion v0.30
+
+on:
+  push:
+    branches:
+      - account-deletion-hardening-v0.30
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Apply account deletion migration
+        run: python scripts/migrate-account-deletion-v030.py
+
+      - name: Install locked dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Run permanent CI checks
+        working-directory: app
+        run: npm run ci
+
+      - name: Verify deletion billing policy
+        working-directory: app
+        run: |
+          node - <<'NODE'
+          const {
+            subscriptionBlocksAccountDeletion,
+            publicDeletionBlock
+          } = require('./privacy/account-deletion');
+
+          const cases = [
+            [null, false],
+            [{ status: 'active', provider_subscription_id: null }, false],
+            [{ status: 'none', provider_subscription_id: 'sub_1' }, false],
+            [{ status: 'canceled', provider_subscription_id: 'sub_1' }, false],
+            [{ status: 'active', provider_subscription_id: 'sub_1' }, true],
+            [{ status: 'trialing', provider_subscription_id: 'sub_1' }, true],
+            [{ status: 'past_due', provider_subscription_id: 'sub_1' }, true],
+            [{ status: 'unpaid', provider_subscription_id: 'sub_1' }, true],
+            [{ status: 'paused', provider_subscription_id: 'sub_1' }, true],
+            [{ status: 'incomplete', provider_subscription_id: 'sub_1' }, true]
+          ];
+
+          for (const [input, expected] of cases) {
+            const actual = subscriptionBlocksAccountDeletion(input);
+            if (actual !== expected) {
+              throw new Error(`Deletion policy mismatch for ${JSON.stringify(input)}: ${actual}`);
+            }
+          }
+
+          const block = publicDeletionBlock({
+            provider: 'stripe',
+            provider_subscription_id: 'sub_secret',
+            status: 'active',
+            cancel_at_period_end: true,
+            current_period_end: '2026-10-01T00:00:00Z'
+          });
+          if (!block || block.code !== 'active_subscription' || block.provider !== 'stripe') {
+            throw new Error('Public deletion block contract failed');
+          }
+          if (JSON.stringify(block).includes('sub_secret')) {
+            throw new Error('Deletion block leaked provider subscription id');
+          }
+          console.log('Account deletion billing policy OK');
+          NODE
+
+      - name: Verify v0.30 source contract
+        run: |
+          grep -q 'account_deletion' app/access/entitlements.js
+          grep -q 'publicDeletionBlock' app/server.js
+          grep -q 'provider_subscription_id' app/server.js
+          grep -q 'UPDATE usage_events' app/server.js
+          grep -q 'provider_response_id = NULL' app/server.js
+          grep -q 'UPDATE age_verification_events' app/server.js
+          grep -q 'error_text = NULL' app/server.js
+          grep -q 'external paid subscription is still open' app/index.html
+
+      - name: Commit completed v0.30 and remove one-time migration
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/index.html app/access/entitlements.js app/privacy/account-deletion.js
+          git rm scripts/migrate-account-deletion-v030.py .github/workflows/account-deletion-v030.yml
+          git commit -m "Harden account deletion privacy and billing safety v0.30"
+          git push origin HEAD:account-deletion-hardening-v0.30
