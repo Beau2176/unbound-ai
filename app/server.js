@@ -4,6 +4,11 @@ const crypto = require("crypto");
 const { promisify } = require("util");
 const { Pool } = require("pg");
 const { generateChat, streamChat, getGatewayStatus } = require("./ai/gateway");
+const {
+  normalizePlanTier,
+  getPlanDefinition,
+  buildCapabilityAccess
+} = require("./access/entitlements");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -180,6 +185,46 @@ async function initializeDatabase() {
 
     CREATE INDEX IF NOT EXISTS conversation_messages_conversation_id_idx
       ON conversation_messages(conversation_id, id);
+
+
+    CREATE TABLE IF NOT EXISTS account_subscriptions (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      provider TEXT,
+      provider_customer_id TEXT,
+      provider_subscription_id TEXT,
+      status TEXT NOT NULL DEFAULT 'none',
+      plan_tier TEXT NOT NULL DEFAULT 'free',
+      current_period_start TIMESTAMPTZ,
+      current_period_end TIMESTAMPTZ,
+      cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS account_subscriptions_provider_subscription_idx
+      ON account_subscriptions(provider, provider_subscription_id)
+      WHERE provider_subscription_id IS NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS account_subscriptions_status_idx
+      ON account_subscriptions(status, plan_tier);
+
+    CREATE TABLE IF NOT EXISTS account_entitlement_overrides (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      entitlement_key TEXT NOT NULL,
+      enabled BOOLEAN NOT NULL,
+      reason TEXT,
+      expires_at TIMESTAMPTZ,
+      created_by_admin_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(user_id, entitlement_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS account_entitlement_overrides_user_idx
+      ON account_entitlement_overrides(user_id, entitlement_key);
 
     CREATE TABLE IF NOT EXISTS complimentary_top_tier_grants (
       slot SMALLINT PRIMARY KEY,
@@ -504,13 +549,152 @@ async function recordUsageEvent({
   );
 }
 
+
+function subscriptionStatusAllowsAccess(status) {
+  return ["active", "trialing"].includes(
+    String(status || "").trim().toLowerCase()
+  );
+}
+
+async function loadAccountSubscription(userId, client = pool) {
+  const result = await client.query(
+    `SELECT
+       provider,
+       status,
+       plan_tier,
+       current_period_start,
+       current_period_end,
+       cancel_at_period_end,
+       created_at,
+       updated_at
+     FROM account_subscriptions
+     WHERE user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function loadEntitlementOverrides(userId, client = pool) {
+  const result = await client.query(
+    `SELECT entitlement_key, enabled, reason, expires_at
+     FROM account_entitlement_overrides
+     WHERE user_id = $1
+       AND (expires_at IS NULL OR expires_at > NOW())
+     ORDER BY entitlement_key`,
+    [userId]
+  );
+
+  return result.rows;
+}
+
+function resolveEffectivePlan(user, subscription) {
+  const manualPlan = getPlanDefinition(user?.plan_tier);
+
+  if (user?.role === "admin") {
+    return { plan: getPlanDefinition("top"), source: "administrator" };
+  }
+
+  if (user?.complimentary_top_tier) {
+    return { plan: getPlanDefinition("top"), source: "complimentary" };
+  }
+
+  const subscriptionPlan =
+    subscription && subscriptionStatusAllowsAccess(subscription.status)
+      ? getPlanDefinition(subscription.plan_tier)
+      : getPlanDefinition("free");
+
+  if (subscriptionPlan.rank > manualPlan.rank) {
+    return { plan: subscriptionPlan, source: "subscription" };
+  }
+
+  return {
+    plan: manualPlan,
+    source: manualPlan.id === "free" ? "default" : "manual"
+  };
+}
+
+async function buildAccountAccess(user) {
+  if (!user || !databaseReady || !pool) return null;
+
+  const [subscription, overrides] = await Promise.all([
+    loadAccountSubscription(user.id),
+    loadEntitlementOverrides(user.id)
+  ]);
+  const effective = resolveEffectivePlan(user, subscription);
+  const capabilities = buildCapabilityAccess({
+    planTier: effective.plan.id,
+    overrides
+  });
+
+  return {
+    plan: {
+      tier: effective.plan.id,
+      displayName: effective.plan.displayName,
+      source: effective.source
+    },
+    subscription: {
+      connected: Boolean(subscription && subscription.provider),
+      provider: subscription?.provider || null,
+      status: subscription?.status || "none",
+      planTier: subscription ? normalizePlanTier(subscription.plan_tier) : null,
+      currentPeriodStart: subscription?.current_period_start || null,
+      currentPeriodEnd: subscription?.current_period_end || null,
+      cancelAtPeriodEnd: Boolean(subscription?.cancel_at_period_end)
+    },
+    capabilities,
+    summary: {
+      usable: capabilities.filter((item) => item.usable).length,
+      entitledButNotLive: capabilities.filter(
+        (item) => item.entitled && !item.available
+      ).length,
+      catalogSize: capabilities.length
+    }
+  };
+}
+
+function requireCapability(capabilityKey) {
+  return async function capabilityMiddleware(req, res, next) {
+    try {
+      const user = req.user || (await findSessionUser(req));
+      if (!user) {
+        return res.status(401).json({
+          error: "Sign in to access that UNBOUND AI capability."
+        });
+      }
+
+      const access = await buildAccountAccess(user);
+      const capability = access?.capabilities.find(
+        (item) => item.key === capabilityKey
+      );
+
+      if (!capability || !capability.usable) {
+        return res.status(403).json({
+          error: capability?.entitled && !capability?.available
+            ? "That capability is included in your access level but is not live yet."
+            : "Your current access level does not include that capability.",
+          capability: capability || null
+        });
+      }
+
+      req.user = user;
+      req.accountAccess = access;
+      next();
+    } catch (error) {
+      console.error("UNBOUND AI ENTITLEMENT ERROR:", error);
+      return res.status(500).json({ error: "Could not verify account access." });
+    }
+  };
+}
+
 async function requireSignedIn(req, res, next) {
   try {
     const user = await findSessionUser(req);
 
     if (!user) {
       return res.status(401).json({
-        error: "Sign in to access your UNBOUND AI conversation history."
+        error: "Sign in to access your UNBOUND AI account."
       });
     }
 
@@ -555,7 +739,8 @@ app.get("/api/health", (req, res) => {
     ok: true,
     database: databaseReady ? "connected" : "not-connected",
     accounts: databaseReady ? "ready" : "not-ready",
-    ai: getGatewayStatus()
+    ai: getGatewayStatus(),
+    commercial: databaseReady ? "entitlements-ready" : "not-ready"
   });
 });
 
@@ -703,6 +888,22 @@ app.get("/api/auth/me", requireDatabase, async (req, res) => {
     return res.status(500).json({ error: "Could not load account." });
   }
 });
+
+
+app.get(
+  "/api/account/access",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    try {
+      const access = await buildAccountAccess(req.user);
+      return res.json({ user: publicUser(req.user), access });
+    } catch (error) {
+      console.error("UNBOUND AI ACCOUNT ACCESS ERROR:", error);
+      return res.status(500).json({ error: "Could not load account access." });
+    }
+  }
+);
 
 /* ------------------------- CONVERSATION HISTORY ------------------------ */
 
@@ -1005,6 +1206,7 @@ app.get(
   "/api/conversations",
   requireDatabase,
   requireSignedIn,
+  requireCapability("server_history"),
   async (req, res) => {
     try {
       const requestedLimit = Number.parseInt(String(req.query.limit || "50"), 10);
@@ -1051,6 +1253,7 @@ app.get(
   "/api/conversations/:id",
   requireDatabase,
   requireSignedIn,
+  requireCapability("server_history"),
   async (req, res) => {
     try {
       const conversationId = String(req.params.id || "").trim();
@@ -1091,6 +1294,7 @@ app.post(
   "/api/conversations",
   requireDatabase,
   requireSignedIn,
+  requireCapability("server_history"),
   async (req, res) => {
     try {
       const depthStyle = normalizeDepthStyle(req.body.depthStyle);
@@ -1119,6 +1323,7 @@ app.post(
   "/api/conversations/import",
   requireDatabase,
   requireSignedIn,
+  requireCapability("server_history"),
   async (req, res) => {
     const messages = cleanStoredMessages(req.body.messages).slice(-50);
     if (!messages.length) {
@@ -1193,6 +1398,7 @@ app.delete(
   "/api/conversations/:id",
   requireDatabase,
   requireSignedIn,
+  requireCapability("server_history"),
   async (req, res) => {
     try {
       const conversationId = String(req.params.id || "").trim();
