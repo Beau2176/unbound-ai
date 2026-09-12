@@ -70,6 +70,10 @@ const {
   getLegalDocumentCatalog,
   buildLegalConsentStatus
 } = require("./privacy/legal-consent");
+const {
+  buildLivenessStatus,
+  buildReadinessStatus
+} = require("./ops/runtime-status");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -192,6 +196,38 @@ app.get("/unbound-cosmic.png", (req, res) => res.sendFile(path.join(__dirname, "
 let pool = null;
 let databaseReady = false;
 let databaseError = null;
+
+function sendStatusJson(res, statusCode, payload) {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  return res.status(statusCode).json(payload);
+}
+
+app.get("/healthz", (req, res) => {
+  return sendStatusJson(res, 200, buildLivenessStatus());
+});
+
+app.get("/readyz", (req, res) => {
+  const payload = buildReadinessStatus({
+    databaseConfigured: Boolean(process.env.DATABASE_URL),
+    databaseReady,
+    databaseError,
+    aiStatus: getGatewayStatus()
+  });
+
+  return sendStatusJson(res, payload.ready ? 200 : 503, payload);
+});
+
+app.get("/api/system/status", (req, res) => {
+  const payload = buildReadinessStatus({
+    databaseConfigured: Boolean(process.env.DATABASE_URL),
+    databaseReady,
+    databaseError,
+    aiStatus: getGatewayStatus()
+  });
+
+  return sendStatusJson(res, payload.ready ? 200 : 503, payload);
+});
 
 function createPool() {
   if (!process.env.DATABASE_URL) {
