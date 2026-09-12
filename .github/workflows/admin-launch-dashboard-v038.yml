@@ -1,0 +1,78 @@
+name: Admin Launch Dashboard v0.38
+
+on:
+  push:
+    branches:
+      - admin-launch-dashboard-v0.38
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: admin-launch-dashboard-v0.38
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Apply admin launch dashboard migration
+        run: python tools/apply_admin_launch_dashboard_v038.py
+
+      - name: Install locked dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Run permanent CI checks
+        working-directory: app
+        run: npm run ci
+
+      - name: Validate admin browser script syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          html = Path('app/admin.html').read_text()
+          start = html.index('<script>') + len('<script>')
+          end = html.rindex('</script>')
+          Path('/tmp/unbound-admin-v038.js').write_text(html[start:end])
+          PY
+          node --check /tmp/unbound-admin-v038.js
+
+      - name: Verify admin launch dashboard contract
+        run: |
+          grep -q 'Commercial Launch Readiness' app/admin.html
+          grep -q 'id="refreshLaunchReadiness"' app/admin.html
+          grep -q 'id="launchStatus"' app/admin.html
+          grep -q 'id="launchReadinessBody"' app/admin.html
+          grep -q 'function renderLaunchReadiness' app/admin.html
+          grep -q 'function loadLaunchReadiness' app/admin.html
+          grep -q '/api/admin/ops/launch-readiness' app/admin.html
+          grep -q 'do not bypass this gate' app/admin.html
+          grep -q 'loadLaunchReadiness()' app/admin.html
+
+      - name: Verify admin dashboard does not add launch override controls
+        run: |
+          if grep -Eqi 'force[ -]?launch|override[ -]?launch|mark[ -]?ready|bypass[ -]?gate' app/admin.html; then
+            echo 'Launch dashboard contains a launch-gate bypass control or wording.' >&2
+            exit 1
+          fi
+
+      - name: Commit completed v0.38 and remove one-time migration
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/admin.html
+          git rm tools/apply_admin_launch_dashboard_v038.py .github/workflows/admin-launch-dashboard-v038.yml
+          if git diff --cached --quiet; then
+            echo "No final changes to commit."
+          else
+            git commit -m "Add admin commercial launch dashboard v0.38"
+            git push origin HEAD:admin-launch-dashboard-v0.38
+          fi
