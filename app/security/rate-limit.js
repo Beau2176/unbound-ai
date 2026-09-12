@@ -58,6 +58,11 @@ function getRateLimitPolicy(env = process.env) {
       limit: positiveIntEnv(env, "RATE_LIMIT_FILE_ANALYSIS_PER_HOUR", 30, { max: 1000 }),
       windowSeconds: 60 * 60
     }),
+    imageUnderstanding: Object.freeze({
+      scope: "image_understanding_account",
+      limit: positiveIntEnv(env, "RATE_LIMIT_IMAGE_UNDERSTANDING_PER_HOUR", 30, { max: 1000 }),
+      windowSeconds: 60 * 60
+    }),
     securityActions: Object.freeze({
       scope: "security_action",
       limit: positiveIntEnv(env, "RATE_LIMIT_SECURITY_ACTIONS_PER_HOUR", 30, { max: 1000 }),
