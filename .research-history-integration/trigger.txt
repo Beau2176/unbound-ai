@@ -1,1 +1,0 @@
-Retry Research Mode history integration with literal replacement handling fixed.
