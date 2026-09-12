@@ -1,0 +1,47 @@
+name: Hard Age Adapter v0.41
+
+on:
+  push:
+    branches:
+      - age-adapter-foundation-v0.41
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Apply v0.41 server integration
+        run: node app/scripts/migrate-v041.js
+      - name: Install locked dependencies
+        working-directory: app
+        run: npm ci
+      - name: Run full permanent CI
+        working-directory: app
+        run: npm run ci
+      - name: Verify hard-age start-route privacy contract
+        run: |
+          grep -q '"/api/account/age-verification/start"' app/server.js
+          grep -q 'provider_reference_hash' app/server.js
+          grep -q 'hashAgeVerificationReference' app/server.js
+          grep -q 'status: "pending"' app/server.js
+          if grep -A90 '"/api/account/age-verification/start"' app/server.js | grep -q 'providerReference:'; then
+            echo "Raw provider reference must not be returned by the start route"
+            exit 1
+          fi
+      - name: Commit completed v0.41 and remove one-time migration
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/age/gateway.js app/package.json app/scripts/age-verification-contract.js
+          git rm app/scripts/migrate-v041.js .github/workflows/age-adapter-v041.yml
+          git commit -m "Add hard-age verification adapter foundation v0.41"
+          git push
