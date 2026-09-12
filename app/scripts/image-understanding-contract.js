@@ -95,7 +95,7 @@ function main() {
 
   assert.strictEqual(CAPABILITY_CATALOG.image_understanding.implemented, true);
   assert.strictEqual(CAPABILITY_CATALOG.image_understanding.minimumPlan, "top");
-  assert.strictEqual(CAPABILITY_CATALOG.image_tools.implemented, false);
+  assert.strictEqual(CAPABILITY_CATALOG.image_tools.implemented, true);
   const freeImage = buildCapabilityAccess({ planTier: "free" }).find((item) => item.key === "image_understanding");
   const topImage = buildCapabilityAccess({ planTier: "top" }).find((item) => item.key === "image_understanding");
   assert.strictEqual(freeImage.usable, false);

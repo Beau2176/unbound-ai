@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#050913" />
+  <title>UNBOUND AI — Image Studio</title>
+  <style>
+    :root { color-scheme:dark; --bg:#050913; --panel:rgba(7,14,27,.94); --text:#f7fbff; --muted:#aab8c9; --blue:#6bc1ff; --gold:#ffad43; --success:#65e8a4; --line:rgba(107,193,255,.26); }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; color:var(--text); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:linear-gradient(180deg,rgba(2,6,14,.22),rgba(2,6,14,.92)),url("/unbound-cosmic.png") center top/cover fixed no-repeat,var(--bg); }
+    button,input,textarea,select { font:inherit; }
+    :where(button,input,textarea,select,a[href]):focus-visible { outline:3px solid #ffd297; outline-offset:3px; }
+    .topbar { position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px clamp(16px,4vw,36px); border-bottom:1px solid rgba(255,255,255,.08); background:rgba(3,8,16,.84); backdrop-filter:blur(16px); }
+    .brand { font-weight:900; letter-spacing:.14em; } .brand span { color:#42a5ff; }
+    .navs { display:flex; gap:8px; flex-wrap:wrap; }
+    .nav,.secondary { border:1px solid var(--line); border-radius:10px; background:rgba(66,165,255,.08); color:#e8f6ff; text-decoration:none; font-weight:850; }
+    .nav { padding:8px 12px; font-size:12px; }
+    main { width:min(1120px,calc(100% - 28px)); margin:0 auto; padding:38px 0 70px; }
+    .hero { margin-bottom:20px; } .eyebrow { color:var(--gold); font-size:12px; font-weight:900; letter-spacing:.12em; }
+    h1 { margin:8px 0; font-size:clamp(32px,6vw,54px); line-height:1.05; } .hero p { max-width:820px; margin:0; color:#c6d5e3; line-height:1.65; }
+    .layout { display:grid; grid-template-columns:minmax(0,.88fr) minmax(0,1.12fr); gap:18px; align-items:start; }
+    .card { border:1px solid var(--line); border-radius:20px; background:var(--panel); box-shadow:0 24px 70px rgba(0,0,0,.4); padding:clamp(18px,3vw,28px); }
+    .tabs { display:flex; gap:8px; margin-bottom:18px; }
+    .tab { flex:1; min-height:43px; border:1px solid var(--line); border-radius:11px; background:rgba(255,255,255,.035); color:#dceafa; cursor:pointer; font-weight:900; }
+    .tab[aria-selected="true"] { border-color:rgba(255,173,67,.55); background:rgba(255,173,67,.10); color:#fff4e2; }
+    .field { display:grid; gap:7px; margin-bottom:14px; } label { font-size:12px; font-weight:850; color:#eaf6ff; }
+    textarea,select,input[type="file"] { width:100%; border:1px solid rgba(107,193,255,.25); border-radius:12px; background:rgba(0,0,0,.24); color:var(--text); padding:11px 12px; }
+    textarea { min-height:145px; resize:vertical; line-height:1.5; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .help,.usage { color:var(--muted); font-size:11px; line-height:1.55; }
+    .source-preview,.result-frame { display:grid; place-items:center; min-height:230px; border:1px solid rgba(255,255,255,.08); border-radius:14px; overflow:hidden; background:rgba(0,0,0,.28); }
+    .source-preview { margin:0 0 14px; }
+    .source-preview img,.result-frame img { display:block; max-width:100%; max-height:600px; object-fit:contain; }
+    .placeholder { color:var(--muted); font-size:12px; padding:20px; text-align:center; }
+    .actions { display:flex; gap:9px; flex-wrap:wrap; margin-top:8px; }
+    .primary,.secondary { min-height:43px; padding:10px 15px; border-radius:11px; cursor:pointer; font-weight:900; letter-spacing:.04em; }
+    .primary { border:1px solid rgba(255,173,67,.48); background:linear-gradient(135deg,rgba(255,173,67,.88),rgba(66,165,255,.8)); color:#07111c; }
+    button:disabled,.secondary[aria-disabled="true"] { opacity:.52; cursor:not-allowed; pointer-events:none; }
+    .status { margin-bottom:14px; min-height:22px; color:var(--muted); font-size:12px; line-height:1.5; }
+    .status[data-kind="success"] { color:var(--success); } .status[data-kind="error"] { color:#ffb0b0; }
+    .privacy { margin-top:17px; padding:13px 14px; border-left:3px solid var(--gold); background:rgba(255,173,67,.06); color:#d6e2ed; font-size:11px; line-height:1.6; }
+    .result-meta { margin:12px 0 0; color:var(--muted); font-size:11px; line-height:1.6; }
+    [hidden] { display:none !important; }
+    @media (max-width:820px) { .layout { grid-template-columns:1fr; } .grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">UNBOUND <span>AI</span> · IMAGE STUDIO</div>
+    <div class="navs"><a class="nav" href="/images.html">UNDERSTAND</a><a class="nav" href="/">CHAT</a></div>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="eyebrow">TOP · GENERATE + EDIT</div>
+      <h1>Create or transform an image.</h1>
+      <p>Generate a new image from a prompt or edit a supported source image. One result is produced per request to control cost. Generated and source image bytes are not stored in UNBOUND AI history.</p>
+    </section>
+    <div class="layout">
+      <section class="card">
+        <div id="accessStatus" class="status" role="status" aria-live="polite">Checking TOP access…</div>
+        <div class="tabs" role="tablist">
+          <button id="generateTab" class="tab" type="button" role="tab" aria-selected="true">CREATE</button>
+          <button id="editTab" class="tab" type="button" role="tab" aria-selected="false">EDIT</button>
+        </div>
+
+        <form id="studioForm">
+          <section id="editSource" hidden>
+            <div class="field"><label for="imageInput">Source image</label><input id="imageInput" type="file" disabled /><div id="acceptedTypes" class="help"></div></div>
+            <div class="source-preview"><span id="sourcePlaceholder" class="placeholder">No source image selected.</span><img id="sourcePreview" alt="Source image preview" hidden /></div>
+            <div class="field"><label for="fidelity">Input fidelity</label><select id="fidelity" disabled><option value="high" selected>HIGH — preserve source details</option><option value="low">LOW — more freedom to reinterpret</option></select></div>
+          </section>
+
+          <div class="field"><label for="prompt">Image instructions</label><textarea id="prompt" maxlength="8000" disabled placeholder="Create: A cinematic mountain observatory under an aurora…&#10;&#10;Edit: Keep the person and composition, but replace the background with a snowy mountain sunrise…"></textarea></div>
+          <div class="grid">
+            <div class="field"><label for="size">Size</label><select id="size" disabled><option value="1024x1024">1024 × 1024</option><option value="1536x1024">1536 × 1024 landscape</option><option value="1024x1536">1024 × 1536 portrait</option><option value="auto">AUTO</option></select></div>
+            <div class="field"><label for="quality">Quality</label><select id="quality" disabled><option value="medium" selected>MEDIUM — balanced</option><option value="low">LOW — lower cost</option><option value="high">HIGH — more detail</option><option value="auto">AUTO</option></select></div>
+            <div class="field"><label for="format">Output format</label><select id="format" disabled><option value="png" selected>PNG</option><option value="webp">WEBP</option><option value="jpeg">JPEG</option></select></div>
+            <div class="field"><label for="background">Background</label><select id="background" disabled><option value="auto" selected>AUTO</option><option value="opaque">OPAQUE</option><option value="transparent">TRANSPARENT</option></select></div>
+          </div>
+          <div class="help">Higher quality can use more image-output tokens. Transparent output requires PNG or WEBP; JPEG requests are automatically made opaque.</div>
+          <div class="actions"><button id="submitButton" class="primary" type="submit" disabled>GENERATE IMAGE</button><button id="clearButton" class="secondary" type="button" disabled>CLEAR</button></div>
+        </form>
+        <div class="privacy"><strong>Privacy + safety:</strong> source images are uploaded only after you submit an edit. UNBOUND does not save raw source or generated image bytes. The configured image provider's normal content moderation remains enabled; this studio does not expose a moderation-bypass setting.</div>
+      </section>
+
+      <section class="card">
+        <div id="requestStatus" class="status" role="status" aria-live="polite">Image Studio is loading.</div>
+        <div class="result-frame"><span id="resultPlaceholder" class="placeholder">Your generated or edited image will appear here.</span><img id="resultImage" alt="UNBOUND AI image result" hidden /></div>
+        <div id="resultMeta" class="result-meta"></div>
+        <div class="actions"><a id="saveButton" class="secondary" href="#" download="unbound-image.png" aria-disabled="true">SAVE IMAGE</a></div>
+      </section>
+    </div>
+  </main>
+  <script>
+    const generateTab = document.getElementById("generateTab");
+    const editTab = document.getElementById("editTab");
+    const editSource = document.getElementById("editSource");
+    const form = document.getElementById("studioForm");
+    const imageInput = document.getElementById("imageInput");
+    const sourcePreview = document.getElementById("sourcePreview");
+    const sourcePlaceholder = document.getElementById("sourcePlaceholder");
+    const prompt = document.getElementById("prompt");
+    const fidelity = document.getElementById("fidelity");
+    const size = document.getElementById("size");
+    const quality = document.getElementById("quality");
+    const format = document.getElementById("format");
+    const background = document.getElementById("background");
+    const submitButton = document.getElementById("submitButton");
+    const clearButton = document.getElementById("clearButton");
+    const accessStatus = document.getElementById("accessStatus");
+    const requestStatus = document.getElementById("requestStatus");
+    const acceptedTypes = document.getElementById("acceptedTypes");
+    const resultImage = document.getElementById("resultImage");
+    const resultPlaceholder = document.getElementById("resultPlaceholder");
+    const resultMeta = document.getElementById("resultMeta");
+    const saveButton = document.getElementById("saveButton");
+    let mode = "generate";
+    let limits = null;
+    let busy = false;
+    let sourceUrl = null;
+    let resultUrl = null;
+
+    function setStatus(element,message,kind="") { element.textContent=message; element.dataset.kind=kind; }
+    function extensionOf(name) { const i=String(name||"").lastIndexOf("."); return i>=0?String(name).slice(i).toLowerCase():""; }
+    function formatBytes(bytes) { if(bytes<1024)return `${bytes} B`; if(bytes<1024*1024)return `${(bytes/1024).toFixed(1)} KB`; return `${(bytes/(1024*1024)).toFixed(2)} MB`; }
+    function selectedEditFileValid() { const file=imageInput.files?.[0]; return Boolean(file&&limits&&limits.acceptedEditExtensions.includes(extensionOf(file.name))&&file.size>0&&file.size<=limits.maxEditImageBytes); }
+    function mimeForOutput(value) { return value==="jpeg"?"image/jpeg":value==="webp"?"image/webp":"image/png"; }
+    function extensionForOutput(value) { return value==="jpeg"?"jpg":value; }
+    function revoke(url) { if(url) URL.revokeObjectURL(url); }
+    function base64Blob(base64,mime) { const raw=atob(base64); const bytes=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i); return new Blob([bytes],{type:mime}); }
+    function fileBase64(file) { return new Promise((resolve,reject)=>{ const r=new FileReader(); r.onerror=()=>reject(new Error("The browser could not read that image.")); r.onload=()=>{ const v=String(r.result||""); const comma=v.indexOf(","); if(comma<0)return reject(new Error("The browser could not encode that image.")); resolve(v.slice(comma+1)); }; r.readAsDataURL(file); }); }
+
+    function refreshControls() {
+      const ready=Boolean(limits);
+      const hasPrompt=prompt.value.trim().length>0;
+      const editReady=mode!=="edit"||selectedEditFileValid();
+      for(const el of [prompt,size,quality,format,background]) el.disabled=!ready||busy;
+      fidelity.disabled=!ready||busy||mode!=="edit";
+      imageInput.disabled=!ready||busy||mode!=="edit";
+      submitButton.disabled=!ready||busy||!hasPrompt||!editReady;
+      clearButton.disabled=!ready||busy;
+      generateTab.disabled=busy; editTab.disabled=busy;
+    }
+
+    function setMode(next) {
+      mode=next;
+      const editing=mode==="edit";
+      generateTab.setAttribute("aria-selected",String(!editing));
+      editTab.setAttribute("aria-selected",String(editing));
+      editSource.hidden=!editing;
+      submitButton.textContent=editing?"EDIT IMAGE":"GENERATE IMAGE";
+      setStatus(requestStatus,editing?"Choose a source image and describe the change.":"Describe the image you want to create.");
+      refreshControls();
+    }
+
+    function clearResult() {
+      revoke(resultUrl); resultUrl=null;
+      resultImage.hidden=true; resultImage.removeAttribute("src"); resultPlaceholder.hidden=false;
+      resultMeta.textContent=""; saveButton.href="#"; saveButton.setAttribute("aria-disabled","true");
+    }
+    function clearSource() {
+      revoke(sourceUrl); sourceUrl=null;
+      sourcePreview.hidden=true; sourcePreview.removeAttribute("src"); sourcePlaceholder.hidden=false;
+      imageInput.value="";
+    }
+    function resetSourcePreview() {
+      revoke(sourceUrl); sourceUrl=null;
+      sourcePreview.hidden=true; sourcePreview.removeAttribute("src"); sourcePlaceholder.hidden=false;
+    }
+    function clearAll() { prompt.value=""; clearSource(); clearResult(); setStatus(requestStatus,mode==="edit"?"Choose a source image and describe the change.":"Describe the image you want to create."); refreshControls(); }
+
+    async function loadStatus() {
+      try {
+        const response=await fetch("/api/image-tools/status",{credentials:"same-origin",headers:{Accept:"application/json"}});
+        const payload=await response.json().catch(()=>({}));
+        if(!response.ok){ if(response.status===401)throw new Error("Sign in from the main chat before using Image Studio."); if(response.status===403)throw new Error("Image Studio is a TOP capability. This account does not currently have usable TOP access."); throw new Error(payload.error||"Image Studio is unavailable right now."); }
+        if(!payload.configured||!payload.limits)throw new Error("Image Studio is not connected to an available image provider yet.");
+        limits=payload.limits;
+        imageInput.accept=limits.acceptedEditExtensions.join(",");
+        prompt.maxLength=Number(limits.maxPromptChars||8000);
+        acceptedTypes.textContent=`${limits.acceptedEditExtensions.join(", ")} · maximum ${formatBytes(limits.maxEditImageBytes)}`;
+        setStatus(accessStatus,`Ready · ${String(payload.provider||"AI").toUpperCase()} · ${payload.model||"configured image model"}`,"success");
+        setMode("generate");
+      } catch(error){ limits=null; setStatus(accessStatus,error.message||"Image Studio is unavailable.","error"); setStatus(requestStatus,"Open the main chat to sign in or review Account Access.","error"); refreshControls(); }
+    }
+
+    generateTab.addEventListener("click",()=>setMode("generate"));
+    editTab.addEventListener("click",()=>setMode("edit"));
+    prompt.addEventListener("input",refreshControls);
+    format.addEventListener("change",()=>{ if(format.value==="jpeg"&&background.value==="transparent") background.value="opaque"; refreshControls(); });
+    background.addEventListener("change",()=>{ if(background.value==="transparent"&&format.value==="jpeg") format.value="png"; });
+    imageInput.addEventListener("change",()=>{ const file=imageInput.files?.[0]; resetSourcePreview(); if(!file){refreshControls();return;} const ext=extensionOf(file.name); if(!limits.acceptedEditExtensions.includes(ext)||file.size<=0||file.size>limits.maxEditImageBytes){ imageInput.value=""; setStatus(requestStatus,"That source image type or size is not supported.","error"); refreshControls(); return;} sourceUrl=URL.createObjectURL(file); sourcePreview.src=sourceUrl; sourcePreview.hidden=false; sourcePlaceholder.hidden=true; setStatus(requestStatus,`${file.name} · ${formatBytes(file.size)} · ready to edit.`,"success"); refreshControls(); });
+    clearButton.addEventListener("click",clearAll);
+
+    form.addEventListener("submit",async(event)=>{
+      event.preventDefault(); if(busy||!limits||!prompt.value.trim())return;
+      if(mode==="edit"&&!selectedEditFileValid())return;
+      busy=true; refreshControls(); clearResult(); setStatus(requestStatus,mode==="edit"?"Editing image…":"Generating image…");
+      try {
+        const common={prompt:prompt.value.trim(),size:size.value,quality:quality.value,outputFormat:format.value,background:background.value};
+        let endpoint="/api/image-tools/generate"; let payload=common;
+        if(mode==="edit") { const file=imageInput.files[0]; endpoint="/api/image-tools/edit"; payload={...common,filename:file.name,imageBase64:await fileBase64(file),inputFidelity:fidelity.value}; }
+        const response=await fetch(endpoint,{method:"POST",credentials:"same-origin",headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify(payload)});
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok)throw new Error(data.error||"The image request failed.");
+        const mime=mimeForOutput(data.outputFormat); const blob=base64Blob(data.imageBase64,mime); resultUrl=URL.createObjectURL(blob);
+        resultImage.src=resultUrl; resultImage.hidden=false; resultPlaceholder.hidden=true;
+        saveButton.href=resultUrl; saveButton.download=`unbound-image.${extensionForOutput(data.outputFormat)}`; saveButton.setAttribute("aria-disabled","false");
+        resultMeta.textContent=`${String(data.model||"")} · ${data.size||size.value} · ${data.quality||quality.value} · ${String(data.outputFormat||format.value).toUpperCase()} · not stored by UNBOUND`;
+        setStatus(requestStatus,mode==="edit"?"Edit complete.":"Generation complete.","success");
+      } catch(error){ setStatus(requestStatus,error.message||"The image request failed.","error"); }
+      finally { busy=false; refreshControls(); }
+    });
+
+    window.addEventListener("beforeunload",()=>{revoke(sourceUrl);revoke(resultUrl);});
+    loadStatus();
+  </script>
+</body>
+</html>
