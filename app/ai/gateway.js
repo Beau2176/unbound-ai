@@ -19,6 +19,10 @@ function getProvider() {
   return provider;
 }
 
+function providerSupportsResearch(provider) {
+  return typeof provider?.supportsResearch === "function" && provider.supportsResearch();
+}
+
 function getGatewayStatus() {
   const name = normalizeProviderName(process.env.AI_PROVIDER);
   const provider = providers.get(name);
@@ -29,6 +33,7 @@ function getGatewayStatus() {
       configured: false,
       model: null,
       streaming: false,
+      research: false,
       error: "unsupported-provider"
     };
   }
@@ -38,13 +43,21 @@ function getGatewayStatus() {
     configured: provider.isConfigured(),
     model: provider.getModel(),
     streaming: typeof provider.streamChat === "function",
+    research: providerSupportsResearch(provider),
     error: provider.isConfigured() ? null : "provider-not-configured"
   };
 }
 
-async function generateChat({ instructions, input, model }) {
+async function generateChat({ instructions, input, model, research = null }) {
   const provider = getProvider();
-  return provider.generateChat({ instructions, input, model });
+
+  if (research?.enabled && !providerSupportsResearch(provider)) {
+    const error = new Error(`AI provider '${provider.id}' does not support Research Mode.`);
+    error.code = "AI_PROVIDER_RESEARCH_UNSUPPORTED";
+    throw error;
+  }
+
+  return provider.generateChat({ instructions, input, model, research });
 }
 
 async function streamChat({ instructions, input, model, onDelta }) {

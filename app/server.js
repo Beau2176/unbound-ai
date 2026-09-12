@@ -54,7 +54,17 @@ Response-depth style: WORK MODE.
 - Compare relevant options when useful.
 - Clearly separate established facts, estimates, recommendations, predictions, and uncertainty when those distinctions matter.
 - Do not stop at a shallow first answer when a deeper treatment is useful.
-- This server does not yet provide external web/research tools to the model. Never claim external research, browsing, source verification, or tool use unless those capabilities are actually added and invoked.
+- Use external research only when research tools are actually provided for the current request. Never claim browsing, verification, or tool use unless it actually occurred.
+`;
+
+const RESEARCH_MODE_PROMPT = `
+Product mode: RESEARCH MODE.
+- Use the provided web-search capability before answering.
+- Prefer primary, official, recent, and directly relevant sources when they are available.
+- Cross-check important or disputed claims across more than one source when practical.
+- Clearly distinguish verified facts, uncertainty, estimates, and interpretation.
+- Do not invent sources, citations, quotes, dates, or claims that were not supported by the research.
+- Keep citations attached to the claims they support. The user interface will make cited URLs visible and clickable.
 `;
 
 app.disable("x-powered-by");
@@ -139,10 +149,14 @@ async function initializeDatabase() {
       user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       title TEXT NOT NULL DEFAULT 'New chat',
       depth_style TEXT NOT NULL DEFAULT 'casual',
+      product_mode TEXT NOT NULL DEFAULT 'standard',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT conversations_depth_style_check CHECK (depth_style IN ('casual', 'work'))
     );
+
+    ALTER TABLE conversations
+      ADD COLUMN IF NOT EXISTS product_mode TEXT NOT NULL DEFAULT 'standard';
 
     CREATE INDEX IF NOT EXISTS conversations_user_updated_idx
       ON conversations(user_id, updated_at DESC, id DESC);
@@ -152,9 +166,17 @@ async function initializeDatabase() {
       conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
       role TEXT NOT NULL,
       content TEXT NOT NULL,
+      research_sources JSONB NOT NULL DEFAULT '[]'::jsonb,
+      research_citations JSONB NOT NULL DEFAULT '[]'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT conversation_messages_role_check CHECK (role IN ('user', 'assistant'))
     );
+
+    ALTER TABLE conversation_messages
+      ADD COLUMN IF NOT EXISTS research_sources JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+    ALTER TABLE conversation_messages
+      ADD COLUMN IF NOT EXISTS research_citations JSONB NOT NULL DEFAULT '[]'::jsonb;
 
     CREATE INDEX IF NOT EXISTS conversation_messages_conversation_id_idx
       ON conversation_messages(conversation_id, id);
@@ -192,10 +214,14 @@ async function initializeDatabase() {
       input_tokens INTEGER NOT NULL DEFAULT 0,
       output_tokens INTEGER NOT NULL DEFAULT 0,
       total_tokens INTEGER NOT NULL DEFAULT 0,
+      web_search_calls INTEGER NOT NULL DEFAULT 0,
       estimated_cost_micros BIGINT,
       provider_response_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE usage_events
+      ADD COLUMN IF NOT EXISTS web_search_calls INTEGER NOT NULL DEFAULT 0;
 
     CREATE INDEX IF NOT EXISTS usage_events_created_at_idx
       ON usage_events(created_at DESC);
@@ -434,18 +460,19 @@ async function recordUsageEvent({
   model,
   eventType = "chat",
   usage = null,
+  webSearchCalls = 0,
   estimatedCostMicros = null,
   providerResponseId = null
 }) {
-  if (!databaseReady || !pool || !usage) {
+  if (!databaseReady || !pool || (!usage && !webSearchCalls)) {
     return;
   }
 
-  const inputTokens = Math.max(0, Number(usage.input_tokens || 0));
-  const outputTokens = Math.max(0, Number(usage.output_tokens || 0));
+  const inputTokens = Math.max(0, Number(usage?.input_tokens || 0));
+  const outputTokens = Math.max(0, Number(usage?.output_tokens || 0));
   const totalTokens = Math.max(
     0,
-    Number(usage.total_tokens || inputTokens + outputTokens)
+    Number(usage?.total_tokens || inputTokens + outputTokens)
   );
 
   await pool.query(
@@ -457,10 +484,11 @@ async function recordUsageEvent({
        input_tokens,
        output_tokens,
        total_tokens,
+       web_search_calls,
        estimated_cost_micros,
        provider_response_id
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     [
       userId,
       provider,
@@ -469,6 +497,7 @@ async function recordUsageEvent({
       inputTokens,
       outputTokens,
       totalTokens,
+      Math.max(0, Number(webSearchCalls || 0)),
       estimatedCostMicros,
       providerResponseId
     ]
@@ -686,11 +715,92 @@ function validConversationId(value) {
   return /^\d+$/.test(String(value || "").trim());
 }
 
+function normalizeResearchSources(value) {
+  if (!Array.isArray(value)) return [];
+
+  const results = [];
+  const seen = new Set();
+
+  for (const item of value) {
+    if (results.length >= 12) break;
+
+    try {
+      const parsed = new URL(String(item?.url || ""));
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
+      const url = parsed.toString().slice(0, 2048);
+      if (seen.has(url)) continue;
+      seen.add(url);
+
+      const number = Number(item?.number);
+      results.push({
+        number: Number.isInteger(number) && number > 0 ? number : results.length + 1,
+        title: String(item?.title || "Source").trim().slice(0, 220) || "Source",
+        url
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  return results;
+}
+
+function normalizeResearchCitations(value, sources, contentLength = 12000) {
+  if (!Array.isArray(value)) return [];
+  const allowedNumbers = new Set(sources.map((source) => Number(source.number)));
+
+  return value
+    .map((item) => ({
+      sourceNumber: Number(item?.sourceNumber),
+      startIndex: Number(item?.startIndex),
+      endIndex: Number(item?.endIndex)
+    }))
+    .filter((item) =>
+      allowedNumbers.has(item.sourceNumber) &&
+      Number.isInteger(item.startIndex) &&
+      Number.isInteger(item.endIndex) &&
+      item.startIndex >= 0 &&
+      item.endIndex >= item.startIndex &&
+      item.endIndex <= contentLength
+    )
+    .slice(0, 30);
+}
+
+function cleanStoredMessages(messages) {
+  if (!Array.isArray(messages)) return [];
+
+  return messages
+    .filter((item) =>
+      item &&
+      (item.role === "user" || item.role === "assistant") &&
+      typeof item.content === "string" &&
+      item.content.trim()
+    )
+    .map((item) => {
+      const content = item.content.trim().slice(0, 12000);
+      const sources = item.role === "assistant"
+        ? normalizeResearchSources(item.sources)
+        : [];
+      const citations = item.role === "assistant"
+        ? normalizeResearchCitations(item.citations, sources, content.length)
+        : [];
+
+      return {
+        role: item.role,
+        content,
+        sources,
+        citations
+      };
+    })
+    .slice(-50);
+}
+
 function publicConversation(row) {
   return {
     id: String(row.id),
     title: row.title || "New chat",
     depthStyle: normalizeDepthStyle(row.depth_style),
+    productMode: normalizeProductMode(row.product_mode),
     messageCount: Number(row.message_count || 0),
     preview: row.preview || "",
     createdAt: row.created_at,
@@ -701,7 +811,7 @@ function publicConversation(row) {
 async function getConversationMessages(conversationId, limit = 200, client = pool) {
   const safeLimit = Math.min(Math.max(Number(limit) || 200, 1), 500);
   const result = await client.query(
-    `SELECT id, role, content, created_at
+    `SELECT id, role, content, research_sources, research_citations, created_at
      FROM conversation_messages
      WHERE conversation_id = $1
      ORDER BY id DESC
@@ -709,15 +819,27 @@ async function getConversationMessages(conversationId, limit = 200, client = poo
     [conversationId, safeLimit]
   );
 
-  return result.rows.reverse().map((row) => ({
-    id: String(row.id),
-    role: row.role,
-    content: row.content,
-    createdAt: row.created_at
-  }));
+  return result.rows.reverse().map((row) => {
+    const content = String(row.content || "");
+    const sources = row.role === "assistant"
+      ? normalizeResearchSources(row.research_sources)
+      : [];
+    const citations = row.role === "assistant"
+      ? normalizeResearchCitations(row.research_citations, sources, content.length)
+      : [];
+
+    return {
+      id: String(row.id),
+      role: row.role,
+      content,
+      sources,
+      citations,
+      createdAt: row.created_at
+    };
+  });
 }
 
-async function preparePersistentChat(req, message, depthStyle) {
+async function preparePersistentChat(req, message, depthStyle, productMode) {
   if (!databaseReady || !pool) {
     return null;
   }
@@ -742,7 +864,7 @@ async function preparePersistentChat(req, message, depthStyle) {
 
     if (requestedId) {
       const result = await client.query(
-        `SELECT id, user_id, title, depth_style, created_at, updated_at
+        `SELECT id, user_id, title, depth_style, product_mode, created_at, updated_at
          FROM conversations
          WHERE id = $1 AND user_id = $2
          LIMIT 1
@@ -758,10 +880,10 @@ async function preparePersistentChat(req, message, depthStyle) {
       }
     } else {
       const result = await client.query(
-        `INSERT INTO conversations (user_id, title, depth_style)
-         VALUES ($1, $2, $3)
-         RETURNING id, user_id, title, depth_style, created_at, updated_at`,
-        [user.id, conversationTitleFromMessage(message), depthStyle]
+        `INSERT INTO conversations (user_id, title, depth_style, product_mode)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, user_id, title, depth_style, product_mode, created_at, updated_at`,
+        [user.id, conversationTitleFromMessage(message), depthStyle, productMode]
       );
       conversation = result.rows[0];
     }
@@ -794,9 +916,10 @@ async function preparePersistentChat(req, message, depthStyle) {
       `UPDATE conversations
        SET title = $1,
            depth_style = $2,
+           product_mode = $3,
            updated_at = NOW()
-       WHERE id = $3`,
-      [nextTitle, depthStyle, conversation.id]
+       WHERE id = $4`,
+      [nextTitle, depthStyle, productMode, conversation.id]
     );
 
     await client.query("COMMIT");
@@ -814,30 +937,60 @@ async function preparePersistentChat(req, message, depthStyle) {
   }
 }
 
-async function persistAssistantMessage(persistentChat, content, depthStyle) {
+async function persistAssistantMessage(
+  persistentChat,
+  content,
+  depthStyle,
+  productMode,
+  researchMetadata = {}
+) {
   if (!persistentChat || !databaseReady || !pool) {
     return;
   }
 
-  const text = String(content || "").trim();
+  const text = String(content || "").trim().slice(0, 12000);
   if (!text) {
     return;
   }
+
+  const sources = normalizeResearchSources(researchMetadata.sources);
+  const citations = normalizeResearchCitations(
+    researchMetadata.citations,
+    sources,
+    text.length
+  );
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     await client.query(
-      `INSERT INTO conversation_messages (conversation_id, role, content)
-       VALUES ($1, 'assistant', $2)`,
-      [persistentChat.conversationId, text.slice(0, 12000)]
+      `INSERT INTO conversation_messages (
+         conversation_id,
+         role,
+         content,
+         research_sources,
+         research_citations
+       )
+       VALUES ($1, 'assistant', $2, $3::jsonb, $4::jsonb)`,
+      [
+        persistentChat.conversationId,
+        text,
+        JSON.stringify(sources),
+        JSON.stringify(citations)
+      ]
     );
     await client.query(
       `UPDATE conversations
        SET depth_style = $1,
+           product_mode = $2,
            updated_at = NOW()
-       WHERE id = $2 AND user_id = $3`,
-      [depthStyle, persistentChat.conversationId, persistentChat.user.id]
+       WHERE id = $3 AND user_id = $4`,
+      [
+        depthStyle,
+        productMode,
+        persistentChat.conversationId,
+        persistentChat.user.id
+      ]
     );
     await client.query("COMMIT");
   } catch (error) {
@@ -864,6 +1017,7 @@ app.get(
            c.id,
            c.title,
            c.depth_style,
+           c.product_mode,
            c.created_at,
            c.updated_at,
            COUNT(m.id)::bigint AS message_count,
@@ -905,7 +1059,7 @@ app.get(
       }
 
       const result = await pool.query(
-        `SELECT id, title, depth_style, created_at, updated_at
+        `SELECT id, title, depth_style, product_mode, created_at, updated_at
          FROM conversations
          WHERE id = $1 AND user_id = $2
          LIMIT 1`,
@@ -940,11 +1094,12 @@ app.post(
   async (req, res) => {
     try {
       const depthStyle = normalizeDepthStyle(req.body.depthStyle);
+      const productMode = normalizeProductMode(req.body.productMode);
       const result = await pool.query(
-        `INSERT INTO conversations (user_id, title, depth_style)
-         VALUES ($1, 'New chat', $2)
-         RETURNING id, title, depth_style, created_at, updated_at`,
-        [req.user.id, depthStyle]
+        `INSERT INTO conversations (user_id, title, depth_style, product_mode)
+         VALUES ($1, 'New chat', $2, $3)
+         RETURNING id, title, depth_style, product_mode, created_at, updated_at`,
+        [req.user.id, depthStyle, productMode]
       );
       return res.status(201).json({
         conversation: publicConversation({
@@ -965,34 +1120,48 @@ app.post(
   requireDatabase,
   requireSignedIn,
   async (req, res) => {
-    const messages = cleanHistory(req.body.messages).slice(-50);
+    const messages = cleanStoredMessages(req.body.messages).slice(-50);
     if (!messages.length) {
       return res.status(400).json({ error: "There is no conversation to import." });
     }
 
     const depthStyle = normalizeDepthStyle(req.body.depthStyle);
+    const productMode = normalizeProductMode(req.body.productMode);
     const firstUser = messages.find((item) => item.role === "user");
     const client = await pool.connect();
 
     try {
       await client.query("BEGIN");
       const created = await client.query(
-        `INSERT INTO conversations (user_id, title, depth_style)
-         VALUES ($1, $2, $3)
-         RETURNING id, title, depth_style, created_at, updated_at`,
+        `INSERT INTO conversations (user_id, title, depth_style, product_mode)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, title, depth_style, product_mode, created_at, updated_at`,
         [
           req.user.id,
           conversationTitleFromMessage(firstUser?.content || "Imported chat"),
-          depthStyle
+          depthStyle,
+          productMode
         ]
       );
       const conversation = created.rows[0];
 
       for (const item of messages) {
         await client.query(
-          `INSERT INTO conversation_messages (conversation_id, role, content)
-           VALUES ($1, $2, $3)`,
-          [conversation.id, item.role, item.content.slice(0, 12000)]
+          `INSERT INTO conversation_messages (
+             conversation_id,
+             role,
+             content,
+             research_sources,
+             research_citations
+           )
+           VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)`,
+          [
+            conversation.id,
+            item.role,
+            item.content,
+            JSON.stringify(item.sources || []),
+            JSON.stringify(item.citations || [])
+          ]
         );
       }
 
@@ -1199,6 +1368,7 @@ app.get(
              COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
              COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens,
              COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+             COALESCE(SUM(web_search_calls), 0)::bigint AS web_search_calls,
              COUNT(estimated_cost_micros)::bigint AS priced_events,
              COALESCE(SUM(estimated_cost_micros), 0)::bigint AS estimated_cost_micros
            FROM usage_events
@@ -1211,6 +1381,7 @@ app.get(
              model,
              COUNT(*)::bigint AS requests,
              COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+             COALESCE(SUM(web_search_calls), 0)::bigint AS web_search_calls,
              COUNT(estimated_cost_micros)::bigint AS priced_events,
              COALESCE(SUM(estimated_cost_micros), 0)::bigint AS estimated_cost_micros
            FROM usage_events
@@ -1225,6 +1396,7 @@ app.get(
              DATE_TRUNC('day', created_at) AS day,
              COUNT(*)::bigint AS requests,
              COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+             COALESCE(SUM(web_search_calls), 0)::bigint AS web_search_calls,
              COUNT(estimated_cost_micros)::bigint AS priced_events,
              COALESCE(SUM(estimated_cost_micros), 0)::bigint AS estimated_cost_micros
            FROM usage_events
@@ -1248,6 +1420,7 @@ app.get(
           inputTokens: Number(totals.input_tokens),
           outputTokens: Number(totals.output_tokens),
           totalTokens: Number(totals.total_tokens),
+          webSearchCalls: Number(totals.web_search_calls),
           pricedEvents: Number(totals.priced_events),
           estimatedCostMicros: Number(totals.estimated_cost_micros)
         },
@@ -1256,6 +1429,7 @@ app.get(
           model: row.model,
           requests: Number(row.requests),
           totalTokens: Number(row.total_tokens),
+          webSearchCalls: Number(row.web_search_calls),
           pricedEvents: Number(row.priced_events),
           estimatedCostMicros: Number(row.estimated_cost_micros)
         })),
@@ -1263,6 +1437,7 @@ app.get(
           day: row.day,
           requests: Number(row.requests),
           totalTokens: Number(row.total_tokens),
+          webSearchCalls: Number(row.web_search_calls),
           pricedEvents: Number(row.priced_events),
           estimatedCostMicros: Number(row.estimated_cost_micros)
         }))
@@ -1640,6 +1815,12 @@ function normalizeDepthStyle(value) {
     : "casual";
 }
 
+function normalizeProductMode(value) {
+  return String(value || "").trim().toLowerCase() === "research"
+    ? "research"
+    : "standard";
+}
+
 function cleanHistory(history) {
   if (!Array.isArray(history)) {
     return [];
@@ -1682,13 +1863,29 @@ app.post("/api/chat", async (req, res) => {
             : "AI provider '" + gatewayStatus.provider + "' is not configured."
       });
     }
+
     const depthStyle = normalizeDepthStyle(req.body.depthStyle);
-    const persistentChat = await preparePersistentChat(req, message, depthStyle);
+    const productMode = normalizeProductMode(req.body.productMode);
+
+    if (productMode === "research" && !gatewayStatus.research) {
+      return res.status(503).json({
+        error: "The active AI provider does not support Research Mode yet."
+      });
+    }
+
+    const persistentChat = await preparePersistentChat(
+      req,
+      message,
+      depthStyle,
+      productMode
+    );
     const history = persistentChat
       ? persistentChat.history
       : cleanHistory(req.body.history).slice(-20);
     const depthInstructions =
       depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT;
+    const modeInstructions =
+      productMode === "research" ? RESEARCH_MODE_PROMPT : "";
 
     const input = [
       ...history,
@@ -1700,19 +1897,37 @@ app.post("/api/chat", async (req, res) => {
 
     const aiResponse = await generateChat({
       model: gatewayStatus.model,
-      instructions: UNBOUND_SYSTEM_PROMPT + "\n\n" + depthInstructions,
-      input
+      instructions: [UNBOUND_SYSTEM_PROMPT, depthInstructions, modeInstructions]
+        .filter(Boolean)
+        .join("\n\n"),
+      input,
+      research:
+        productMode === "research"
+          ? { enabled: true, maxToolCalls: depthStyle === "work" ? 8 : 4 }
+          : null
     });
+
+    const researchMetadata = aiResponse.research || {
+      sources: [],
+      citations: [],
+      webSearchCalls: 0
+    };
 
     if (persistentChat) {
       await persistAssistantMessage(
         persistentChat,
         aiResponse.reply,
-        depthStyle
+        depthStyle,
+        productMode,
+        researchMetadata
       );
     }
 
-    if (databaseReady && pool && aiResponse.usage) {
+    if (
+      databaseReady &&
+      pool &&
+      (aiResponse.usage || researchMetadata.webSearchCalls)
+    ) {
       try {
         const sessionUser = persistentChat?.user || await findSessionUser(req);
 
@@ -1720,8 +1935,9 @@ app.post("/api/chat", async (req, res) => {
           userId: sessionUser?.id || null,
           provider: aiResponse.provider,
           model: aiResponse.model,
-          eventType: "chat_" + depthStyle,
+          eventType: "chat_" + productMode + "_" + depthStyle,
           usage: aiResponse.usage,
+          webSearchCalls: researchMetadata.webSearchCalls,
           estimatedCostMicros: estimateProviderCostMicros(
             aiResponse.provider,
             aiResponse.usage
@@ -1736,8 +1952,12 @@ app.post("/api/chat", async (req, res) => {
     res.json({
       reply: aiResponse.reply,
       depthStyle,
+      productMode,
       provider: aiResponse.provider,
       model: aiResponse.model,
+      sources: researchMetadata.sources,
+      citations: researchMetadata.citations,
+      webSearchCalls: researchMetadata.webSearchCalls,
       conversationId: persistentChat?.conversationId || null
     });
   } catch (error) {
@@ -1748,7 +1968,6 @@ app.post("/api/chat", async (req, res) => {
     });
   }
 });
-
 
 app.post("/api/chat/stream", async (req, res) => {
   try {
@@ -1771,7 +1990,20 @@ app.post("/api/chat/stream", async (req, res) => {
     }
 
     const depthStyle = normalizeDepthStyle(req.body.depthStyle);
-    const persistentChat = await preparePersistentChat(req, message, depthStyle);
+    const productMode = normalizeProductMode(req.body.productMode);
+
+    if (productMode === "research") {
+      return res.status(400).json({
+        error: "Research Mode uses the sourced response endpoint instead of streaming."
+      });
+    }
+
+    const persistentChat = await preparePersistentChat(
+      req,
+      message,
+      depthStyle,
+      "standard"
+    );
     const history = persistentChat
       ? persistentChat.history
       : cleanHistory(req.body.history).slice(-20);
@@ -1797,6 +2029,7 @@ app.post("/api/chat/stream", async (req, res) => {
     writeEvent({
       type: "meta",
       depthStyle,
+      productMode: "standard",
       provider: gatewayStatus.provider,
       model: gatewayStatus.model,
       conversationId: persistentChat?.conversationId || null
@@ -1815,7 +2048,9 @@ app.post("/api/chat/stream", async (req, res) => {
       await persistAssistantMessage(
         persistentChat,
         aiResponse.reply,
-        depthStyle
+        depthStyle,
+        "standard",
+        { sources: [], citations: [], webSearchCalls: 0 }
       );
     }
 
@@ -1826,8 +2061,9 @@ app.post("/api/chat/stream", async (req, res) => {
           userId: sessionUser?.id || null,
           provider: aiResponse.provider,
           model: aiResponse.model,
-          eventType: "chat_stream_" + depthStyle,
+          eventType: "chat_stream_standard_" + depthStyle,
           usage: aiResponse.usage,
+          webSearchCalls: 0,
           estimatedCostMicros: estimateProviderCostMicros(
             aiResponse.provider,
             aiResponse.usage
@@ -1842,6 +2078,7 @@ app.post("/api/chat/stream", async (req, res) => {
     writeEvent({
       type: "done",
       depthStyle,
+      productMode: "standard",
       provider: aiResponse.provider,
       model: aiResponse.model,
       conversationId: persistentChat?.conversationId || null

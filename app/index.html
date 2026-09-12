@@ -371,6 +371,42 @@
       box-shadow: inset 0 0 0 1px rgba(255, 173, 67, 0.22);
     }
 
+
+    .product-control {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid rgba(174, 128, 255, 0.30);
+      border-radius: 10px;
+      background: rgba(8, 5, 20, 0.72);
+    }
+
+    .product-button {
+      padding: 6px 8px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: #9f94b6;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .product-button.active[data-product-mode="standard"] {
+      background: rgba(107, 193, 255, 0.12);
+      color: #d9efff;
+      box-shadow: inset 0 0 0 1px rgba(107, 193, 255, 0.18);
+    }
+
+    .product-button.active[data-product-mode="research"] {
+      background: rgba(162, 105, 255, 0.18);
+      color: #e4d4ff;
+      box-shadow: inset 0 0 0 1px rgba(188, 145, 255, 0.30);
+    }
+
     .new-chat {
       padding: 7px 10px;
       border: 1px solid rgba(107, 193, 255, 0.30);
@@ -437,6 +473,68 @@
       color: #bfe5ff;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 0.93em;
+    }
+
+
+    .inline-citation {
+      display: inline-grid;
+      place-items: center;
+      min-width: 20px;
+      height: 20px;
+      margin-left: 3px;
+      padding: 0 5px;
+      border: 1px solid rgba(180, 132, 255, 0.45);
+      border-radius: 999px;
+      background: rgba(139, 82, 230, 0.18);
+      color: #e7d8ff;
+      text-decoration: none;
+      font-size: 10px;
+      font-weight: 900;
+      vertical-align: 0.1em;
+    }
+
+    .inline-citation:hover {
+      background: rgba(139, 82, 230, 0.30);
+      border-color: rgba(200, 169, 255, 0.72);
+    }
+
+    .message-sources {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 11px;
+      padding-top: 9px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .source-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      max-width: 100%;
+      padding: 5px 8px;
+      border: 1px solid rgba(180, 132, 255, 0.30);
+      border-radius: 999px;
+      background: rgba(139, 82, 230, 0.10);
+      color: #d9c6ff;
+      text-decoration: none;
+      font-size: 10px;
+      line-height: 1.2;
+    }
+
+    .source-link:hover {
+      background: rgba(139, 82, 230, 0.20);
+      border-color: rgba(200, 169, 255, 0.55);
+    }
+
+    .source-link-number {
+      font-weight: 900;
+    }
+
+    .source-link-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .message.error {
@@ -1035,6 +1133,10 @@
           <p>Direct conversation, broad knowledge, creativity, and user-controlled AI.</p>
         </div>
         <div class="chat-actions">
+          <div class="product-control" role="group" aria-label="Product mode">
+            <button id="standardModeButton" class="product-button active" data-product-mode="standard" type="button" aria-pressed="true">STANDARD</button>
+            <button id="researchModeButton" class="product-button" data-product-mode="research" type="button" aria-pressed="false">RESEARCH</button>
+          </div>
           <div class="depth-control" role="group" aria-label="Response depth">
             <button id="casualModeButton" class="depth-button active" data-depth-style="casual" type="button" aria-pressed="true">CASUAL</button>
             <button id="workModeButton" class="depth-button" data-depth-style="work" type="button" aria-pressed="false">WORK</button>
@@ -1060,7 +1162,7 @@
         </form>
 
         <div class="mode-row">
-          <div class="hint"><span id="depthStatus" class="depth-status">Casual Mode — Fast answers when you need them.</span> • Enter to send • Shift + Enter for a new line</div>
+          <div class="hint"><span id="productStatus" class="depth-status">Standard Mode</span> • <span id="depthStatus" class="depth-status">Casual Mode — Fast answers when you need them.</span> • Enter to send • Shift + Enter for a new line</div>
           <button id="goDeeperButton" class="go-deeper" type="button" hidden>GO DEEPER</button>
         </div>
       </div>
@@ -1161,6 +1263,7 @@
   <script>
     const STORAGE_KEY_BASE = "unbound-ai-chat-history-v1";
     const DEPTH_STYLE_KEY_BASE = "unbound-ai-depth-style-v1";
+    const PRODUCT_MODE_KEY_BASE = "unbound-ai-product-mode-v1";
     const MAX_STORED_MESSAGES = 50;
     const MAX_CONTEXT_MESSAGES = 20;
 
@@ -1168,6 +1271,9 @@
     const input = document.getElementById("message");
     const sendButton = document.getElementById("sendButton");
     const newChatButton = document.getElementById("newChatButton");
+    const standardModeButton = document.getElementById("standardModeButton");
+    const researchModeButton = document.getElementById("researchModeButton");
+    const productStatus = document.getElementById("productStatus");
     const casualModeButton = document.getElementById("casualModeButton");
     const workModeButton = document.getElementById("workModeButton");
     const depthStatus = document.getElementById("depthStatus");
@@ -1203,6 +1309,7 @@
     let currentUser = null;
     let activeConversationId = null;
     let conversationHistory = [];
+    let productMode = "standard";
     let depthStyle = "casual";
     let toastTimer = null;
 
@@ -1237,6 +1344,71 @@
       }
 
       return `${DEPTH_STYLE_KEY_BASE}-guest`;
+    }
+
+    function productModeStorageKey() {
+      if (currentUser && currentUser.id) {
+        return `${PRODUCT_MODE_KEY_BASE}-user-${currentUser.id}`;
+      }
+
+      return `${PRODUCT_MODE_KEY_BASE}-guest`;
+    }
+
+    function normalizeProductMode(value) {
+      return value === "research" ? "research" : "standard";
+    }
+
+    function loadProductMode() {
+      try {
+        return normalizeProductMode(localStorage.getItem(productModeStorageKey()));
+      } catch (error) {
+        console.warn("Could not load UNBOUND AI product mode:", error);
+        return "standard";
+      }
+    }
+
+    function saveProductMode() {
+      try {
+        localStorage.setItem(productModeStorageKey(), productMode);
+      } catch (error) {
+        console.warn("Could not save UNBOUND AI product mode:", error);
+      }
+    }
+
+    function renderProductMode() {
+      const isResearch = productMode === "research";
+      standardModeButton.classList.toggle("active", !isResearch);
+      researchModeButton.classList.toggle("active", isResearch);
+      standardModeButton.setAttribute("aria-pressed", isResearch ? "false" : "true");
+      researchModeButton.setAttribute("aria-pressed", isResearch ? "true" : "false");
+      productStatus.textContent = isResearch
+        ? "Research Mode — Live web search + citations"
+        : "Standard Mode";
+    }
+
+    function setProductMode(value, { persist = true, announce = false } = {}) {
+      productMode = normalizeProductMode(value);
+      if (persist) saveProductMode();
+      renderProductMode();
+      if (announce) {
+        showToast(
+          productMode === "research"
+            ? "Research Mode is active. Web search and citations will be used."
+            : "Standard Mode is active."
+        );
+      }
+    }
+
+    function safeHttpUrl(value) {
+      try {
+        const url = new URL(String(value || ""));
+        if (url.protocol !== "http:" && url.protocol !== "https:") {
+          return null;
+        }
+        return url.toString();
+      } catch {
+        return null;
+      }
     }
 
     function normalizeDepthStyle(value) {
@@ -1308,10 +1480,52 @@
             item.content.trim()
           );
         })
-        .map((item) => ({
-          role: item.role,
-          content: item.content
-        }))
+        .map((item) => {
+          const content = item.content;
+          const sources =
+            item.role === "assistant" && Array.isArray(item.sources)
+              ? item.sources
+                  .map((source) => ({
+                    number: Number(source?.number),
+                    title: String(source?.title || "Source").slice(0, 220),
+                    url: safeHttpUrl(source?.url)
+                  }))
+                  .filter(
+                    (source) =>
+                      Number.isInteger(source.number) &&
+                      source.number > 0 &&
+                      source.url
+                  )
+                  .slice(0, 12)
+              : [];
+          const sourceNumbers = new Set(sources.map((source) => source.number));
+          const citations =
+            item.role === "assistant" && Array.isArray(item.citations)
+              ? item.citations
+                  .map((citation) => ({
+                    sourceNumber: Number(citation?.sourceNumber),
+                    startIndex: Number(citation?.startIndex),
+                    endIndex: Number(citation?.endIndex)
+                  }))
+                  .filter(
+                    (citation) =>
+                      sourceNumbers.has(citation.sourceNumber) &&
+                      Number.isInteger(citation.startIndex) &&
+                      Number.isInteger(citation.endIndex) &&
+                      citation.startIndex >= 0 &&
+                      citation.endIndex >= citation.startIndex &&
+                      citation.endIndex <= content.length
+                  )
+                  .slice(0, 30)
+              : [];
+
+          return {
+            role: item.role,
+            content,
+            sources,
+            citations
+          };
+        })
         .slice(-MAX_STORED_MESSAGES);
     }
 
@@ -1369,8 +1583,15 @@
 
       activeConversationId = String(data.conversation?.id || conversationId);
       conversationHistory = normalizeHistory(data.messages || []);
-      depthStyle = normalizeDepthStyle(data.conversation?.depthStyle || loadDepthStyle());
+      productMode = normalizeProductMode(
+        data.conversation?.productMode || loadProductMode()
+      );
+      depthStyle = normalizeDepthStyle(
+        data.conversation?.depthStyle || loadDepthStyle()
+      );
+      saveProductMode();
       saveDepthStyle();
+      renderProductMode();
       renderDepthStyle();
       renderConversation();
     }
@@ -1385,7 +1606,11 @@
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: legacy, depthStyle: loadDepthStyle() })
+        body: JSON.stringify({
+          messages: legacy,
+          depthStyle: loadDepthStyle(),
+          productMode: loadProductMode()
+        })
       });
       const data = await readJson(response);
       if (!response.ok) {
@@ -1399,11 +1624,13 @@
     }
 
     async function switchConversationScope() {
+      productMode = loadProductMode();
       depthStyle = loadDepthStyle();
 
       if (!currentUser) {
         activeConversationId = null;
         conversationHistory = loadConversation();
+        renderProductMode();
         renderDepthStyle();
         renderConversation();
         return;
@@ -1418,6 +1645,7 @@
 
         const imported = await importLegacyConversationIfNeeded();
         if (imported) {
+          renderProductMode();
           renderDepthStyle();
           renderConversation();
           showToast("Your existing chat was moved into your UNBOUND AI account.");
@@ -1430,16 +1658,100 @@
 
       activeConversationId = null;
       conversationHistory = [];
+      renderProductMode();
       renderDepthStyle();
       renderConversation();
     }
 
-    function addMessage(role, content, extraClass = "") {
+    function renderAssistantHtml(content, sources = [], citations = []) {
+      if (!Array.isArray(citations) || !citations.length) {
+        return renderMarkdown(content);
+      }
+
+      const sourceMap = new Map(
+        (sources || []).map((source) => [Number(source.number), source])
+      );
+      const valid = citations
+        .filter((citation) => {
+          const source = sourceMap.get(Number(citation.sourceNumber));
+          return (
+            source &&
+            safeHttpUrl(source.url) &&
+            Number.isInteger(citation.endIndex) &&
+            citation.endIndex >= 0 &&
+            citation.endIndex <= content.length
+          );
+        })
+        .sort((a, b) => a.endIndex - b.endIndex);
+
+      if (!valid.length) {
+        return renderMarkdown(content);
+      }
+
+      let html = "";
+      let cursor = 0;
+
+      for (const citation of valid) {
+        const end = Math.max(cursor, Math.min(content.length, citation.endIndex));
+        html += renderMarkdown(content.slice(cursor, end));
+        const source = sourceMap.get(Number(citation.sourceNumber));
+        const url = safeHttpUrl(source.url);
+        const title = escapeHtml(source.title || "Source");
+        html += `<a class="inline-citation" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${title}">[${citation.sourceNumber}]</a>`;
+        cursor = end;
+      }
+
+      html += renderMarkdown(content.slice(cursor));
+      return html;
+    }
+
+    function appendSourceLinks(bubble, sources = []) {
+      if (!Array.isArray(sources) || !sources.length) return;
+
+      const list = document.createElement("div");
+      list.className = "message-sources";
+
+      for (const source of sources.slice(0, 12)) {
+        const url = safeHttpUrl(source?.url);
+        if (!url) continue;
+
+        const link = document.createElement("a");
+        link.className = "source-link";
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.title = source?.title || url;
+
+        const number = document.createElement("span");
+        number.className = "source-link-number";
+        number.textContent = `[${Number(source?.number) || ""}]`;
+
+        const title = document.createElement("span");
+        title.className = "source-link-title";
+        title.textContent = source?.title || url;
+
+        link.append(number, title);
+        list.appendChild(link);
+      }
+
+      if (list.childNodes.length) {
+        bubble.appendChild(list);
+      }
+    }
+
+    function addMessage(
+      role,
+      content,
+      extraClass = "",
+      sources = [],
+      citations = []
+    ) {
       const bubble = document.createElement("div");
       bubble.className = `message ${role} ${extraClass}`.trim();
 
       if (role === "assistant") {
-        bubble.innerHTML = renderMarkdown(content);
+        bubble.innerHTML = renderAssistantHtml(content, sources, citations);
+        appendSourceLinks(bubble, sources);
       } else {
         bubble.textContent = content;
       }
@@ -1467,7 +1779,13 @@
       }
 
       conversationHistory.forEach((item) => {
-        addMessage(item.role, item.content);
+        addMessage(
+          item.role,
+          item.content,
+          "",
+          item.sources || [],
+          item.citations || []
+        );
       });
       updateGoDeeperVisibility();
     }
@@ -1530,6 +1848,48 @@
       let reply = "";
 
       try {
+        if (productMode === "research") {
+          const response = await fetch("/api/chat", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              message,
+              history: priorHistory,
+              depthStyle,
+              productMode,
+              conversationId: currentUser ? activeConversationId : null
+            })
+          });
+
+          const data = await readJson(response);
+          typingBubble.remove();
+
+          if (!response.ok) {
+            throw new Error(data.error || "Research request failed.");
+          }
+
+          if (data.conversationId) {
+            activeConversationId = String(data.conversationId);
+          }
+
+          reply = data.reply || "No response returned.";
+          const sources = Array.isArray(data.sources) ? data.sources : [];
+          const citations = Array.isArray(data.citations) ? data.citations : [];
+          assistantBubble = addMessage("assistant", reply, "", sources, citations);
+          conversationHistory.push({
+            role: "assistant",
+            content: reply,
+            sources,
+            citations
+          });
+          saveConversation();
+          updateGoDeeperVisibility();
+          return;
+        }
+
         const response = await fetch("/api/chat/stream", {
           method: "POST",
           credentials: "same-origin",
@@ -1541,6 +1901,7 @@
             message,
             history: priorHistory,
             depthStyle,
+            productMode: "standard",
             conversationId: currentUser ? activeConversationId : null
           })
         });
@@ -1562,7 +1923,7 @@
           if (!line.trim()) return;
           const event = JSON.parse(line);
 
-          if (event.type === "meta" && event.conversationId) {
+          if ((event.type === "meta" || event.type === "done") && event.conversationId) {
             activeConversationId = String(event.conversationId);
           }
 
@@ -1614,7 +1975,7 @@
         updateGoDeeperVisibility();
       } catch (error) {
         typingBubble.remove();
-        if (assistantBubble && reply) {
+        if (assistantBubble && reply && productMode !== "research") {
           assistantBubble.classList.add("error");
           assistantBubble.innerHTML = renderMarkdown(
             reply + "\n\n[Stream interrupted: " + (error.message || "unknown error") + "]"
@@ -2027,6 +2388,12 @@
     newChatButton.addEventListener("click", startNewChat);
     historyButton.addEventListener("click", openHistory);
     historyCloseButton.addEventListener("click", closeHistory);
+    standardModeButton.addEventListener("click", () =>
+      setProductMode("standard", { announce: true })
+    );
+    researchModeButton.addEventListener("click", () =>
+      setProductMode("research", { announce: true })
+    );
     casualModeButton.addEventListener("click", () =>
       setDepthStyle("casual", { announce: true })
     );
