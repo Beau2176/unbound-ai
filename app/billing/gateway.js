@@ -1,3 +1,8 @@
+const {
+  PROVIDER_ID: SEGPAY_PROVIDER_ID,
+  segpayBillingAdapter
+} = require("./providers/segpay");
+
 const BILLING_STATUSES = Object.freeze([
   "none",
   "incomplete",
@@ -39,6 +44,8 @@ function getBillingAdapter(name) {
   const provider = normalizeBillingProvider(name);
   return provider ? adapters.get(provider) || null : null;
 }
+
+registerBillingAdapter(SEGPAY_PROVIDER_ID, segpayBillingAdapter);
 
 function getBillingGatewayStatus(env = process.env) {
   const provider = normalizeBillingProvider(env.BILLING_PROVIDER);
@@ -253,6 +260,7 @@ async function startBillingCustomerPortalSession({
 
 async function processBillingWebhook({
   rawBody,
+  query = null,
   headers = {},
   requestId = null,
   env = process.env
@@ -265,7 +273,11 @@ async function processBillingWebhook({
       503
     );
   }
-  if (!Buffer.isBuffer(rawBody) || rawBody.length === 0) {
+  const hasRawBody = Buffer.isBuffer(rawBody) && rawBody.length > 0;
+  const hasQuery = Boolean(
+    query && typeof query === "object" && Object.keys(query).length > 0
+  );
+  if (!hasRawBody && !hasQuery) {
     throw billingGatewayError(
       "BILLING_WEBHOOK_BODY_INVALID",
       "Billing webhook body is invalid.",
@@ -276,6 +288,7 @@ async function processBillingWebhook({
   const adapter = getBillingAdapter(gateway.provider);
   const signatureValid = await adapter.verifyWebhook({
     rawBody,
+    query,
     headers,
     requestId: cleanOpaqueIdentifier(requestId, 128),
     env
@@ -290,6 +303,7 @@ async function processBillingWebhook({
 
   const parsed = await adapter.parseWebhook({
     rawBody,
+    query,
     headers,
     requestId: cleanOpaqueIdentifier(requestId, 128),
     env
