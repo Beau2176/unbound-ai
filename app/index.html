@@ -313,6 +313,12 @@
       color: #ffd4d4;
     }
 
+    .advertiser-link {
+      display: inline-flex;
+      align-items: center;
+      text-decoration: none;
+    }
+
     .account-button.danger:hover {
       border-color: rgba(255, 118, 118, 0.62);
       background: rgba(142, 28, 38, 0.36);
@@ -1519,6 +1525,7 @@
     </div>
 
     <div class="topbar-right">
+      <a class="account-button advertiser-link" href="/advertisers.html">ADVERTISE</a>
       <div id="serviceStatus" class="status" data-state="checking" role="status" aria-live="polite" aria-label="Service status checking">
         <span class="status-dot" aria-hidden="true"></span>
         <span id="serviceStatusText">CHECKING</span>

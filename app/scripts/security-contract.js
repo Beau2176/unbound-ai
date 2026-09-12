@@ -21,6 +21,8 @@ requireText(server, 'app.get("/index.html"', "explicit index route");
 requireText(server, 'app.get("/admin.html"', "explicit admin route");
 requireText(server, 'app.get("/terms.html"', "explicit Terms route");
 requireText(server, 'app.get("/privacy.html"', "explicit Privacy route");
+requireText(server, 'app.get("/advertisers.html"', "explicit advertiser page route");
+requireText(server, 'app.get("/advertising-admin"', "protected advertiser admin route");
 requireText(server, 'app.get("/unbound-cosmic.png"', "explicit branding route");
 forbidText(server, 'app.get("/server.js"', "server source must not be routed publicly");
 requireText(server, "createSameOriginApiGuard", "same-origin API guard");
@@ -55,16 +57,18 @@ for (const forbidden of [
 
 const ageWebhookPath = 'const AGE_VERIFICATION_WEBHOOK_PATH = "/api/webhooks/age-verification";';
 const billingWebhookPath = 'const BILLING_WEBHOOK_PATH = "/api/webhooks/billing";';
+const advertisingWebhookPath = 'const ADVERTISING_WEBHOOK_PATH = "/api/webhooks/advertising";';
 requireText(server, ageWebhookPath, "exact age-verification webhook path constant");
 requireText(server, billingWebhookPath, "exact billing webhook path constant");
+requireText(server, advertisingWebhookPath, "exact advertising webhook path constant");
 requireText(
   server,
-  "exemptPaths: [AGE_VERIFICATION_WEBHOOK_PATH, BILLING_WEBHOOK_PATH]",
+  "exemptPaths: [AGE_VERIFICATION_WEBHOOK_PATH, BILLING_WEBHOOK_PATH, ADVERTISING_WEBHOOK_PATH]",
   "only known webhook paths may bypass same-origin mutation guard"
 );
 requireText(
   server,
-  "const RAW_WEBHOOK_PATHS = new Set([AGE_VERIFICATION_WEBHOOK_PATH, BILLING_WEBHOOK_PATH]);",
+  "const RAW_WEBHOOK_PATHS = new Set([\n  AGE_VERIFICATION_WEBHOOK_PATH,\n  BILLING_WEBHOOK_PATH,\n  ADVERTISING_WEBHOOK_PATH\n]);",
   "explicit raw webhook path allowlist"
 );
 requireText(
