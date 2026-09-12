@@ -1,1 +1,0 @@
-Run the disposable production account deletion and Research history round-trip smoke test.
