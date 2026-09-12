@@ -1,0 +1,66 @@
+name: Production CI v0.25 Staging
+
+on:
+  push:
+    branches:
+      - production-ci-v0.25
+
+permissions:
+  contents: write
+
+jobs:
+  validate-ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Synchronize package lock metadata
+        working-directory: app
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Install locked dependencies
+        working-directory: app
+        run: npm ci
+      - name: Run permanent syntax validator
+        working-directory: app
+        run: npm run check
+      - name: Run permanent security contracts
+        working-directory: app
+        run: npm run security-check
+      - name: Audit production dependencies
+        working-directory: app
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Verify permanent workflow contract
+        run: |
+          grep -q 'branches:' .github/workflows/production-ci.yml
+          grep -q -- '- main' .github/workflows/production-ci.yml
+          grep -q 'permissions:' .github/workflows/production-ci.yml
+          grep -q 'contents: read' .github/workflows/production-ci.yml
+          grep -q 'npm run check' .github/workflows/production-ci.yml
+          grep -q 'npm run security-check' .github/workflows/production-ci.yml
+          grep -q 'npm audit --omit=dev --audit-level=moderate' .github/workflows/production-ci.yml
+          node - <<'NODE'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('app/package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('app/package-lock.json', 'utf8'));
+          if (pkg.engines?.node !== '24.x') process.exit(1);
+          if (lock.packages?.['']?.engines?.node !== '24.x') process.exit(1);
+          console.log('Node 24 package/lock runtime contract OK');
+          NODE
+      - name: Commit synchronized lockfile
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/package-lock.json
+          if git diff --cached --quiet; then
+            echo "Package lock already synchronized."
+          else
+            git commit -m "Synchronize Node 24 package lock metadata"
+            git push origin HEAD:production-ci-v0.25
+          fi
