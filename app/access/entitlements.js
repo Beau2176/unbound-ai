@@ -104,8 +104,8 @@ const CAPABILITY_CATALOG = Object.freeze({
   }),
   image_tools: Object.freeze({
     label: "Image tools",
-    description: "Image generation and editing workflows.",
-    implemented: false,
+    description: "Generate new images and edit supported source images without storing raw image bytes in UNBOUND AI.",
+    implemented: true,
     minimumPlan: "top"
   }),
   voice: Object.freeze({
