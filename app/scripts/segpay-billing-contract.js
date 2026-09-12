@@ -86,8 +86,8 @@ async function main() {
   const directPayload = decodeJwtPayload(directToken.token);
   assert.strictEqual(directPayload.pageref, baseEnv.SEGPAY_PAY_PAGE_REF);
   assert.strictEqual(directPayload.fields.amount, "29.99");
-  assert.strictEqual(directPayload.fields.ubsubject1, "a".repeat(32));
-  assert.strictEqual(directPayload.fields.ubsubject2, "b".repeat(32));
+  assert.strictEqual(directPayload.fields.REF1, "a".repeat(32));
+  assert.strictEqual(directPayload.fields.REF2, "b".repeat(32));
   assert.ok(!JSON.stringify(directPayload).includes("@"));
   assert.ok(!JSON.stringify(directPayload).includes(baseEnv.SEGPAY_SIGNING_KEY));
 
@@ -113,6 +113,8 @@ async function main() {
   const checkoutJwt = checkoutUrl.searchParams.get("jwt");
   assert.ok(checkoutJwt);
   const checkoutPayload = decodeJwtPayload(checkoutJwt);
+  assert.strictEqual(checkoutPayload.fields.REF1, "a".repeat(32));
+  assert.strictEqual(checkoutPayload.fields.REF2, "b".repeat(32));
   assert.ok(!JSON.stringify(checkoutPayload).includes("owner@example.com"));
   assert.ok(!checkout.checkoutUrl.includes(baseEnv.SEGPAY_SIGNING_KEY));
 
@@ -152,8 +154,8 @@ async function main() {
     paymentaccountid: "PAYMENT-ACCOUNT-OPAQUE",
     transtime: "7/28/2024 3:38:43 PM (GMT STANDARD TIME)",
     rint: "30",
-    ubsubject1: "a".repeat(32),
-    ubsubject2: "b".repeat(32)
+    REF1: "a".repeat(32),
+    REF2: "b".repeat(32)
   }).toString();
 
   const webhook = await processBillingWebhook({
@@ -177,8 +179,8 @@ async function main() {
     query: {
       action: "Cancel",
       purchaseid: "SP12345678",
-      ubsubject1: "a".repeat(32),
-      ubsubject2: "b".repeat(32)
+      REF1: "a".repeat(32),
+      REF2: "b".repeat(32)
     },
     headers: { authorization: authorization() },
     env: baseEnv
@@ -192,8 +194,8 @@ async function main() {
     query: {
       action: "Disable",
       purchaseid: "SP12345678",
-      ubsubject1: "a".repeat(32),
-      ubsubject2: "b".repeat(32)
+      REF1: "a".repeat(32),
+      REF2: "b".repeat(32)
     },
     headers: { authorization: authorization() },
     env: baseEnv
