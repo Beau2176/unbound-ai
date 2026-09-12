@@ -5,8 +5,10 @@ const { promisify } = require("util");
 const { Pool } = require("pg");
 const { generateChat, streamChat, getGatewayStatus } = require("./ai/gateway");
 const {
+  CAPABILITY_CATALOG,
   normalizePlanTier,
   getPlanDefinition,
+  isKnownCapability,
   buildCapabilityAccess
 } = require("./access/entitlements");
 
@@ -1572,6 +1574,293 @@ app.delete(
 );
 
 /* ----------------------------- ADMIN API ----------------------------- */
+
+
+app.get(
+  "/api/admin/entitlements/catalog",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    return res.json({
+      capabilities: Object.entries(CAPABILITY_CATALOG).map(([key, item]) => ({
+        key,
+        label: item.label,
+        description: item.description,
+        implemented: Boolean(item.implemented),
+        minimumPlan: normalizePlanTier(item.minimumPlan)
+      }))
+    });
+  }
+);
+
+async function loadAdminTargetUser(userId, client = pool) {
+  const result = await client.query(
+    `SELECT
+       u.id,
+       u.email,
+       u.display_name,
+       u.role,
+       u.plan_tier,
+       u.created_at,
+       EXISTS (
+         SELECT 1
+         FROM complimentary_top_tier_grants g
+         WHERE g.user_id = u.id
+       ) AS complimentary_top_tier
+     FROM users u
+     WHERE u.id = $1
+     LIMIT 1`,
+    [userId]
+  );
+  return result.rows[0] || null;
+}
+
+function publicEntitlementOverride(row) {
+  return {
+    key: row.entitlement_key,
+    enabled: Boolean(row.enabled),
+    reason: row.reason || null,
+    expiresAt: row.expires_at || null,
+    createdByAdminUserId:
+      row.created_by_admin_user_id === null
+        ? null
+        : String(row.created_by_admin_user_id),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+async function loadAdminUserAccessPayload(userId) {
+  const user = await loadAdminTargetUser(userId);
+  if (!user) return null;
+
+  const [access, overrideResult] = await Promise.all([
+    buildAccountAccess(user),
+    pool.query(
+      `SELECT
+         entitlement_key,
+         enabled,
+         reason,
+         expires_at,
+         created_by_admin_user_id,
+         created_at,
+         updated_at
+       FROM account_entitlement_overrides
+       WHERE user_id = $1
+       ORDER BY entitlement_key`,
+      [user.id]
+    )
+  ]);
+
+  return {
+    user: publicUser(user),
+    access,
+    overrides: overrideResult.rows.map(publicEntitlementOverride)
+  };
+}
+
+app.get(
+  "/api/admin/users/:id/access",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const userId = String(req.params.id || "").trim();
+      if (!/^\d+$/.test(userId)) {
+        return res.status(400).json({ error: "Invalid user ID." });
+      }
+
+      const payload = await loadAdminUserAccessPayload(userId);
+      if (!payload) {
+        return res.status(404).json({ error: "User not found." });
+      }
+      return res.json(payload);
+    } catch (error) {
+      console.error("UNBOUND AI ADMIN ACCESS DETAIL ERROR:", error);
+      return res.status(500).json({ error: "Could not load user access details." });
+    }
+  }
+);
+
+app.put(
+  "/api/admin/users/:id/entitlements/:key",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    const userId = String(req.params.id || "").trim();
+    const entitlementKey = String(req.params.key || "").trim();
+    const enabled = req.body.enabled;
+    const reason =
+      typeof req.body.reason === "string" ? req.body.reason.trim().slice(0, 300) : "";
+    const expiresAtRaw = req.body.expiresAt;
+
+    if (!/^\d+$/.test(userId)) {
+      return res.status(400).json({ error: "Invalid user ID." });
+    }
+    if (!isKnownCapability(entitlementKey)) {
+      return res.status(400).json({ error: "Unknown capability." });
+    }
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ error: "enabled must be true or false." });
+    }
+
+    let expiresAt = null;
+    if (expiresAtRaw !== null && expiresAtRaw !== undefined && String(expiresAtRaw).trim()) {
+      const parsed = new Date(expiresAtRaw);
+      if (Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ error: "Invalid expiration date." });
+      }
+      if (parsed.getTime() <= Date.now()) {
+        return res.status(400).json({ error: "Expiration must be in the future." });
+      }
+      expiresAt = parsed.toISOString();
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const target = await loadAdminTargetUser(userId, client);
+      if (!target) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "User not found." });
+      }
+
+      const previousResult = await client.query(
+        `SELECT entitlement_key, enabled, reason, expires_at
+         FROM account_entitlement_overrides
+         WHERE user_id = $1 AND entitlement_key = $2
+         LIMIT 1`,
+        [userId, entitlementKey]
+      );
+      const previous = previousResult.rows[0] || null;
+
+      await client.query(
+        `INSERT INTO account_entitlement_overrides (
+           user_id,
+           entitlement_key,
+           enabled,
+           reason,
+           expires_at,
+           created_by_admin_user_id,
+           created_at,
+           updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+         ON CONFLICT (user_id, entitlement_key)
+         DO UPDATE SET
+           enabled = EXCLUDED.enabled,
+           reason = EXCLUDED.reason,
+           expires_at = EXCLUDED.expires_at,
+           created_by_admin_user_id = EXCLUDED.created_by_admin_user_id,
+           updated_at = NOW()`,
+        [
+          userId,
+          entitlementKey,
+          enabled,
+          reason || null,
+          expiresAt,
+          req.adminUser.id
+        ]
+      );
+
+      await writeAdminAudit(
+        client,
+        req.adminUser,
+        "user.entitlement_override.set",
+        target,
+        {
+          entitlementKey,
+          enabled,
+          reason: reason || null,
+          expiresAt,
+          previous: previous
+            ? {
+                enabled: Boolean(previous.enabled),
+                reason: previous.reason || null,
+                expiresAt: previous.expires_at || null
+              }
+            : null
+        }
+      );
+
+      await client.query("COMMIT");
+      const payload = await loadAdminUserAccessPayload(userId);
+      return res.json(payload);
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch (_) {}
+      console.error("UNBOUND AI ADMIN ENTITLEMENT SET ERROR:", error);
+      return res.status(500).json({ error: "Could not save capability override." });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+app.delete(
+  "/api/admin/users/:id/entitlements/:key",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    const userId = String(req.params.id || "").trim();
+    const entitlementKey = String(req.params.key || "").trim();
+
+    if (!/^\d+$/.test(userId)) {
+      return res.status(400).json({ error: "Invalid user ID." });
+    }
+    if (!isKnownCapability(entitlementKey)) {
+      return res.status(400).json({ error: "Unknown capability." });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const target = await loadAdminTargetUser(userId, client);
+      if (!target) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "User not found." });
+      }
+
+      const deleted = await client.query(
+        `DELETE FROM account_entitlement_overrides
+         WHERE user_id = $1 AND entitlement_key = $2
+         RETURNING entitlement_key, enabled, reason, expires_at`,
+        [userId, entitlementKey]
+      );
+
+      if (deleted.rows[0]) {
+        await writeAdminAudit(
+          client,
+          req.adminUser,
+          "user.entitlement_override.cleared",
+          target,
+          {
+            entitlementKey,
+            previous: {
+              enabled: Boolean(deleted.rows[0].enabled),
+              reason: deleted.rows[0].reason || null,
+              expiresAt: deleted.rows[0].expires_at || null
+            }
+          }
+        );
+      }
+
+      await client.query("COMMIT");
+      const payload = await loadAdminUserAccessPayload(userId);
+      return res.json({
+        cleared: Boolean(deleted.rows[0]),
+        ...payload
+      });
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch (_) {}
+      console.error("UNBOUND AI ADMIN ENTITLEMENT CLEAR ERROR:", error);
+      return res.status(500).json({ error: "Could not clear capability override." });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+
 
 app.get(
   "/api/admin/overview",

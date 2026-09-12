@@ -340,6 +340,45 @@
       font-size: 11px;
     }
 
+
+
+    .entitlement-form {
+      display: grid;
+      grid-template-columns: minmax(170px, 1.2fr) minmax(180px, 1.2fr) 120px minmax(160px, 1fr) minmax(180px, 1fr) auto;
+      gap: 8px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+
+    .entitlement-field label {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .entitlement-note {
+      color: var(--muted);
+      font-size: 12px;
+      margin: -4px 0 12px;
+    }
+
+    .source-text {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    @media (max-width: 1000px) {
+      .entitlement-form { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 620px) {
+      .entitlement-form { grid-template-columns: 1fr; }
+    }
+
     .feedback {
       min-height: 22px;
       margin-top: 10px;
@@ -458,6 +497,67 @@
       <div class="feedback" id="userFeedback"></div>
     </section>
 
+
+
+    <section class="card section">
+      <div class="section-head">
+        <div>
+          <h2>Capability Overrides</h2>
+          <p>Grant or block one capability without changing the user’s entire plan. Clear an override to return to normal plan rules.</p>
+        </div>
+        <button class="btn" id="refreshEntitlements" type="button">Refresh Access</button>
+      </div>
+
+      <div class="entitlement-form">
+        <div class="entitlement-field">
+          <label for="entitlementUser">User</label>
+          <select id="entitlementUser"></select>
+        </div>
+        <div class="entitlement-field">
+          <label for="entitlementCapability">Capability</label>
+          <select id="entitlementCapability"></select>
+        </div>
+        <div class="entitlement-field">
+          <label for="entitlementEnabled">Override</label>
+          <select id="entitlementEnabled">
+            <option value="true">ENABLE</option>
+            <option value="false">DISABLE</option>
+          </select>
+        </div>
+        <div class="entitlement-field">
+          <label for="entitlementExpiry">Expires (optional)</label>
+          <input id="entitlementExpiry" type="datetime-local" />
+        </div>
+        <div class="entitlement-field">
+          <label for="entitlementReason">Reason (optional)</label>
+          <input id="entitlementReason" maxlength="300" placeholder="Why this override exists" />
+        </div>
+        <button class="btn gold" id="applyEntitlement" type="button">Apply Override</button>
+      </div>
+
+      <div id="entitlementUserSummary" class="entitlement-note">Select a user to inspect effective access.</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>Minimum Plan</th>
+              <th>Available</th>
+              <th>Entitled</th>
+              <th>Usable</th>
+              <th>Source / Override</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="entitlementBody">
+            <tr><td colspan="7" class="loading">Loading capabilities…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="feedback" id="entitlementFeedback"></div>
+    </section>
+
+
     <section class="card section">
       <div class="section-head">
         <div>
@@ -548,10 +648,22 @@
     const usageCost = document.getElementById("usageCost");
     const usageModelsBody = document.getElementById("usageModelsBody");
     const usageFeedback = document.getElementById("usageFeedback");
+    const entitlementUser = document.getElementById("entitlementUser");
+    const entitlementCapability = document.getElementById("entitlementCapability");
+    const entitlementEnabled = document.getElementById("entitlementEnabled");
+    const entitlementExpiry = document.getElementById("entitlementExpiry");
+    const entitlementReason = document.getElementById("entitlementReason");
+    const applyEntitlement = document.getElementById("applyEntitlement");
+    const refreshEntitlements = document.getElementById("refreshEntitlements");
+    const entitlementUserSummary = document.getElementById("entitlementUserSummary");
+    const entitlementBody = document.getElementById("entitlementBody");
+    const entitlementFeedback = document.getElementById("entitlementFeedback");
 
     let dashboard = null;
     let auditEvents = [];
     let usageSummary = null;
+    let entitlementCatalog = [];
+    let selectedUserAccess = null;
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -609,7 +721,9 @@
       const labels = {
         "user.plan.changed": "Plan changed",
         "complimentary_top_tier.granted": "Gift TOP granted",
-        "complimentary_top_tier.revoked": "Gift TOP revoked"
+        "complimentary_top_tier.revoked": "Gift TOP revoked",
+        "user.entitlement_override.set": "Capability override set",
+        "user.entitlement_override.cleared": "Capability override cleared"
       };
 
       return labels[action] || action || "Unknown action";
@@ -631,6 +745,10 @@
       if (details.resultingPlanTier) {
         parts.push(`result: ${details.resultingPlanTier}`);
       }
+      if (details.entitlementKey) parts.push(`capability: ${details.entitlementKey}`);
+      if (typeof details.enabled === "boolean") parts.push(details.enabled ? "enabled" : "disabled");
+      if (details.expiresAt) parts.push(`expires: ${formatDateTime(details.expiresAt)}`);
+      if (details.reason) parts.push(`reason: ${details.reason}`);
 
       return parts.length ? parts.join(" · ") : "—";
     }
@@ -721,6 +839,149 @@
         usageModelsBody.innerHTML =
           `<tr><td colspan="5" class="loading">${escapeHtml(error.message)}</td></tr>`;
         setFeedback(usageFeedback, error.message, "error");
+      }
+    }
+
+
+    async function loadEntitlementCatalog() {
+      if (entitlementCatalog.length) return entitlementCatalog;
+      const result = await api("/api/admin/entitlements/catalog");
+      entitlementCatalog = Array.isArray(result.capabilities) ? result.capabilities : [];
+      entitlementCapability.innerHTML = entitlementCatalog.map((item) =>
+        `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)} (${escapeHtml(String(item.minimumPlan || "free").toUpperCase())})</option>`
+      ).join("");
+      return entitlementCatalog;
+    }
+
+    function renderEntitlementUsers() {
+      if (!dashboard) return;
+      const previous = entitlementUser.value;
+      entitlementUser.innerHTML = dashboard.users.map((user) =>
+        `<option value="${escapeHtml(user.id)}">${escapeHtml(user.displayName || "UNBOUND User")} — ${escapeHtml(user.email)}</option>`
+      ).join("");
+      if (previous && dashboard.users.some((user) => String(user.id) === previous)) {
+        entitlementUser.value = previous;
+      }
+    }
+
+    function overrideMap() {
+      return new Map((selectedUserAccess?.overrides || []).map((item) => [item.key, item]));
+    }
+
+    function statusBadge(value, yesLabel, noLabel) {
+      return `<span class="badge ${value ? "gold" : ""}">${escapeHtml(value ? yesLabel : noLabel)}</span>`;
+    }
+
+    function renderEntitlementAccess() {
+      if (!selectedUserAccess?.access) {
+        entitlementBody.innerHTML = '<tr><td colspan="7" class="loading">Select a user to inspect effective access.</td></tr>';
+        entitlementUserSummary.textContent = "Select a user to inspect effective access.";
+        return;
+      }
+
+      const user = selectedUserAccess.user;
+      const access = selectedUserAccess.access;
+      const overrides = overrideMap();
+      entitlementUserSummary.textContent = `${user.displayName || user.email} · effective ${String(access.plan?.displayName || "FREE").toUpperCase()} · source: ${access.plan?.source || "default"}`;
+
+      entitlementBody.innerHTML = (access.capabilities || []).map((capability) => {
+        const override = overrides.get(capability.key);
+        const source = override
+          ? `${override.enabled ? "OVERRIDE ENABLE" : "OVERRIDE DISABLE"}${override.expiresAt ? ` · until ${formatDateTime(override.expiresAt)}` : ""}${override.reason ? ` · ${override.reason}` : ""}`
+          : `PLAN · ${capability.source || "plan"}`;
+        return `
+          <tr>
+            <td><strong>${escapeHtml(capability.label)}</strong><div class="source-text">${escapeHtml(capability.key)}</div></td>
+            <td>${escapeHtml(String(capability.minimumPlan || "free").toUpperCase())}</td>
+            <td>${statusBadge(capability.available, "LIVE", "COMING")}</td>
+            <td>${statusBadge(capability.entitled, "YES", "NO")}</td>
+            <td>${statusBadge(capability.usable, "YES", "NO")}</td>
+            <td><span class="source-text">${escapeHtml(source)}</span></td>
+            <td>${override ? `<button class="btn danger clear-entitlement" type="button" data-key="${escapeHtml(capability.key)}">Clear</button>` : "—"}</td>
+          </tr>`;
+      }).join("");
+
+      document.querySelectorAll(".clear-entitlement").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const userId = entitlementUser.value;
+          const key = button.dataset.key;
+          if (!userId || !key) return;
+          button.disabled = true;
+          setFeedback(entitlementFeedback, "Clearing override…");
+          try {
+            selectedUserAccess = await api(`/api/admin/users/${encodeURIComponent(userId)}/entitlements/${encodeURIComponent(key)}`, { method: "DELETE" });
+            renderEntitlementAccess();
+            setFeedback(entitlementFeedback, "Capability override cleared; plan rules apply again.", "ok");
+            await loadAudit();
+          } catch (error) {
+            setFeedback(entitlementFeedback, error.message, "error");
+          } finally {
+            button.disabled = false;
+          }
+        });
+      });
+    }
+
+    async function loadSelectedUserAccess() {
+      const userId = entitlementUser.value;
+      if (!userId) {
+        selectedUserAccess = null;
+        renderEntitlementAccess();
+        return;
+      }
+      entitlementBody.innerHTML = '<tr><td colspan="7" class="loading">Loading effective access…</td></tr>';
+      try {
+        selectedUserAccess = await api(`/api/admin/users/${encodeURIComponent(userId)}/access`);
+        renderEntitlementAccess();
+        setFeedback(entitlementFeedback, "Effective access loaded.", "ok");
+      } catch (error) {
+        selectedUserAccess = null;
+        renderEntitlementAccess();
+        setFeedback(entitlementFeedback, error.message, "error");
+      }
+    }
+
+    async function initializeEntitlements() {
+      await loadEntitlementCatalog();
+      renderEntitlementUsers();
+      await loadSelectedUserAccess();
+    }
+
+    async function applyEntitlementOverride() {
+      const userId = entitlementUser.value;
+      const key = entitlementCapability.value;
+      if (!userId || !key) return;
+
+      let expiresAt = null;
+      if (entitlementExpiry.value) {
+        const parsed = new Date(entitlementExpiry.value);
+        if (Number.isNaN(parsed.getTime())) {
+          setFeedback(entitlementFeedback, "Enter a valid expiration date.", "error");
+          return;
+        }
+        expiresAt = parsed.toISOString();
+      }
+
+      applyEntitlement.disabled = true;
+      setFeedback(entitlementFeedback, "Saving capability override…");
+      try {
+        selectedUserAccess = await api(`/api/admin/users/${encodeURIComponent(userId)}/entitlements/${encodeURIComponent(key)}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            enabled: entitlementEnabled.value === "true",
+            reason: entitlementReason.value.trim(),
+            expiresAt
+          })
+        });
+        entitlementReason.value = "";
+        entitlementExpiry.value = "";
+        renderEntitlementAccess();
+        setFeedback(entitlementFeedback, "Capability override saved and audited.", "ok");
+        await loadAudit();
+      } catch (error) {
+        setFeedback(entitlementFeedback, error.message, "error");
+      } finally {
+        applyEntitlement.disabled = false;
       }
     }
 
@@ -888,6 +1149,7 @@
         renderGiftSlots();
         renderUsers();
         await Promise.all([loadUsage(), loadAudit()]);
+        await initializeEntitlements();
       } catch (error) {
         if (error.status === 401 || error.status === 403) {
           window.location.href = "/";
@@ -933,6 +1195,10 @@
     search.addEventListener("input", () => {
       if (dashboard) renderUsers();
     });
+
+    entitlementUser.addEventListener("change", loadSelectedUserAccess);
+    applyEntitlement.addEventListener("click", applyEntitlementOverride);
+    refreshEntitlements.addEventListener("click", loadSelectedUserAccess);
 
     refreshAudit.addEventListener("click", loadAudit);
     refreshUsage.addEventListener("click", loadUsage);
