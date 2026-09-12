@@ -40,9 +40,48 @@ jobs:
           index_status=$?
           set -e
 
-          if [ "$server_status" -ne 0 ] || [ "$index_status" -ne 0 ]; then
-            echo 'Three-way merge produced conflicts. Showing exact conflict regions:'
-            grep -n -B 18 -A 36 -E '^(<<<<<<<|=======|>>>>>>>)' app/server.js app/index.html || true
+          # The only intentional textual overlap is Account Access vs Security
+          # visibility in renderAccountUi. Keep both controls.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/index.html')
+          text = p.read_text()
+          signed_in = '''<<<<<<< app/index.html\n        accessButton.hidden = false;\n=======\n        securityButton.hidden = false;\n>>>>>>> /tmp/security-index.html'''
+          signed_out = '''<<<<<<< app/index.html\n      accessButton.hidden = true;\n=======\n      securityButton.hidden = true;\n>>>>>>> /tmp/security-index.html'''
+          if text.count(signed_in) != 1 or text.count(signed_out) != 1:
+              raise SystemExit('Unexpected Account Access/Security conflict shape; refusing to guess.')
+          text = text.replace(signed_in, '        accessButton.hidden = false;\n        securityButton.hidden = false;', 1)
+          text = text.replace(signed_out, '      accessButton.hidden = true;\n      securityButton.hidden = true;', 1)
+
+          # All modal closers must respect both Account Access and Security.
+          replacements = {
+            'if (historyModal.hidden && authModal.hidden && deleteAccountModal.hidden)':
+              'if (historyModal.hidden && authModal.hidden && securityModal.hidden && deleteAccountModal.hidden)',
+            'if (authModal.hidden && accessModal.hidden && deleteAccountModal.hidden)':
+              'if (authModal.hidden && accessModal.hidden && securityModal.hidden && deleteAccountModal.hidden)',
+            'if (historyModal.hidden && authModal.hidden && deleteAccountModal.hidden) document.body.classList.remove("modal-open");':
+              'if (historyModal.hidden && authModal.hidden && securityModal.hidden && deleteAccountModal.hidden) document.body.classList.remove("modal-open");',
+            'if (authModal.hidden && historyModal.hidden && deleteAccountModal.hidden)':
+              'if (authModal.hidden && historyModal.hidden && accessModal.hidden && deleteAccountModal.hidden)',
+            'if (authModal.hidden && historyModal.hidden && accessModal.hidden)':
+              'if (authModal.hidden && historyModal.hidden && accessModal.hidden && securityModal.hidden)'
+          }
+          for old, new in replacements.items():
+              text = text.replace(old, new)
+
+          if any(marker in text for marker in ('<<<<<<<', '=======', '>>>>>>>')):
+              raise SystemExit('Unresolved merge marker remains after the narrow resolver.')
+          p.write_text(text)
+          PY
+
+          # Server must merge cleanly. Index conflicts must be fully resolved above.
+          if [ "$server_status" -ne 0 ]; then
+            echo 'Unexpected server conflict:' >&2
+            grep -n -B 18 -A 36 -E '^(<<<<<<<|=======|>>>>>>>)' app/server.js || true
+            exit 1
+          fi
+          if grep -R -nE '^(<<<<<<<|=======|>>>>>>>)' app/server.js app/index.html; then
+            echo 'Unresolved merge conflict remains.' >&2
             exit 1
           fi
 
@@ -64,12 +103,21 @@ jobs:
           NODE
           grep -q 'id="accessButton"' app/index.html
           grep -q 'id="securityButton"' app/index.html
+          grep -q 'accessButton.hidden = false' app/index.html
+          grep -q 'securityButton.hidden = false' app/index.html
+          grep -q 'accessButton.hidden = true' app/index.html
+          grep -q 'securityButton.hidden = true' app/index.html
+          grep -q 'id="accessModal"' app/index.html
+          grep -q 'id="securityModal"' app/index.html
+          grep -q 'accessModal.addEventListener' app/index.html
+          grep -q 'securityModal.addEventListener' app/index.html
           grep -q '"/api/account/access"' app/server.js
           grep -q '"/api/account/security"' app/server.js
           grep -q '"/api/account/password"' app/server.js
           grep -q '"/api/account/sessions/revoke-others"' app/server.js
           grep -q '"/api/account"' app/server.js
           grep -q 'type: "web_search"' app/ai/providers/openai.js
+          grep -q 'account_subscriptions' app/server.js
           ! grep -R -nE '^(<<<<<<<|=======|>>>>>>>)' app
           ! grep -q 'express.static(__dirname)' app/server.js
           git diff --check
