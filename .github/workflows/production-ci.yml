@@ -27,9 +27,5 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Install locked production dependencies
         run: npm ci
-      - name: Validate source syntax
-        run: npm run check
-      - name: Enforce security contracts
-        run: npm run security-check
-      - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=moderate
+      - name: Run full permanent production CI
+        run: npm run ci
