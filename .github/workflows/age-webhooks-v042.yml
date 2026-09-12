@@ -1,0 +1,50 @@
+name: Hard Age Webhooks v0.42
+
+on:
+  push:
+    branches:
+      - age-webhooks-v0.42
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Apply v0.42 webhook integration
+        run: node app/scripts/migrate-v042.js
+      - name: Install locked dependencies
+        working-directory: app
+        run: npm ci
+      - name: Run full permanent CI
+        working-directory: app
+        run: npm run ci
+      - name: Verify webhook route safety contract
+        run: |
+          grep -q 'AGE_VERIFICATION_WEBHOOK_PATH = "/api/webhooks/age-verification"' app/server.js
+          grep -q 'exemptPaths: \[AGE_VERIFICATION_WEBHOOK_PATH\]' app/server.js
+          grep -q 'express.raw({ type: "\*/\*", limit: "100kb" })' app/server.js
+          grep -q 'processAgeVerificationWebhook({' app/server.js
+          grep -q 'ON CONFLICT (provider, provider_event_id) DO NOTHING' app/server.js
+          grep -q 'ignored-stale-event' app/server.js
+          grep -q 'resolveAgeVerificationTransition(account.status, event.status)' app/server.js
+          if grep -A180 'app.post(' app/server.js | grep -A180 'AGE_VERIFICATION_WEBHOOK_PATH' | grep -q 'providerReference:'; then
+            echo "Webhook response must not expose provider references"
+            exit 1
+          fi
+      - name: Commit completed v0.42 and remove one-time migration
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/age/gateway.js app/scripts/age-verification-contract.js app/scripts/security-contract.js
+          git rm app/scripts/migrate-v042.js .github/workflows/age-webhooks-v042.yml
+          git commit -m "Add authenticated hard-age webhooks v0.42"
+          git push
