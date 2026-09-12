@@ -18,6 +18,7 @@ function addCheck(checks, key, label, ready, detail) {
 function buildLaunchReadiness({
   runtime = null,
   maintenance = null,
+  infrastructure = null,
   recovery = null,
   legal = null,
   billing = null,
@@ -45,6 +46,16 @@ function buildLaunchReadiness({
     maintenance?.active
       ? `Maintenance mode is ${safeText(maintenance.mode, 40) || "active"}.`
       : "No maintenance gate is active."
+  );
+
+  addCheck(
+    checks,
+    "infrastructure_production",
+    "Production infrastructure verified",
+    infrastructure?.launchReady === true,
+    infrastructure?.launchReady
+      ? "Always-on compute, durable database, platform health check, and a current infrastructure review are verified."
+      : infrastructure?.blockers?.[0] || "Production infrastructure readiness has not been verified."
   );
 
   addCheck(
