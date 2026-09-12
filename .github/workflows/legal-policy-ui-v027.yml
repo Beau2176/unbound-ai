@@ -1,0 +1,79 @@
+name: Legal Policy UI v0.27
+
+on:
+  push:
+    branches:
+      - legal-policy-ui-v0.27
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Apply legal policy UI migration
+        run: python scripts/migrate-legal-policy-ui-v027.py
+
+      - name: Install locked dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Run permanent CI checks
+        working-directory: app
+        run: npm run ci
+
+      - name: Verify policy publishing safety
+        working-directory: app
+        run: |
+          node - <<'NODE'
+          const { buildLegalConsentStatus } = require('./privacy/legal-consent');
+          const draft = buildLegalConsentStatus({ env: {} });
+          if (draft.acceptanceEnabled) throw new Error('Draft acceptance must be disabled');
+          if (draft.enforcementEnabled) throw new Error('Draft enforcement must be disabled');
+          const published = buildLegalConsentStatus({
+            env: {
+              UNBOUND_TERMS_VERSION: '2026-09-12',
+              UNBOUND_PRIVACY_VERSION: '2026-09-12',
+              UNBOUND_TERMS_URL: 'https://example.com/terms',
+              UNBOUND_PRIVACY_URL: 'https://example.com/privacy',
+              UNBOUND_LEGAL_ACCEPTANCE_ENABLED: 'true'
+            }
+          });
+          if (!published.documentsPublished || !published.acceptanceEnabled) {
+            throw new Error('Published policies should permit opt-in acceptance');
+          }
+          if (published.enforcementEnabled) {
+            throw new Error('Enforcement must require its own explicit switch');
+          }
+          console.log('Legal policy publishing guard OK');
+          NODE
+
+      - name: Verify v0.27 UI contract
+        run: |
+          grep -q 'legalPolicyStatus' app/index.html
+          grep -q 'loadLegalPolicyStatus' app/index.html
+          grep -q 'Draft policies cannot be accepted' app/index.html
+          grep -q 'legalStatus.acceptanceEnabled' app/server.js
+          grep -q 'UNBOUND_LEGAL_ACCEPTANCE_ENABLED' app/privacy/legal-consent.js
+          grep -q 'UNBOUND_LEGAL_ENFORCEMENT_ENABLED' app/privacy/legal-consent.js
+
+      - name: Commit completed v0.27 and remove one-time migration
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/index.html app/privacy/legal-consent.js
+          git rm scripts/migrate-legal-policy-ui-v027.py .github/workflows/legal-policy-ui-v027.yml
+          git commit -m "Add guarded legal policy account UI v0.27"
+          git push origin HEAD:legal-policy-ui-v0.27
