@@ -1225,6 +1225,14 @@ function setGuestRateCookie(res, token) {
   );
 }
 
+function clearGuestRateCookie(res) {
+  const secure = IS_PRODUCTION ? "; Secure" : "";
+  res.append(
+    "Set-Cookie",
+    `${GUEST_RATE_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure}`
+  );
+}
+
 function ensureGuestRateToken(req, res) {
   let token = parseCookies(req)[GUEST_RATE_COOKIE];
   if (!token) {
@@ -2217,6 +2225,7 @@ app.delete(
       await client.query("COMMIT");
       clearSessionCookie(res);
       clearDeviceCookie(res);
+      clearGuestRateCookie(res);
 
       return res.json({
         ok: true,
