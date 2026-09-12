@@ -1,0 +1,87 @@
+name: Merge Account Security onto latest Account Access
+
+on:
+  push:
+    branches:
+      - account-security-v1.0-sync
+    paths:
+      - .account-security-sync/trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Fetch validated Account Security branch
+        run: git fetch origin account-security-v1.0
+
+      - name: Three-way merge server and UI
+        run: |
+          set +e
+          git show be72db8e0d9168497381b88a9f3f2a41c1d9a574:app/server.js > /tmp/base-server.js
+          git show origin/account-security-v1.0:app/server.js > /tmp/security-server.js
+          git merge-file app/server.js /tmp/base-server.js /tmp/security-server.js
+          server_status=$?
+
+          git show be72db8e0d9168497381b88a9f3f2a41c1d9a574:app/index.html > /tmp/base-index.html
+          git show origin/account-security-v1.0:app/index.html > /tmp/security-index.html
+          git merge-file app/index.html /tmp/base-index.html /tmp/security-index.html
+          index_status=$?
+          set -e
+
+          if [ "$server_status" -ne 0 ] || [ "$index_status" -ne 0 ]; then
+            echo 'Three-way merge produced conflicts. Showing exact conflict regions:'
+            grep -n -B 18 -A 36 -E '^(<<<<<<<|=======|>>>>>>>)' app/server.js app/index.html || true
+            exit 1
+          fi
+
+      - name: Install exact dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Validate merged source
+        run: |
+          node --check app/server.js
+          node - <<'NODE'
+          const fs = require('fs');
+          const html = fs.readFileSync('app/index.html', 'utf8');
+          const blocks = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(Boolean);
+          for (const [i, code] of blocks.entries()) {
+            try { new Function(code); }
+            catch (error) { console.error(`index.html script ${i + 1}:`, error); process.exit(1); }
+          }
+          NODE
+          grep -q 'id="accessButton"' app/index.html
+          grep -q 'id="securityButton"' app/index.html
+          grep -q '"/api/account/access"' app/server.js
+          grep -q '"/api/account/security"' app/server.js
+          grep -q '"/api/account/password"' app/server.js
+          grep -q '"/api/account/sessions/revoke-others"' app/server.js
+          grep -q '"/api/account"' app/server.js
+          grep -q 'type: "web_search"' app/ai/providers/openai.js
+          ! grep -R -nE '^(<<<<<<<|=======|>>>>>>>)' app
+          ! grep -q 'express.static(__dirname)' app/server.js
+          git diff --check
+
+      - name: Audit production dependencies
+        working-directory: app
+        run: npm audit --omit=dev --audit-level=moderate
+
+      - name: Commit merged product source
+        run: |
+          git config user.name "UNBOUND Account Security Sync"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/index.html
+          git commit -m "Merge account security with Account Access UI"
+          git push
