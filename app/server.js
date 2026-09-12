@@ -56,6 +56,11 @@ const {
   buildRepeatedFailureAlert,
   getSignInRiskStatus
 } = require("./security/signin-risk");
+const {
+  normalizeAiStyle,
+  getAiStylePrompt,
+  listAiStyles
+} = require("./preferences/ai-style");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -230,6 +235,12 @@ async function initializeDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'))
+    );
+
+    CREATE TABLE IF NOT EXISTS user_ai_preferences (
+      user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      ai_style TEXT NOT NULL DEFAULT 'balanced',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS user_sessions (
@@ -3398,6 +3409,86 @@ app.delete(
   }
 );
 
+
+function publicAiPreferences(row) {
+  return {
+    aiStyle: normalizeAiStyle(row?.ai_style),
+    updatedAt: row?.updated_at || null
+  };
+}
+
+async function loadAiPreferences(userId, client = pool) {
+  const result = await client.query(
+    `SELECT ai_style, updated_at
+     FROM user_ai_preferences
+     WHERE user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+  return publicAiPreferences(result.rows[0] || null);
+}
+
+async function resolveAiStyleForRequest(req, knownUser = null) {
+  const user = knownUser || (databaseReady && pool ? await findSessionUser(req) : null);
+  if (user && databaseReady && pool) {
+    return (await loadAiPreferences(user.id)).aiStyle;
+  }
+  return normalizeAiStyle(req.body?.aiStyle);
+}
+
+app.get(
+  "/api/account/ai-preferences",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    try {
+      return res.json({
+        preferences: await loadAiPreferences(req.user.id),
+        styles: listAiStyles()
+      });
+    } catch (error) {
+      console.error("UNBOUND AI AI PREFERENCE LOAD ERROR:", error);
+      return res.status(500).json({ error: "Could not load AI style preferences." });
+    }
+  }
+);
+
+app.post(
+  "/api/account/ai-preferences",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    try {
+      const requested = String(req.body?.aiStyle || "").trim().toLowerCase();
+      const normalized = normalizeAiStyle(requested);
+      if (!requested || requested !== normalized) {
+        return res.status(400).json({
+          error: "Choose a supported UNBOUND AI style.",
+          styles: listAiStyles()
+        });
+      }
+
+      const result = await pool.query(
+        `INSERT INTO user_ai_preferences (user_id, ai_style, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (user_id)
+         DO UPDATE SET ai_style = EXCLUDED.ai_style, updated_at = NOW()
+         RETURNING ai_style, updated_at`,
+        [req.user.id, normalized]
+      );
+
+      return res.json({
+        ok: true,
+        preferences: publicAiPreferences(result.rows[0]),
+        styles: listAiStyles()
+      });
+    } catch (error) {
+      console.error("UNBOUND AI AI PREFERENCE SAVE ERROR:", error);
+      return res.status(500).json({ error: "Could not save AI style preferences." });
+    }
+  }
+);
+
 /* ------------------------- CONVERSATION HISTORY ------------------------ */
 
 function conversationTitleFromMessage(value) {
@@ -5143,6 +5234,8 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
       depthStyle,
       productMode
     );
+    const aiStyle = await resolveAiStyleForRequest(req, persistentChat?.user || null);
+    const styleInstructions = getAiStylePrompt(aiStyle);
     const history = persistentChat
       ? persistentChat.history
       : cleanHistory(req.body.history).slice(-20);
@@ -5169,7 +5262,7 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
 
     const aiResponse = await generateChat({
       model: gatewayStatus.model,
-      instructions: [UNBOUND_SYSTEM_PROMPT, depthInstructions, modeInstructions]
+      instructions: [UNBOUND_SYSTEM_PROMPT, styleInstructions, depthInstructions, modeInstructions]
         .filter(Boolean)
         .join("\n\n"),
       input,
@@ -5225,6 +5318,7 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
       reply: aiResponse.reply,
       depthStyle,
       productMode,
+      aiStyle,
       provider: aiResponse.provider,
       model: aiResponse.model,
       sources: researchMetadata.sources,
@@ -5293,6 +5387,8 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
       depthStyle,
       productMode
     );
+    const aiStyle = await resolveAiStyleForRequest(req, persistentChat?.user || null);
+    const styleInstructions = getAiStylePrompt(aiStyle);
     const history = persistentChat
       ? persistentChat.history
       : cleanHistory(req.body.history).slice(-20);
@@ -5327,6 +5423,7 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
       type: "meta",
       depthStyle,
       productMode,
+      aiStyle,
       provider: gatewayStatus.provider,
       model: gatewayStatus.model,
       conversationId: persistentChat?.conversationId || null
@@ -5334,7 +5431,7 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
 
     const aiResponse = await streamChat({
       model: gatewayStatus.model,
-      instructions: [UNBOUND_SYSTEM_PROMPT, depthInstructions, modeInstructions]
+      instructions: [UNBOUND_SYSTEM_PROMPT, styleInstructions, depthInstructions, modeInstructions]
         .filter(Boolean)
         .join("\n\n"),
       input,
@@ -5378,6 +5475,7 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
       type: "done",
       depthStyle,
       productMode,
+      aiStyle,
       provider: aiResponse.provider,
       model: aiResponse.model,
       conversationId: persistentChat?.conversationId || null

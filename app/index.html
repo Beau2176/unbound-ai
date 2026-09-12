@@ -382,6 +382,39 @@
       box-shadow: inset 0 0 0 1px rgba(255, 173, 67, 0.22);
     }
 
+    .style-control {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 7px;
+      border: 1px solid rgba(101, 232, 164, 0.24);
+      border-radius: 10px;
+      background: rgba(4, 18, 14, 0.68);
+    }
+
+    .style-control span {
+      color: #9fc9b3;
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: 0.07em;
+    }
+
+    .style-control select {
+      max-width: 138px;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: #dfffee;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .style-control option {
+      background: #08121a;
+      color: #f7fbff;
+    }
+
 
     .product-control {
       display: inline-flex;
@@ -1411,6 +1444,16 @@
             <button id="casualModeButton" class="depth-button active" data-depth-style="casual" type="button" aria-pressed="true">CASUAL</button>
             <button id="workModeButton" class="depth-button" data-depth-style="work" type="button" aria-pressed="false">WORK</button>
           </div>
+          <label class="style-control" for="aiStyleSelect">
+            <span>STYLE</span>
+            <select id="aiStyleSelect" aria-label="AI conversation style">
+              <option value="balanced">BALANCED</option>
+              <option value="straight">STRAIGHT SHOOTER</option>
+              <option value="professional">PROFESSIONAL</option>
+              <option value="warm">WARM</option>
+              <option value="playful">PLAYFUL</option>
+            </select>
+          </label>
           <div class="age">18+ PLATFORM</div>
           <button id="historyButton" class="new-chat" type="button" hidden>HISTORY</button>
           <button id="newChatButton" class="new-chat" type="button">NEW CHAT</button>
@@ -1432,7 +1475,7 @@
         </form>
 
         <div class="mode-row">
-          <div class="hint"><span id="productStatus" class="depth-status">Standard Mode</span> • <span id="depthStatus" class="depth-status">Casual Mode — Fast answers when you need them.</span> • Enter to send • Shift + Enter for a new line</div>
+          <div class="hint"><span id="productStatus" class="depth-status">Standard Mode</span> • <span id="depthStatus" class="depth-status">Casual Mode — Fast answers when you need them.</span> • <span id="styleStatus" class="depth-status">Balanced style</span> • Enter to send • Shift + Enter for a new line</div>
           <button id="goDeeperButton" class="go-deeper" type="button" hidden>GO DEEPER</button>
         </div>
       </div>
@@ -1732,6 +1775,7 @@
     const STORAGE_KEY_BASE = "unbound-ai-chat-history-v1";
     const DEPTH_STYLE_KEY_BASE = "unbound-ai-depth-style-v1";
     const PRODUCT_MODE_KEY_BASE = "unbound-ai-product-mode-v1";
+    const AI_STYLE_KEY_BASE = "unbound-ai-style-v1";
     const MAX_STORED_MESSAGES = 50;
     const MAX_CONTEXT_MESSAGES = 20;
 
@@ -1745,6 +1789,8 @@
     const creativeModeButton = document.getElementById("creativeModeButton");
     const researchModeButton = document.getElementById("researchModeButton");
     const productStatus = document.getElementById("productStatus");
+    const aiStyleSelect = document.getElementById("aiStyleSelect");
+    const styleStatus = document.getElementById("styleStatus");
     const casualModeButton = document.getElementById("casualModeButton");
     const workModeButton = document.getElementById("workModeButton");
     const depthStatus = document.getElementById("depthStatus");
@@ -1839,6 +1885,7 @@
     let conversationHistory = [];
     let productMode = "standard";
     let depthStyle = "casual";
+    let aiStyle = "balanced";
     let toastTimer = null;
     let securityDevices = [];
     let securityEvents = [];
@@ -2052,6 +2099,107 @@
       }
     }
 
+
+    function aiStyleStorageKey() {
+      if (currentUser && currentUser.id) {
+        return `${AI_STYLE_KEY_BASE}-user-${currentUser.id}`;
+      }
+      return `${AI_STYLE_KEY_BASE}-guest`;
+    }
+
+    function normalizeAiStyle(value) {
+      return ["balanced", "straight", "professional", "warm", "playful"].includes(value)
+        ? value
+        : "balanced";
+    }
+
+    function aiStyleLabel(value) {
+      return ({
+        balanced: "Balanced",
+        straight: "Straight Shooter",
+        professional: "Professional",
+        warm: "Warm",
+        playful: "Playful"
+      })[normalizeAiStyle(value)];
+    }
+
+    function loadAiStyle() {
+      try {
+        return normalizeAiStyle(localStorage.getItem(aiStyleStorageKey()));
+      } catch (error) {
+        console.warn("Could not load UNBOUND AI style:", error);
+        return "balanced";
+      }
+    }
+
+    function saveAiStyleLocal() {
+      try {
+        localStorage.setItem(aiStyleStorageKey(), aiStyle);
+      } catch (error) {
+        console.warn("Could not save UNBOUND AI style locally:", error);
+      }
+    }
+
+    function renderAiStyle() {
+      aiStyleSelect.value = normalizeAiStyle(aiStyle);
+      styleStatus.textContent = `${aiStyleLabel(aiStyle)} style`;
+    }
+
+    async function syncAiStyleForScope() {
+      if (!currentUser) {
+        aiStyle = loadAiStyle();
+        renderAiStyle();
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/account/ai-preferences", {
+          method: "GET",
+          credentials: "same-origin",
+          headers: { "Accept": "application/json" }
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(data.error || "Could not load AI style.");
+        aiStyle = normalizeAiStyle(data.preferences?.aiStyle);
+        saveAiStyleLocal();
+      } catch (error) {
+        console.warn("Could not sync UNBOUND AI style:", error);
+        aiStyle = loadAiStyle();
+      }
+      renderAiStyle();
+    }
+
+    async function handleAiStyleChange() {
+      const previous = aiStyle;
+      aiStyle = normalizeAiStyle(aiStyleSelect.value);
+      saveAiStyleLocal();
+      renderAiStyle();
+
+      if (currentUser) {
+        try {
+          const response = await fetch("/api/account/ai-preferences", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ aiStyle })
+          });
+          const data = await readJson(response);
+          if (!response.ok) throw new Error(data.error || "Could not save AI style.");
+          aiStyle = normalizeAiStyle(data.preferences?.aiStyle);
+          saveAiStyleLocal();
+          renderAiStyle();
+        } catch (error) {
+          aiStyle = previous;
+          saveAiStyleLocal();
+          renderAiStyle();
+          showToast(error.message || "Could not save AI style.");
+          return;
+        }
+      }
+
+      showToast(`${aiStyleLabel(aiStyle)} style is active.`);
+    }
+
     function normalizeHistory(items) {
       if (!Array.isArray(items)) {
         return [];
@@ -2210,6 +2358,7 @@
     }
 
     async function switchConversationScope() {
+      await syncAiStyleForScope();
       productMode = safeProductMode(loadProductMode());
       depthStyle = loadDepthStyle();
       saveProductMode();
@@ -2447,6 +2596,7 @@
               history: priorHistory,
               depthStyle,
               productMode,
+              aiStyle,
               conversationId: currentUser ? activeConversationId : null
             })
           });
@@ -2489,6 +2639,7 @@
             history: priorHistory,
             depthStyle,
             productMode,
+            aiStyle,
             conversationId: currentUser ? activeConversationId : null
           })
         });
@@ -4093,6 +4244,7 @@
           localStorage.removeItem(`${STORAGE_KEY_BASE}-user-${deletedUserId}`);
           localStorage.removeItem(`${DEPTH_STYLE_KEY_BASE}-user-${deletedUserId}`);
           localStorage.removeItem(`${PRODUCT_MODE_KEY_BASE}-user-${deletedUserId}`);
+          localStorage.removeItem(`${AI_STYLE_KEY_BASE}-user-${deletedUserId}`);
         }
 
         deleteAccountModal.hidden = true;
@@ -4171,6 +4323,7 @@
       setDepthStyle("work", { announce: true })
     );
     goDeeperButton.addEventListener("click", goDeeper);
+    aiStyleSelect.addEventListener("change", handleAiStyleChange);
 
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
@@ -4263,6 +4416,7 @@ adminButton.addEventListener("click", () => {
         addPasskeyButton.title = "This browser or device does not support WebAuthn passkeys.";
       }
       renderAccountUi();
+      renderAiStyle();
       await loadCurrentUser();
       await switchConversationScope();
     }
