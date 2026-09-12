@@ -22,6 +22,7 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Apply recovery migrations
         run: |
+          python scripts/fix-recovery-event-matcher-v017.py
           python scripts/migrate-recovery-server-v017.py
           python scripts/migrate-recovery-index-v017.py
       - name: Install production dependencies
