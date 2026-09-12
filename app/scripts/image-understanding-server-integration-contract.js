@@ -31,7 +31,7 @@ function expectCode(fn, code) {
 }
 
 function main() {
-  assert.strictEqual(INTEGRATION_VERSION, "v0.64");
+  assert.strictEqual(INTEGRATION_VERSION, "v0.65");
   const fileIntegrated = buildFileIntegratedSource();
   const integrated = integrateImageUnderstandingServerSource(fileIntegrated);
 
