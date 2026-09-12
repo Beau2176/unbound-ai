@@ -1,0 +1,207 @@
+name: Production smoke — Account Security v1.0
+
+on:
+  push:
+    branches:
+      - smoke-account-security-v1.0
+    paths:
+      - .smoke-account-security/trigger.txt
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SERVICE_URL: https://unbound-ai-app.onrender.com
+    steps:
+      - name: Prepare disposable credentials
+        run: |
+          TEST_EMAIL="security-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.invalid"
+          OLD_PASSWORD="Smoke-$(openssl rand -hex 18)"
+          NEW_PASSWORD="Changed-$(openssl rand -hex 18)"
+          echo "TEST_EMAIL=$TEST_EMAIL" >> "$GITHUB_ENV"
+          echo "OLD_PASSWORD=$OLD_PASSWORD" >> "$GITHUB_ENV"
+          echo "NEW_PASSWORD=$NEW_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Create disposable account on device A
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/register.json
+          import json, os
+          print(json.dumps({
+            'displayName': 'Security Smoke Test',
+            'email': os.environ['TEST_EMAIL'],
+            'password': os.environ['OLD_PASSWORD'],
+            'adultConfirmed': True
+          }))
+          PY
+          curl -fsS --max-time 30 -c /tmp/a.cookies -b /tmp/a.cookies \
+            -H 'Content-Type: application/json' --data-binary @/tmp/register.json \
+            "$SERVICE_URL/api/auth/register" > /tmp/register-response.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/register-response.json'))
+          assert (data.get('user') or {}).get('id'), data
+          print('Device A account/session created.')
+          PY
+
+      - name: Sign in on device B
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/login-old.json
+          import json, os
+          print(json.dumps({'email': os.environ['TEST_EMAIL'], 'password': os.environ['OLD_PASSWORD']}))
+          PY
+          curl -fsS --max-time 30 -c /tmp/b.cookies -b /tmp/b.cookies \
+            -H 'Content-Type: application/json' --data-binary @/tmp/login-old.json \
+            "$SERVICE_URL/api/auth/login" > /tmp/b-login.json
+          python3 - <<'PY'
+          import json
+          assert (json.load(open('/tmp/b-login.json')).get('user') or {}).get('id')
+          print('Device B session created.')
+          PY
+
+      - name: Verify two active sessions
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 30 -b /tmp/a.cookies "$SERVICE_URL/api/account/security" > /tmp/security-before.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/security-before.json'))
+          assert int(data.get('activeSessions') or 0) >= 2, data
+          assert data.get('currentSessionExpiresAt'), data
+          print('Active sessions before revocation:', data['activeSessions'])
+          PY
+
+      - name: Revoke other devices from device A
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/revoke.json
+          import json, os
+          print(json.dumps({'password': os.environ['OLD_PASSWORD']}))
+          PY
+          curl -fsS --max-time 30 -b /tmp/a.cookies -c /tmp/a.cookies \
+            -H 'Content-Type: application/json' --data-binary @/tmp/revoke.json \
+            "$SERVICE_URL/api/account/sessions/revoke-others" > /tmp/revoke-response.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/revoke-response.json'))
+          assert data.get('ok') is True, data
+          assert int(data.get('revokedSessions') or 0) >= 1, data
+          assert int(data.get('activeSessions') or 0) == 1, data
+          print('Other-device revocation OK.')
+          PY
+
+      - name: Verify device A remains and B is revoked
+        run: |
+          set -euo pipefail
+          a_code="$(curl -sS -o /tmp/a-me.json -w '%{http_code}' --max-time 20 -b /tmp/a.cookies "$SERVICE_URL/api/auth/me")"
+          b_code="$(curl -sS -o /tmp/b-me.json -w '%{http_code}' --max-time 20 -b /tmp/b.cookies "$SERVICE_URL/api/auth/me")"
+          test "$a_code" = "200"
+          test "$b_code" = "401"
+          echo 'Current device remained signed in; device B was revoked.'
+
+      - name: Recreate device B session before password change
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 30 -c /tmp/b.cookies -b /tmp/b.cookies \
+            -H 'Content-Type: application/json' --data-binary @/tmp/login-old.json \
+            "$SERVICE_URL/api/auth/login" > /tmp/b-login-again.json
+          curl -fsS --max-time 30 -b /tmp/a.cookies "$SERVICE_URL/api/account/security" > /tmp/security-two-again.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/security-two-again.json'))
+          assert int(data.get('activeSessions') or 0) >= 2, data
+          print('Second session recreated for password-change test.')
+          PY
+
+      - name: Change password on device A
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/change-password.json
+          import json, os
+          print(json.dumps({
+            'currentPassword': os.environ['OLD_PASSWORD'],
+            'newPassword': os.environ['NEW_PASSWORD'],
+            'newPasswordConfirm': os.environ['NEW_PASSWORD']
+          }))
+          PY
+          curl -fsS --max-time 30 -b /tmp/a.cookies -c /tmp/a.cookies \
+            -H 'Content-Type: application/json' --data-binary @/tmp/change-password.json \
+            "$SERVICE_URL/api/account/password" > /tmp/change-response.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/change-response.json'))
+          assert data.get('ok') is True and data.get('passwordChanged') is True, data
+          assert int(data.get('activeSessions') or 0) == 1, data
+          assert int(data.get('otherSessionsRevoked') or 0) >= 1, data
+          print('Password change and session rotation OK.')
+          PY
+
+      - name: Verify rotated session and credential behavior
+        run: |
+          set -euo pipefail
+          a_code="$(curl -sS -o /tmp/a-after-change.json -w '%{http_code}' --max-time 20 -b /tmp/a.cookies "$SERVICE_URL/api/auth/me")"
+          b_code="$(curl -sS -o /tmp/b-after-change.json -w '%{http_code}' --max-time 20 -b /tmp/b.cookies "$SERVICE_URL/api/auth/me")"
+          test "$a_code" = "200"
+          test "$b_code" = "401"
+
+          old_code="$(curl -sS -o /tmp/old-login-response.json -w '%{http_code}' --max-time 30 \
+            -H 'Content-Type: application/json' --data-binary @/tmp/login-old.json \
+            "$SERVICE_URL/api/auth/login")"
+          test "$old_code" = "401"
+
+          python3 - <<'PY' > /tmp/login-new.json
+          import json, os
+          print(json.dumps({'email': os.environ['TEST_EMAIL'], 'password': os.environ['NEW_PASSWORD']}))
+          PY
+          new_code="$(curl -sS -o /tmp/new-login-response.json -w '%{http_code}' --max-time 30 \
+            -c /tmp/c.cookies -b /tmp/c.cookies \
+            -H 'Content-Type: application/json' --data-binary @/tmp/login-new.json \
+            "$SERVICE_URL/api/auth/login")"
+          test "$new_code" = "200"
+          echo 'Fresh device A session works, old password is rejected, new password signs in.'
+
+      - name: Verify Account Access survived merge
+        run: |
+          curl -fsS --max-time 30 -b /tmp/a.cookies "$SERVICE_URL/api/account/access" > /tmp/access.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/access.json'))
+          assert (data.get('user') or {}).get('id'), data
+          assert data.get('access') is not None, data
+          print('Account Access remains functional.')
+          PY
+
+      - name: Delete disposable account using new password
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/delete.json
+          import json, os
+          print(json.dumps({'password': os.environ['NEW_PASSWORD'], 'confirmation': 'DELETE'}))
+          PY
+          curl -fsS --max-time 30 -b /tmp/a.cookies -c /tmp/a.cookies -X DELETE \
+            -H 'Content-Type: application/json' --data-binary @/tmp/delete.json \
+            "$SERVICE_URL/api/account" > /tmp/delete-response.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/delete-response.json'))
+          assert data.get('ok') is True and data.get('deleted') is True, data
+          print('Disposable account deleted.')
+          PY
+
+      - name: Confirm all disposable sessions and login are gone
+        run: |
+          set -euo pipefail
+          a_code="$(curl -sS -o /tmp/a-deleted.json -w '%{http_code}' --max-time 20 -b /tmp/a.cookies "$SERVICE_URL/api/auth/me")"
+          c_code="$(curl -sS -o /tmp/c-deleted.json -w '%{http_code}' --max-time 20 -b /tmp/c.cookies "$SERVICE_URL/api/auth/me")"
+          login_code="$(curl -sS -o /tmp/new-login-deleted.json -w '%{http_code}' --max-time 30 \
+            -H 'Content-Type: application/json' --data-binary @/tmp/login-new.json \
+            "$SERVICE_URL/api/auth/login")"
+          test "$a_code" = "401"
+          test "$c_code" = "401"
+          test "$login_code" = "401"
+          echo 'Disposable account and all sessions are gone.'
