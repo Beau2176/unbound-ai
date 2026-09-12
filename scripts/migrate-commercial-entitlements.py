@@ -281,13 +281,24 @@ server = replace_once(
 )
 
 # Prove the central entitlement middleware controls the already-live history capability.
-for route in [
-    '"/api/conversations",',
-    '"/api/conversations/import",',
-]:
-    old = f'  {route}\n  requireDatabase,\n  requireSignedIn,\n'
-    new = f'  {route}\n  requireDatabase,\n  requireSignedIn,\n  requireCapability("server_history"),\n'
-    server = replace_once(server, old, new, f"history gate {route}")
+old_conversations = '  "/api/conversations",\n  requireDatabase,\n  requireSignedIn,\n'
+new_conversations = '  "/api/conversations",\n  requireDatabase,\n  requireSignedIn,\n  requireCapability("server_history"),\n'
+server = replace_exact_count(
+    server,
+    old_conversations,
+    new_conversations,
+    2,
+    "history gate list/create routes",
+)
+
+old_import = '  "/api/conversations/import",\n  requireDatabase,\n  requireSignedIn,\n'
+new_import = '  "/api/conversations/import",\n  requireDatabase,\n  requireSignedIn,\n  requireCapability("server_history"),\n'
+server = replace_once(
+    server,
+    old_import,
+    new_import,
+    "history gate import route",
+)
 
 old_id = '  "/api/conversations/:id",\n  requireDatabase,\n  requireSignedIn,\n'
 new_id = '  "/api/conversations/:id",\n  requireDatabase,\n  requireSignedIn,\n  requireCapability("server_history"),\n'
