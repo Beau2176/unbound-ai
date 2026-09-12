@@ -1415,6 +1415,7 @@ async function loadAccountSubscription(userId, client = pool) {
   const result = await client.query(
     `SELECT
        provider,
+       provider_customer_id IS NOT NULL AS provider_customer_connected,
        status,
        plan_tier,
        current_period_start,
@@ -1614,6 +1615,7 @@ async function buildAccountAccess(user) {
     },
     subscription: {
       connected: Boolean(subscription && subscription.provider),
+      customerConnected: Boolean(subscription?.provider_customer_connected),
       provider: subscription?.provider || null,
       status: normalizeSubscriptionStatus(subscription?.status),
       planTier: subscription ? normalizePlanTier(subscription.plan_tier) : null,
@@ -1624,6 +1626,7 @@ async function buildAccountAccess(user) {
     capabilities,
     ageVerification,
     ageVerificationGateway,
+    billingGateway: getBillingGatewayStatus(),
     summary: {
       usable: capabilities.filter((item) => item.usable).length,
       entitledButNotLive: capabilities.filter(

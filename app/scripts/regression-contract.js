@@ -300,6 +300,14 @@ function testBrowserContracts() {
     "window.location.assign(verificationUrl)",
     "age-verification provider navigation"
   );
+  requireText(indexHtml, 'id="billingUpgradeButton"', "TOP upgrade action");
+  requireText(indexHtml, 'id="billingPortalButton"', "billing management action");
+  requireText(indexHtml, 'fetch("/api/account/billing/checkout"', "billing checkout endpoint usage");
+  requireText(indexHtml, 'fetch("/api/account/billing/portal"', "billing portal endpoint usage");
+  requireText(indexHtml, 'checkoutUrl.startsWith("https://")', "checkout redirect HTTPS requirement");
+  requireText(indexHtml, 'portalUrl.startsWith("https://")', "billing portal redirect HTTPS requirement");
+  requireText(indexHtml, "subscription.customerConnected", "billing portal requires connected customer");
+  forbidText(indexHtml, "provider_customer_id", "browser must not reference provider customer identifier");
   forbidText(
     indexHtml,
     '<div class="status" aria-label="Service status live">',
