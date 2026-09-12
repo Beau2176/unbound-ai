@@ -23,6 +23,11 @@ function getRateLimitPolicy(env = process.env) {
       limit: positiveIntEnv(env, "RATE_LIMIT_PASSKEY_AUTH_PER_15_MIN", 40, { max: 2000 }),
       windowSeconds: 15 * 60
     }),
+    recovery: Object.freeze({
+      scope: "auth_recovery",
+      limit: positiveIntEnv(env, "RATE_LIMIT_RECOVERY_PER_HOUR", 8, { max: 500 }),
+      windowSeconds: 60 * 60
+    }),
     guestChat: Object.freeze({
       scope: "chat_guest",
       limit: positiveIntEnv(env, "RATE_LIMIT_GUEST_CHAT_PER_HOUR", 60, { max: 10000 }),
