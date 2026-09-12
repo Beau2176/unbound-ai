@@ -83,9 +83,23 @@ pg_restore \
 
 After the restore, verify representative tables and counts, authenticate with a test account if appropriate, and confirm application startup against the recovered database. Record the successful drill time in `DATABASE_RESTORE_LAST_TESTED_AT`.
 
+## Maintenance controls
+
+UNBOUND AI supports environment-controlled incident modes:
+
+- `UNBOUND_MAINTENANCE_MODE=off` — normal operation.
+- `UNBOUND_MAINTENANCE_MODE=read_only` — safe HTTP methods continue, while API writes (including chat requests that persist history/usage) return `503` with `Retry-After`.
+- `UNBOUND_MAINTENANCE_MODE=offline` — all API traffic is blocked except `/api/system/status`, which remains available to report maintenance state.
+- `UNBOUND_MAINTENANCE_MESSAGE=<message>` — optional user-facing maintenance reason.
+- `UNBOUND_MAINTENANCE_RETRY_AFTER_SECONDS=<seconds>` — retry guidance, default `300`.
+
+For a data-integrity incident, switch to `read_only` before backup or recovery work whenever the application must remain reachable. Use `offline` when even reads should stop. Changing these environment variables requires the hosting environment to restart/redeploy the service before the new mode takes effect.
+
+Billing and verification webhook writes are also blocked in maintenance mode. Confirm that the provider will retry delivery and reconcile any missed events after normal operation resumes.
+
 ## Data-loss incident procedure
 
-1. Stop or restrict writes if continued writes could make recovery harder.
+1. Set `UNBOUND_MAINTENANCE_MODE=read_only` (or `offline` when reads are unsafe) if continued writes could make recovery harder.
 2. Record the incident start time and the last known-good time.
 3. Preserve the current database; do not immediately delete it.
 4. If paid Render PITR is available, restore into a **new** recovery instance and validate it before cutover.
