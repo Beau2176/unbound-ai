@@ -2,11 +2,15 @@ const assert = require("assert");
 const {
   registerAgeVerificationAdapter,
   getAgeVerificationGatewayStatus,
-  startAgeVerificationSession
+  startAgeVerificationSession,
+  processAgeVerificationWebhook,
+  resolveAgeVerificationTransition
 } = require("../age/gateway");
 
 const provider = "contract-age";
 let receivedInput = null;
+let webhookVerifyCalled = false;
+let webhookParseCalled = false;
 
 registerAgeVerificationAdapter(provider, {
   capabilities: {
@@ -28,11 +32,29 @@ registerAgeVerificationAdapter(provider, {
       apiSecret: "DO_NOT_RETAIN"
     };
   },
-  verifyWebhook() {
-    return true;
+  async verifyWebhook({ rawBody, headers }) {
+    webhookVerifyCalled = true;
+    assert.ok(Buffer.isBuffer(rawBody));
+    assert.equal(rawBody.toString("utf8"), '{"event":"verified"}');
+    return headers["x-contract-signature"] === "valid-signature";
   },
-  parseWebhook() {
-    return { status: "pending" };
+  async parseWebhook() {
+    webhookParseCalled = true;
+    assert.equal(webhookVerifyCalled, true, "Webhook payload must not be parsed before signature verification");
+    return {
+      eventId: "evt_contract_001",
+      reference: "provider-reference-secret-123",
+      eventType: "verification.completed",
+      status: "verified",
+      meetsMinimumAge: true,
+      occurredAt: "2026-09-12T16:58:00Z",
+      verifiedAt: "2026-09-12T16:58:00Z",
+      expiresAt: "2027-09-12T16:58:00Z",
+      resultCode: "adult-confirmed",
+      rawIdImage: "DO_NOT_RETAIN",
+      biometricTemplate: "DO_NOT_RETAIN",
+      secret: "DO_NOT_RETAIN"
+    };
   }
 });
 
@@ -93,6 +115,70 @@ async function main() {
     assert.ok(!serialized.includes(forbidden), `Provider-only field leaked into normalized session: ${forbidden}`);
   }
 
+  const webhook = await processAgeVerificationWebhook({
+    rawBody: Buffer.from('{"event":"verified"}'),
+    headers: { "x-contract-signature": "valid-signature" },
+    requestId: "webhook-request-id",
+    env
+  });
+  assert.equal(webhookVerifyCalled, true);
+  assert.equal(webhookParseCalled, true);
+  assert.equal(webhook.provider, provider);
+  assert.equal(webhook.providerEventId, "evt_contract_001");
+  assert.equal(webhook.providerReference, "provider-reference-secret-123");
+  assert.equal(webhook.status, "verified");
+  assert.equal(webhook.minimumAge, 18);
+  assert.equal(webhook.verifiedAt, "2026-09-12T16:58:00.000Z");
+  assert.equal(webhook.expiresAt, "2027-09-12T16:58:00.000Z");
+  const webhookSerialized = JSON.stringify(webhook);
+  for (const forbidden of ["DO_NOT_RETAIN", "rawIdImage", "biometricTemplate", '"secret"']) {
+    assert.ok(!webhookSerialized.includes(forbidden), `Provider-only webhook field leaked: ${forbidden}`);
+  }
+
+  webhookVerifyCalled = false;
+  webhookParseCalled = false;
+  await assert.rejects(
+    () => processAgeVerificationWebhook({
+      rawBody: Buffer.from('{"event":"verified"}'),
+      headers: { "x-contract-signature": "invalid" },
+      env
+    }),
+    (error) => error?.code === "AGE_VERIFICATION_WEBHOOK_SIGNATURE_INVALID" && error?.statusCode === 401
+  );
+  assert.equal(webhookVerifyCalled, true);
+  assert.equal(webhookParseCalled, false, "Invalid webhook must not be parsed after signature failure");
+
+  registerAgeVerificationAdapter("underage-contract", {
+    capabilities: { startVerification: false, webhooks: true },
+    isConfigured: () => true,
+    verifyWebhook: async () => true,
+    parseWebhook: async () => ({
+      eventId: "evt_underage",
+      reference: "provider-reference-underage",
+      status: "verified",
+      meetsMinimumAge: false,
+      occurredAt: "2026-09-12T16:58:00Z"
+    })
+  });
+  await assert.rejects(
+    () => processAgeVerificationWebhook({
+      rawBody: Buffer.from("{}"),
+      env: { AGE_VERIFICATION_PROVIDER: "underage-contract" }
+    }),
+    (error) => error?.code === "AGE_VERIFICATION_WEBHOOK_AGE_NOT_CONFIRMED"
+  );
+
+  assert.deepEqual(
+    resolveAgeVerificationTransition("verified", "pending"),
+    { apply: false, status: "verified", reason: "preserve-active-verification" }
+  );
+  assert.deepEqual(
+    resolveAgeVerificationTransition("verified", "failed"),
+    { apply: false, status: "verified", reason: "preserve-active-verification" }
+  );
+  assert.equal(resolveAgeVerificationTransition("verified", "revoked").apply, true);
+  assert.equal(resolveAgeVerificationTransition("pending", "verified").status, "verified");
+
   registerAgeVerificationAdapter("bad-url-age", {
     capabilities: { startVerification: true, webhooks: false },
     isConfigured: () => true,
@@ -112,7 +198,7 @@ async function main() {
     (error) => error?.code === "AGE_VERIFICATION_PROVIDER_RESPONSE_INVALID"
   );
 
-  console.log("PASS hard-age verification adapter contract: provider-neutral, privacy-minimized, HTTPS-only, pending-by-default.");
+  console.log("PASS hard-age verification adapter contract: privacy-minimized start flow, authenticated webhooks, safe state transitions.");
 }
 
 main().catch((error) => {
