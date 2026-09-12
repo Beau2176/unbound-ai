@@ -3,6 +3,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { promisify } = require("util");
 const { Pool } = require("pg");
+const { generateChat, getGatewayStatus } = require("./ai/gateway");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -375,9 +376,18 @@ function numberFromEnv(name) {
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-function estimateOpenAICostMicros(usage) {
-  const inputRate = numberFromEnv("OPENAI_INPUT_USD_PER_MILLION");
-  const outputRate = numberFromEnv("OPENAI_OUTPUT_USD_PER_MILLION");
+function estimateProviderCostMicros(provider, usage) {
+  const prefix = String(provider || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "_");
+
+  if (!prefix) {
+    return null;
+  }
+
+  const inputRate = numberFromEnv(prefix + "_INPUT_USD_PER_MILLION");
+  const outputRate = numberFromEnv(prefix + "_OUTPUT_USD_PER_MILLION");
 
   if (inputRate === null || outputRate === null) {
     return null;
@@ -470,7 +480,8 @@ app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     database: databaseReady ? "connected" : "not-connected",
-    accounts: databaseReady ? "ready" : "not-ready"
+    accounts: databaseReady ? "ready" : "not-ready",
+    ai: getGatewayStatus()
   });
 });
 
@@ -1241,18 +1252,16 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({
-        error: "OPENAI_API_KEY is not loaded."
+    const gatewayStatus = getGatewayStatus();
+
+    if (!gatewayStatus.configured) {
+      return res.status(503).json({
+        error:
+          gatewayStatus.error === "unsupported-provider"
+            ? "AI provider '" + gatewayStatus.provider + "' is not supported."
+            : "AI provider '" + gatewayStatus.provider + "' is not configured."
       });
     }
-
-    const OpenAI = (await import("openai")).default;
-
-    const client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
-    });
-
     const history = cleanHistory(req.body.history);
     const depthStyle = normalizeDepthStyle(req.body.depthStyle);
     const depthInstructions =
@@ -1266,25 +1275,27 @@ app.post("/api/chat", async (req, res) => {
       }
     ];
 
-    const model = "gpt-5.6-luna";
-    const response = await client.responses.create({
-      model,
-      instructions: `${UNBOUND_SYSTEM_PROMPT}\n\n${depthInstructions}`,
+    const aiResponse = await generateChat({
+      model: gatewayStatus.model,
+      instructions: UNBOUND_SYSTEM_PROMPT + "\n\n" + depthInstructions,
       input
     });
 
-    if (databaseReady && pool && response.usage) {
+    if (databaseReady && pool && aiResponse.usage) {
       try {
         const sessionUser = await findSessionUser(req);
 
         await recordUsageEvent({
           userId: sessionUser?.id || null,
-          provider: "openai",
-          model: response.model || model,
-          eventType: `chat_${depthStyle}`,
-          usage: response.usage,
-          estimatedCostMicros: estimateOpenAICostMicros(response.usage),
-          providerResponseId: response.id || null
+          provider: aiResponse.provider,
+          model: aiResponse.model,
+          eventType: "chat_" + depthStyle,
+          usage: aiResponse.usage,
+          estimatedCostMicros: estimateProviderCostMicros(
+            aiResponse.provider,
+            aiResponse.usage
+          ),
+          providerResponseId: aiResponse.responseId
         });
       } catch (usageError) {
         console.error("UNBOUND AI USAGE METER ERROR:", usageError);
@@ -1292,8 +1303,10 @@ app.post("/api/chat", async (req, res) => {
     }
 
     res.json({
-      reply: response.output_text,
-      depthStyle
+      reply: aiResponse.reply,
+      depthStyle,
+      provider: aiResponse.provider,
+      model: aiResponse.model
     });
   } catch (error) {
     console.error("UNBOUND AI ERROR:", error);
