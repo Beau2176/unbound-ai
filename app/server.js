@@ -386,6 +386,7 @@ function estimateOpenAICostMicros(usage) {
   const inputTokens = Number(usage?.input_tokens || 0);
   const outputTokens = Number(usage?.output_tokens || 0);
 
+  // USD-per-million-token pricing converts directly to microdollars per token.
   return Math.max(
     0,
     Math.round(inputTokens * inputRate + outputTokens * outputRate)
@@ -519,7 +520,9 @@ app.post("/api/auth/register", requireDatabase, async (req, res) => {
 
     await createSession(user.id, res);
 
-    return res.status(201).json({ user: publicUser(user) });
+    return res.status(201).json({
+      user: publicUser(user)
+    });
   } catch (error) {
     if (error.code === "23505") {
       return res.status(409).json({
@@ -553,7 +556,9 @@ app.post("/api/auth/login", requireDatabase, async (req, res) => {
       : false;
 
     if (!user || !passwordMatches) {
-      return res.status(401).json({ error: "Email or password is incorrect." });
+      return res.status(401).json({
+        error: "Email or password is incorrect."
+      });
     }
 
     await createSession(user.id, res);
@@ -570,7 +575,9 @@ app.post("/api/auth/login", requireDatabase, async (req, res) => {
     user.complimentary_top_tier =
       grantResult.rows[0].complimentary_top_tier;
 
-    return res.json({ user: publicUser(user) });
+    return res.json({
+      user: publicUser(user)
+    });
   } catch (error) {
     console.error("UNBOUND AI LOGIN ERROR:", error);
     return res.status(500).json({ error: "Login failed." });
@@ -582,9 +589,10 @@ app.post("/api/auth/logout", requireDatabase, async (req, res) => {
     const token = parseCookies(req)[SESSION_COOKIE];
 
     if (token) {
-      await pool.query("DELETE FROM user_sessions WHERE token_hash = $1", [
-        hashSessionToken(token)
-      ]);
+      await pool.query(
+        "DELETE FROM user_sessions WHERE token_hash = $1",
+        [hashSessionToken(token)]
+      );
     }
 
     clearSessionCookie(res);
@@ -610,6 +618,8 @@ app.get("/api/auth/me", requireDatabase, async (req, res) => {
     return res.status(500).json({ error: "Could not load account." });
   }
 });
+
+/* ----------------------------- ADMIN API ----------------------------- */
 
 app.get(
   "/api/admin/overview",
@@ -852,7 +862,9 @@ app.patch(
       }
 
       if (!["free", "top"].includes(planTier)) {
-        return res.status(400).json({ error: "Plan must be FREE or TOP." });
+        return res.status(400).json({
+          error: "Plan must be FREE or TOP."
+        });
       }
 
       const targetResult = await pool.query(
@@ -864,11 +876,13 @@ app.patch(
       );
 
       const target = targetResult.rows[0];
+
       if (!target) {
         return res.status(404).json({ error: "User not found." });
       }
 
       const ownerEmail = normalizeEmail(process.env.OWNER_EMAIL);
+
       if (normalizeEmail(target.email) === ownerEmail && planTier !== "top") {
         return res.status(400).json({
           error: "The owner account must remain on the TOP plan."
@@ -876,8 +890,10 @@ app.patch(
       }
 
       const client = await pool.connect();
+
       try {
         await client.query("BEGIN");
+
         let removedComplimentarySlot = null;
 
         if (planTier !== "top") {
@@ -887,6 +903,7 @@ app.patch(
              RETURNING slot`,
             [userId]
           );
+
           if (removedGrant.rows[0]) {
             removedComplimentarySlot = Number(removedGrant.rows[0].slot);
           }
@@ -901,13 +918,20 @@ app.patch(
           [planTier, userId]
         );
 
-        await writeAdminAudit(client, req.adminUser, "user.plan.changed", target, {
-          previousPlanTier: target.plan_tier,
-          newPlanTier: planTier,
-          removedComplimentarySlot
-        });
+        await writeAdminAudit(
+          client,
+          req.adminUser,
+          "user.plan.changed",
+          target,
+          {
+            previousPlanTier: target.plan_tier,
+            newPlanTier: planTier,
+            removedComplimentarySlot
+          }
+        );
 
         await client.query("COMMIT");
+
         return res.json({
           user: {
             id: String(updateResult.rows[0].id),
@@ -926,7 +950,9 @@ app.patch(
       }
     } catch (error) {
       console.error("UNBOUND AI ADMIN PLAN ERROR:", error);
-      return res.status(500).json({ error: "Could not update that user's plan." });
+      return res.status(500).json({
+        error: "Could not update that user's plan."
+      });
     }
   }
 );
@@ -938,6 +964,7 @@ app.post(
   async (req, res) => {
     try {
       const email = normalizeEmail(req.body.email);
+
       if (!isValidEmail(email)) {
         return res.status(400).json({
           error: "Enter the email address of an existing UNBOUND AI account."
@@ -945,6 +972,7 @@ app.post(
       }
 
       const ownerEmail = normalizeEmail(process.env.OWNER_EMAIL);
+
       if (email === ownerEmail) {
         return res.status(400).json({
           error: "The owner account already has permanent TOP access."
@@ -958,7 +986,9 @@ app.post(
          LIMIT 1`,
         [email]
       );
+
       const user = userResult.rows[0];
+
       if (!user) {
         return res.status(404).json({
           error:
@@ -967,6 +997,7 @@ app.post(
       }
 
       const client = await pool.connect();
+
       try {
         await client.query("BEGIN");
         await client.query(
@@ -1010,16 +1041,19 @@ app.post(
         if (!slotResult.rows[0]) {
           await client.query("ROLLBACK");
           return res.status(409).json({
-            error: "All five complimentary TOP-tier gift slots are already assigned."
+            error:
+              "All five complimentary TOP-tier gift slots are already assigned."
           });
         }
 
         const slot = Number(slotResult.rows[0].slot);
+
         await client.query(
           `INSERT INTO complimentary_top_tier_grants (slot, user_id)
            VALUES ($1, $2)`,
           [slot, user.id]
         );
+
         await client.query(
           `UPDATE users
            SET plan_tier = 'top',
@@ -1027,6 +1061,7 @@ app.post(
            WHERE id = $1`,
           [user.id]
         );
+
         await writeAdminAudit(
           client,
           req.adminUser,
@@ -1038,6 +1073,7 @@ app.post(
             newPlanTier: "top"
           }
         );
+
         await client.query("COMMIT");
 
         return res.status(201).json({
@@ -1061,6 +1097,7 @@ app.post(
           error: "That complimentary slot could not be assigned. Try again."
         });
       }
+
       console.error("UNBOUND AI ADMIN GIFT ERROR:", error);
       return res.status(500).json({
         error: "Could not grant complimentary TOP-tier access."
@@ -1076,6 +1113,7 @@ app.delete(
   async (req, res) => {
     try {
       const userId = String(req.params.userId || "").trim();
+
       if (!/^\d+$/.test(userId)) {
         return res.status(400).json({ error: "Invalid user ID." });
       }
@@ -1087,12 +1125,15 @@ app.delete(
          LIMIT 1`,
         [userId]
       );
+
       const target = targetResult.rows[0];
+
       if (!target) {
         return res.status(404).json({ error: "User not found." });
       }
 
       const ownerEmail = normalizeEmail(process.env.OWNER_EMAIL);
+
       if (normalizeEmail(target.email) === ownerEmail) {
         return res.status(400).json({
           error: "The owner account cannot use a complimentary gift slot."
@@ -1100,8 +1141,10 @@ app.delete(
       }
 
       const client = await pool.connect();
+
       try {
         await client.query("BEGIN");
+
         const deleted = await client.query(
           `DELETE FROM complimentary_top_tier_grants
            WHERE user_id = $1
@@ -1136,9 +1179,13 @@ app.delete(
             resultingPlanTier: target.role === "admin" ? "top" : "free"
           }
         );
+
         await client.query("COMMIT");
 
-        return res.json({ ok: true, slot: Number(deleted.rows[0].slot) });
+        return res.json({
+          ok: true,
+          slot: Number(deleted.rows[0].slot)
+        });
       } catch (error) {
         await client.query("ROLLBACK");
         throw error;
@@ -1153,6 +1200,8 @@ app.delete(
     }
   }
 );
+
+/* ----------------------------- CHAT API ------------------------------ */
 
 function normalizeDepthStyle(value) {
   return String(value || "").trim().toLowerCase() === "work"
@@ -1187,15 +1236,22 @@ app.post("/api/chat", async (req, res) => {
       typeof req.body.message === "string" ? req.body.message.trim() : "";
 
     if (!message) {
-      return res.status(400).json({ error: "Please enter a message." });
+      return res.status(400).json({
+        error: "Please enter a message."
+      });
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OPENAI_API_KEY is not loaded." });
+      return res.status(500).json({
+        error: "OPENAI_API_KEY is not loaded."
+      });
     }
 
     const OpenAI = (await import("openai")).default;
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    const client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
 
     const history = cleanHistory(req.body.history);
     const depthStyle = normalizeDepthStyle(req.body.depthStyle);
@@ -1220,6 +1276,7 @@ app.post("/api/chat", async (req, res) => {
     if (databaseReady && pool && response.usage) {
       try {
         const sessionUser = await findSessionUser(req);
+
         await recordUsageEvent({
           userId: sessionUser?.id || null,
           provider: "openai",
@@ -1234,9 +1291,13 @@ app.post("/api/chat", async (req, res) => {
       }
     }
 
-    res.json({ reply: response.output_text, depthStyle });
+    res.json({
+      reply: response.output_text,
+      depthStyle
+    });
   } catch (error) {
     console.error("UNBOUND AI ERROR:", error);
+
     res.status(500).json({
       error: error.message || "UNBOUND AI could not get a response."
     });
