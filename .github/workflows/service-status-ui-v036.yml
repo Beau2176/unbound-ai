@@ -1,0 +1,99 @@
+name: Service Status UI v0.36
+
+on:
+  push:
+    branches:
+      - service-status-ui-v0.36
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: service-status-ui-v0.36
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Apply service status UI migration
+        run: python tools/apply_service_status_ui_v036.py
+
+      - name: Install locked dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Run permanent CI checks
+        working-directory: app
+        run: npm run ci
+
+      - name: Validate browser script syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          html = Path('app/index.html').read_text()
+          start = html.index('<script>') + len('<script>')
+          end = html.rindex('</script>')
+          Path('/tmp/unbound-index-v036.js').write_text(html[start:end])
+          PY
+          node --check /tmp/unbound-index-v036.js
+
+      - name: Verify status UI contract
+        run: |
+          grep -q 'id="serviceStatus"' app/index.html
+          grep -q 'id="serviceStatusText"' app/index.html
+          grep -q 'id="serviceBanner"' app/index.html
+          grep -q 'function renderServiceStatus' app/index.html
+          grep -q 'function refreshServiceStatus' app/index.html
+          grep -q 'serviceWriteBlocked' app/index.html
+          grep -q 'window.setInterval' app/index.html
+          grep -q 'visibilitychange' app/index.html
+          grep -q 'Chat temporarily paused' app/index.html
+          grep -q 'STATUS UNKNOWN' app/index.html
+
+      - name: Verify live backend status shapes
+        run: |
+          PORT=32192 NODE_ENV=test node app/server.js > /tmp/unbound-v036.log 2>&1 &
+          pid=$!
+          cleanup() { kill "$pid" 2>/dev/null || true; }
+          trap cleanup EXIT
+          ready=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:32192/healthz >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 0.25
+          done
+          test "$ready" -eq 1
+          curl -sS -o /tmp/status.json http://127.0.0.1:32192/api/system/status || true
+          grep -q '"status":"not_ready"' /tmp/status.json
+          grep -q '"operational":false' /tmp/status.json
+          grep -q '"maintenance"' /tmp/status.json
+          kill -TERM "$pid"
+          set +e
+          wait "$pid"
+          code=$?
+          set -e
+          trap - EXIT
+          test "$code" -eq 0
+
+      - name: Commit completed v0.36 and remove one-time migration
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/index.html
+          git rm tools/apply_service_status_ui_v036.py .github/workflows/service-status-ui-v036.yml
+          if git diff --cached --quiet; then
+            echo "No final changes to commit."
+          else
+            git commit -m "Add truthful service status UI v0.36"
+            git push origin HEAD:service-status-ui-v0.36
+          fi
