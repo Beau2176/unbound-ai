@@ -1,0 +1,52 @@
+name: Billing UI v0.46
+
+on:
+  push:
+    branches:
+      - billing-ui-v0.46
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Apply truthful billing UI migration
+        run: node app/scripts/migrate-v046.js
+
+      - name: Install locked dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Run full permanent CI
+        working-directory: app
+        run: npm run ci
+
+      - name: Verify billing UI source contract
+        run: |
+          grep -q 'customerConnected: Boolean(subscription?.provider_customer_connected)' app/server.js
+          grep -q 'billingGateway: getBillingGatewayStatus()' app/server.js
+          grep -q 'id="billingUpgradeButton"' app/index.html
+          grep -q 'id="billingPortalButton"' app/index.html
+          grep -q '/api/account/billing/checkout' app/index.html
+          grep -q '/api/account/billing/portal' app/index.html
+          grep -q 'checkoutUrl.startsWith("https://")' app/index.html
+          grep -q 'portalUrl.startsWith("https://")' app/index.html
+
+      - name: Commit completed v0.46 and remove one-time migration
+        run: |
+          rm app/scripts/migrate-v046.js
+          rm .github/workflows/billing-ui-v046.yml
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/index.html app/scripts/regression-contract.js app/scripts/migrate-v046.js .github/workflows/billing-ui-v046.yml
+          git commit -m "Add truthful account billing UI v0.46"
+          git push origin HEAD:billing-ui-v0.46
