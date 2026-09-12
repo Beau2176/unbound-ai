@@ -1,3 +1,4 @@
 UNBOUND AI v0.4 staging validated before promotion.
 Runtime bootstrap verifies the generated server SHA-256 and the patched index SHA-256 before starting.
 Deployment head: v0.4
+Promotion target: main
