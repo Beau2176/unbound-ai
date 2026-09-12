@@ -1,0 +1,104 @@
+name: AI Style v0.23
+
+on:
+  push:
+    branches:
+      - ai-style-v0.23
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Apply AI style migration
+        run: python scripts/migrate-ai-style-v023.py
+      - name: Install production dependencies
+        working-directory: app
+        run: npm ci
+      - name: Validate JavaScript
+        run: |
+          node --check app/server.js
+          node --check app/preferences/ai-style.js
+          python - <<'PY'
+          from pathlib import Path
+          html = Path('app/index.html').read_text()
+          start = html.rfind('<script>')
+          end = html.rfind('</script>')
+          if start < 0 or end <= start:
+              raise SystemExit('index script block missing')
+          Path('/tmp/unbound-index.js').write_text(html[start + len('<script>'):end])
+          PY
+          node --check /tmp/unbound-index.js
+      - name: Verify AI style primitive contract
+        working-directory: app
+        run: |
+          node - <<'NODE'
+          const style = require('./preferences/ai-style');
+          const ids = style.listAiStyles().map((item) => item.id);
+          const expected = ['balanced', 'straight', 'professional', 'warm', 'playful'];
+          if (JSON.stringify(ids) !== JSON.stringify(expected)) process.exit(1);
+          if (style.normalizeAiStyle('STRAIGHT') !== 'straight') process.exit(1);
+          if (style.normalizeAiStyle('nonsense') !== 'balanced') process.exit(1);
+          if (!style.getAiStylePrompt('professional').includes('PROFESSIONAL')) process.exit(1);
+          console.log('AI style primitive contract OK');
+          NODE
+      - name: Verify account preference persistence API
+        run: |
+          grep -q 'CREATE TABLE IF NOT EXISTS user_ai_preferences' app/server.js
+          grep -q 'async function loadAiPreferences' app/server.js
+          grep -q 'resolveAiStyleForRequest' app/server.js
+          grep -q '"/api/account/ai-preferences"' app/server.js
+          grep -q 'ON CONFLICT (user_id)' app/server.js
+          grep -q 'Choose a supported UNBOUND AI style' app/server.js
+      - name: Verify style prompt wiring
+        run: |
+          test "$(grep -c 'const aiStyle = await resolveAiStyleForRequest' app/server.js)" -eq 2
+          test "$(grep -c 'styleInstructions = getAiStylePrompt(aiStyle)' app/server.js)" -eq 2
+          test "$(grep -c 'UNBOUND_SYSTEM_PROMPT, styleInstructions, depthInstructions, modeInstructions' app/server.js)" -eq 2
+          test "$(grep -c '^      aiStyle,$' app/server.js)" -ge 3
+      - name: Verify browser style controls
+        run: |
+          grep -q 'id="aiStyleSelect"' app/index.html
+          grep -q 'STRAIGHT SHOOTER' app/index.html
+          grep -q 'id="styleStatus"' app/index.html
+          grep -q 'AI_STYLE_KEY_BASE' app/index.html
+          grep -q 'syncAiStyleForScope' app/index.html
+          grep -q 'handleAiStyleChange' app/index.html
+          test "$(grep -c '^              aiStyle,$' app/index.html)" -eq 1
+          test "$(grep -c '^            aiStyle,$' app/index.html)" -eq 1
+      - name: Verify prior product and security layers survived
+        run: |
+          grep -q 'const ADULT_MODE_PROMPT' app/server.js
+          grep -q 'assertAgeVerifiedAdult(req)' app/server.js
+          grep -q 'const UNBOUND_MODE_PROMPT' app/server.js
+          grep -q 'const CREATIVE_MODE_PROMPT' app/server.js
+          grep -q 'const RESEARCH_MODE_PROMPT' app/server.js
+          grep -q 'chat_stream_" + productMode' app/server.js
+          grep -q 'account_security_alerts' app/server.js
+          grep -q 'auth.repeated_failed_sign_in' app/server.js
+          grep -q 'account_passkeys' app/server.js
+          grep -q 'account_recovery_codes' app/server.js
+      - name: Dependency audit
+        working-directory: app
+        run: npm audit --audit-level=moderate
+      - name: Commit production source
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/index.html
+          if git diff --cached --quiet; then
+            echo "No generated production changes to commit."
+          else
+            git commit -m "Add account-backed AI style preferences"
+            git push origin HEAD:ai-style-v0.23
+          fi
