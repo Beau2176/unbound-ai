@@ -68,6 +68,31 @@
       -webkit-tap-highlight-color: transparent;
     }
 
+    :where(button, input, textarea, select, a[href], [tabindex]):focus-visible {
+      outline: 3px solid #ffd297;
+      outline-offset: 3px;
+    }
+
+    .skip-link {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      transform: translateY(-160%);
+      padding: 10px 14px;
+      border: 2px solid #ffd297;
+      border-radius: 10px;
+      background: #050913;
+      color: #ffffff;
+      font-weight: 900;
+      text-decoration: none;
+      transition: transform 0.15s ease;
+    }
+
+    .skip-link:focus {
+      transform: translateY(0);
+    }
+
     .topbar {
       position: sticky;
       top: 0;
@@ -1384,10 +1409,26 @@
       background: rgba(66, 165, 255, 0.08);
       color: #d9efff;
     }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+
+      body {
+        background-attachment: scroll;
+      }
+    }
   </style>
 </head>
 
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="topbar">
     <div class="brand">
       <div class="mark" aria-hidden="true"></div>
@@ -1425,7 +1466,7 @@
     </div>
   </header>
 
-  <main class="page">
+  <main id="main-content" class="page" tabindex="-1">
     <section class="chat-shell" aria-label="UNBOUND AI chat">
       <div class="chat-head">
         <div>
@@ -1903,6 +1944,71 @@
     let securityAlertUnread = 0;
     let accountPasskeys = [];
     let currentRecoveryCodes = [];
+    let modalReturnFocus = null;
+
+    function rememberModalReturnFocus() {
+      modalReturnFocus = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    }
+
+    function modalFocusables(modal) {
+      if (!modal) return [];
+      return Array.from(
+        modal.querySelectorAll(
+          'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((element) => !element.hidden && element.getClientRects().length > 0);
+    }
+
+    function focusModal(modal, preferred = null) {
+      window.requestAnimationFrame(() => {
+        const target = preferred && !preferred.disabled
+          ? preferred
+          : modalFocusables(modal)[0];
+        target?.focus();
+      });
+    }
+
+    function restoreModalReturnFocus() {
+      const target = modalReturnFocus;
+      modalReturnFocus = null;
+      if (target?.isConnected && typeof target.focus === "function") {
+        window.requestAnimationFrame(() => target.focus());
+      }
+    }
+
+    function activeModal() {
+      return [deleteAccountModal, securityModal, accessModal, historyModal, authModal]
+        .find((modal) => modal && !modal.hidden) || null;
+    }
+
+    function trapModalTabKey(event) {
+      if (event.key !== "Tab") return false;
+      const modal = activeModal();
+      if (!modal) return false;
+      const focusables = modalFocusables(modal);
+      if (!focusables.length) {
+        event.preventDefault();
+        return true;
+      }
+
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const current = document.activeElement;
+
+      if (event.shiftKey && (current === first || !modal.contains(current))) {
+        event.preventDefault();
+        last.focus();
+        return true;
+      }
+      if (!event.shiftKey && (current === last || !modal.contains(current))) {
+        event.preventDefault();
+        first.focus();
+        return true;
+      }
+      return false;
+    }
 
     function escapeHtml(value) {
       return String(value)
@@ -2984,8 +3090,10 @@
 
     async function openAccess() {
       if (!currentUser) { showToast("Sign in to view account access."); openAuth("login"); return; }
+      rememberModalReturnFocus();
       accessFeedback.className = "auth-feedback"; accessFeedback.textContent = "";
       accessModal.hidden = false; document.body.classList.add("modal-open");
+      focusModal(accessModal, accessCloseButton);
       await refreshAccountAccess({ silent: false });
       await loadLegalPolicyStatus();
     }
@@ -2993,6 +3101,7 @@
     function closeAccess() {
       accessModal.hidden = true;
       if (historyModal.hidden && authModal.hidden && securityModal.hidden && deleteAccountModal.hidden) document.body.classList.remove("modal-open");
+      restoreModalReturnFocus();
     }
 
     async function chooseResearchMode() {
@@ -3105,6 +3214,7 @@
       if (authModal.hidden && accessModal.hidden && securityModal.hidden && deleteAccountModal.hidden) {
         document.body.classList.remove("modal-open");
       }
+      restoreModalReturnFocus();
     }
 
     function showHistoryFeedback(message, type = "error") {
@@ -3209,8 +3319,10 @@
         return;
       }
 
+      rememberModalReturnFocus();
       historyModal.hidden = false;
       document.body.classList.add("modal-open");
+      focusModal(historyModal, historyCloseButton);
       await loadHistoryList();
     }
 
@@ -3242,6 +3354,7 @@
     }
 
     function openAuth(mode = "login") {
+      rememberModalReturnFocus();
       authModal.hidden = false;
       document.body.classList.add("modal-open");
       setAuthMode(mode);
@@ -3251,6 +3364,7 @@
       authModal.hidden = true;
       if (historyModal.hidden && accessModal.hidden && deleteAccountModal.hidden) document.body.classList.remove("modal-open");
       clearAuthFeedback();
+      restoreModalReturnFocus();
     }
 
     function clearAuthFeedback() {
@@ -4141,6 +4255,7 @@
 
     async function openSecurity() {
       if (!currentUser) return;
+      rememberModalReturnFocus();
       passwordChangeForm.reset();
       revokeSessionsForm.reset();
       logoutAllForm.reset();
@@ -4154,6 +4269,7 @@
       clearSecurityFeedback();
       securityModal.hidden = false;
       document.body.classList.add("modal-open");
+      focusModal(securityModal, securityCloseButton);
       try {
         await refreshSecurityStatus();
       } catch (error) {
@@ -4189,6 +4305,7 @@
       if (authModal.hidden && historyModal.hidden && accessModal.hidden && deleteAccountModal.hidden) {
         document.body.classList.remove("modal-open");
       }
+      restoreModalReturnFocus();
     }
 
     async function handlePasswordChange(event) {
@@ -4336,6 +4453,7 @@
         return;
       }
 
+      rememberModalReturnFocus();
       deleteAccountForm.reset();
       clearDeleteAccountFeedback();
       deleteAccountModal.hidden = false;
@@ -4351,6 +4469,7 @@
       if (authModal.hidden && historyModal.hidden && accessModal.hidden && securityModal.hidden) {
         document.body.classList.remove("modal-open");
       }
+      restoreModalReturnFocus();
     }
 
     function setDeleteAccountBusy(isBusy) {
@@ -4548,6 +4667,7 @@ adminButton.addEventListener("click", () => {
     });
 
     document.addEventListener("keydown", (event) => {
+      if (trapModalTabKey(event)) return;
       if (event.key !== "Escape") return;
       if (!securityModal.hidden) {
         closeSecurity();
