@@ -78,6 +78,12 @@ const CAPABILITY_CATALOG = Object.freeze({
     implemented: true,
     minimumPlan: "free"
   }),
+  account_deletion: Object.freeze({
+    label: "Delete My Account",
+    description: "Permanently delete the account and personal account data after re-authentication and billing safety checks.",
+    implemented: true,
+    minimumPlan: "free"
+  }),
   legal_consent: Object.freeze({
     label: "Privacy & Terms controls",
     description: "Versioned Terms of Use and Privacy Notice acceptance records with account-visible status.",
