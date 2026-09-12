@@ -76,36 +76,36 @@ one(
 legal_browser = r'''
     function renderLegalPolicyStatus(status) {
       legalPolicyStatus.innerHTML = "";
-      const documents = Array.isArray(status?.documents) ? status.documents : [];
+      const policies = Array.isArray(status?.documents) ? status.documents : [];
 
-      if (!documents.length) {
+      if (!policies.length) {
         legalPolicyStatus.innerHTML = '<div class="history-empty">Policy status is unavailable.</div>';
         return;
       }
 
-      for (const document of documents) {
+      for (const policy of policies) {
         const item = document.createElement("div");
         item.className = "capability-item";
 
         const copy = document.createElement("div");
         const name = document.createElement("div");
         name.className = "capability-name";
-        name.textContent = document.label || document.type || "Policy";
+        name.textContent = policy.label || policy.type || "Policy";
 
         const description = document.createElement("div");
         description.className = "capability-description";
-        const acceptedAt = document.acceptedAt ? formatHistoryDate(document.acceptedAt) : "";
-        description.textContent = document.accepted
-          ? `Version ${document.version} • accepted ${acceptedAt || "previously"}`
-          : `Version ${document.version}`;
+        const acceptedAt = policy.acceptedAt ? formatHistoryDate(policy.acceptedAt) : "";
+        description.textContent = policy.accepted
+          ? `Version ${policy.version} • accepted ${acceptedAt || "previously"}`
+          : `Version ${policy.version}`;
         copy.append(name, description);
 
         const actions = document.createElement("div");
         actions.className = "device-actions";
 
-        const policyUrl = safeHttpUrl(document.url) || (
-          typeof document.url === "string" && document.url.startsWith("/")
-            ? document.url
+        const policyUrl = safeHttpUrl(policy.url) || (
+          typeof policy.url === "string" && policy.url.startsWith("/")
+            ? policy.url
             : null
         );
         if (policyUrl) {
@@ -120,7 +120,7 @@ legal_browser = r'''
 
         const badge = document.createElement("span");
         badge.className = "capability-badge";
-        if (document.accepted) {
+        if (policy.accepted) {
           badge.classList.add("live");
           badge.textContent = "ACCEPTED";
         } else if (!status.acceptanceEnabled) {
@@ -139,14 +139,14 @@ legal_browser = r'''
                 credentials: "same-origin",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  documentType: document.type,
-                  version: document.version
+                  documentType: policy.type,
+                  version: policy.version
                 })
               });
               const data = await readJson(response);
               if (!response.ok) throw new Error(data.error || "Could not record acceptance.");
               renderLegalPolicyStatus(data);
-              showToast(`${document.label || "Policy"} accepted.`);
+              showToast(`${policy.label || "Policy"} accepted.`);
             } catch (error) {
               accessFeedback.className = "auth-feedback visible error";
               accessFeedback.textContent = error.message || "Could not record acceptance.";
