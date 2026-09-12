@@ -33,25 +33,29 @@ function buildReadinessStatus({
   databaseReady = false,
   databaseConfigured = false,
   databaseError = null,
+  shuttingDown = false,
   aiStatus = null
 } = {}) {
   const database = {
     configured: Boolean(databaseConfigured),
     ready: Boolean(databaseReady),
-    state: databaseReady
-      ? "ready"
-      : databaseConfigured
-        ? databaseError
-          ? "error"
-          : "starting"
-        : "not_configured"
+    state: shuttingDown
+      ? "draining"
+      : databaseReady
+        ? "ready"
+        : databaseConfigured
+          ? databaseError
+            ? "error"
+            : "starting"
+          : "not_configured"
   };
 
-  const ready = database.configured && database.ready;
+  const ready = !shuttingDown && database.configured && database.ready;
 
   return {
-    status: ready ? "ready" : "not_ready",
+    status: shuttingDown ? "draining" : ready ? "ready" : "not_ready",
     ready,
+    shuttingDown: Boolean(shuttingDown),
     runtime: getRuntimeIdentity(env),
     uptimeSeconds: Math.max(0, Math.floor(Number(uptimeSeconds) || 0)),
     timestamp: new Date().toISOString(),

@@ -82,6 +82,7 @@ const {
   getDatabaseResilienceConfig,
   databaseRetryDelay
 } = require("./ops/database-resilience");
+const { buildRecoveryReadiness } = require("./ops/recovery-readiness");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -229,6 +230,7 @@ let databaseError = null;
 let databaseInitializing = false;
 let databaseInitAttempt = 0;
 let databaseRetryTimer = null;
+let shuttingDown = false;
 const DATABASE_RESILIENCE = getDatabaseResilienceConfig();
 
 function sendStatusJson(res, statusCode, payload) {
@@ -246,6 +248,7 @@ app.get("/readyz", (req, res) => {
     databaseConfigured: Boolean(process.env.DATABASE_URL),
     databaseReady,
     databaseError,
+    shuttingDown,
     aiStatus: getGatewayStatus()
   });
 
@@ -257,6 +260,7 @@ app.get("/api/system/status", (req, res) => {
     databaseConfigured: Boolean(process.env.DATABASE_URL),
     databaseReady,
     databaseError,
+    shuttingDown,
     aiStatus: getGatewayStatus()
   });
 
@@ -302,7 +306,12 @@ async function closePoolQuietly(targetPool) {
 }
 
 function scheduleDatabaseInitialization(reason = "retry") {
-  if (!process.env.DATABASE_URL || databaseRetryTimer || databaseInitializing) {
+  if (
+    shuttingDown ||
+    !process.env.DATABASE_URL ||
+    databaseRetryTimer ||
+    databaseInitializing
+  ) {
     return;
   }
 
@@ -753,7 +762,7 @@ async function initializeDatabase() {
 }
 
 async function initializeDatabaseWithRetry() {
-  if (databaseInitializing) return;
+  if (shuttingDown || databaseInitializing) return;
 
   databaseInitializing = true;
   databaseInitAttempt += 1;
@@ -4540,6 +4549,16 @@ app.delete(
 
 /* ----------------------------- ADMIN API ----------------------------- */
 
+app.get(
+  "/api/admin/ops/recovery",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    return res.json({
+      recovery: buildRecoveryReadiness()
+    });
+  }
+);
 
 app.get(
   "/api/admin/entitlements/catalog",
@@ -6037,6 +6056,52 @@ app.get("/", (req, res) => {
   return res.sendFile(path.join(__dirname, "index.html"));
 });
 
-app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`UNBOUND AI running on port ${PORT}`);
+});
+
+let shutdownTimer = null;
+
+async function shutdownGracefully(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  databaseReady = false;
+
+  if (databaseRetryTimer) {
+    clearTimeout(databaseRetryTimer);
+    databaseRetryTimer = null;
+  }
+
+  console.log(`UNBOUND AI received ${signal}; beginning graceful shutdown.`);
+
+  shutdownTimer = setTimeout(() => {
+    console.error("UNBOUND AI graceful shutdown timed out; forcing exit.");
+    process.exit(1);
+  }, 10000);
+  shutdownTimer.unref?.();
+
+  server.close(async (serverError) => {
+    if (serverError) {
+      console.error("UNBOUND AI HTTP SERVER CLOSE ERROR:", serverError);
+    }
+
+    const activePool = pool;
+    pool = null;
+    await closePoolQuietly(activePool);
+
+    if (shutdownTimer) {
+      clearTimeout(shutdownTimer);
+      shutdownTimer = null;
+    }
+
+    process.exit(serverError ? 1 : 0);
+  });
+}
+
+process.once("SIGTERM", () => {
+  void shutdownGracefully("SIGTERM");
+});
+
+process.once("SIGINT", () => {
+  void shutdownGracefully("SIGINT");
 });
