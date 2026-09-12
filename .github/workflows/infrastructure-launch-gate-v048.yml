@@ -1,0 +1,60 @@
+name: Infrastructure Launch Gate v0.48
+
+on:
+  push:
+    branches:
+      - infrastructure-launch-gate-v0.48
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Apply infrastructure launch gate integration
+        run: node scripts/migrate-v048.js
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run full permanent CI
+        run: npm run ci
+      - name: Verify infrastructure gate source contract
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const server = fs.readFileSync('server.js', 'utf8');
+          const launch = fs.readFileSync('ops/launch-readiness.js', 'utf8');
+          const infra = require('./ops/infrastructure-readiness');
+          const blocked = infra.buildInfrastructureReadiness({ env: {} });
+          if (blocked.launchReady) throw new Error('Infrastructure readiness must fail closed by default.');
+          for (const needle of [
+            'buildInfrastructureReadiness',
+            'infrastructure,\n    recovery',
+            'infrastructure,\n    legal'
+          ]) {
+            if (!server.includes(needle)) throw new Error(`Server infrastructure contract missing: ${needle}`);
+          }
+          if (!launch.includes('"infrastructure_production"')) {
+            throw new Error('Commercial launch gate is missing infrastructure_production blocker.');
+          }
+          console.log('PASS infrastructure launch gate source contract.');
+          NODE
+      - name: Commit completed v0.48 and remove one-time migration
+        run: |
+          rm scripts/migrate-v048.js
+          rm ../.github/workflows/infrastructure-launch-gate-v048.yml
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add server.js scripts/regression-contract.js ops/infrastructure-readiness.js ops/launch-readiness.js ../.github/workflows/infrastructure-launch-gate-v048.yml scripts/migrate-v048.js
+          git commit -m "Add production infrastructure launch gate v0.48"
+          git push
