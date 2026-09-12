@@ -33,7 +33,18 @@ jobs:
             app/admin.html
 
       - name: Integrate Research Mode with current history-enabled source
-        run: python3 .research-history-integration/apply.py
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.research-history-integration/apply.py')
+          text = path.read_text()
+          old = 'text, count = re.subn(pattern, replacement, text, count=1, flags=flags)'
+          new = 'text, count = re.subn(pattern, lambda _: replacement, text, count=1, flags=flags)'
+          if text.count(old) != 1:
+              raise SystemExit('Could not patch literal regex replacement helper safely.')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          python3 .research-history-integration/apply.py
 
       - name: Install exact dependencies
         working-directory: app
