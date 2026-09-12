@@ -25,6 +25,7 @@ jobs:
         run: npm ci
       - name: Apply abuse-protection migrations
         run: |
+          python scripts/fix-abuse-migration-v014.py
           python scripts/migrate-abuse-protection-server-v014.py
           python scripts/migrate-abuse-protection-admin-v014.py
       - name: Validate JavaScript
