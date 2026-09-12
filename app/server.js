@@ -17,7 +17,8 @@ const {
   subscriptionStatusAllowsAccess,
   getBillingGatewayStatus,
   startBillingCheckoutSession,
-  startBillingCustomerPortalSession
+  startBillingCustomerPortalSession,
+  processBillingWebhook
 } = require("./billing/gateway");
 const {
   normalizeAgeVerificationStatus,
@@ -109,6 +110,8 @@ const GUEST_RATE_COOKIE = "unbound_guest_rate";
 const GUEST_RATE_DAYS = 1;
 const PASSKEY_FLOW_COOKIE = "unbound_passkey_flow";
 const AGE_VERIFICATION_WEBHOOK_PATH = "/api/webhooks/age-verification";
+const BILLING_WEBHOOK_PATH = "/api/webhooks/billing";
+const RAW_WEBHOOK_PATHS = new Set([AGE_VERIFICATION_WEBHOOK_PATH, BILLING_WEBHOOK_PATH]);
 const RATE_LIMIT_POLICY = getRateLimitPolicy();
 const SIGNIN_RISK_CONFIG = getSignInRiskConfig();
 const RATE_LIMIT_SECRET =
@@ -221,16 +224,15 @@ app.use(
   createSameOriginApiGuard({
     isProduction: IS_PRODUCTION,
     publicOrigin: process.env.PUBLIC_APP_ORIGIN || "",
-    exemptPaths: [AGE_VERIFICATION_WEBHOOK_PATH]
+    exemptPaths: [AGE_VERIFICATION_WEBHOOK_PATH, BILLING_WEBHOOK_PATH]
   })
 );
-app.use(
-  AGE_VERIFICATION_WEBHOOK_PATH,
-  express.raw({ type: "*/*", limit: "100kb" })
-);
+for (const webhookPath of RAW_WEBHOOK_PATHS) {
+  app.use(webhookPath, express.raw({ type: "*/*", limit: "100kb" }));
+}
 const jsonBodyParser = express.json({ limit: "100kb" });
 app.use((req, res, next) => {
-  if (req.path === AGE_VERIFICATION_WEBHOOK_PATH) return next();
+  if (RAW_WEBHOOK_PATHS.has(req.path)) return next();
   return jsonBodyParser(req, res, next);
 });
 app.use("/api", createMaintenanceMiddleware());
@@ -623,6 +625,16 @@ async function initializeDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE account_subscriptions
+      ADD COLUMN IF NOT EXISTS billing_subject_hash TEXT;
+
+    ALTER TABLE account_subscriptions
+      ADD COLUMN IF NOT EXISTS last_event_at TIMESTAMPTZ;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS account_subscriptions_provider_subject_idx
+      ON account_subscriptions(provider, billing_subject_hash)
+      WHERE billing_subject_hash IS NOT NULL;
 
     CREATE UNIQUE INDEX IF NOT EXISTS account_subscriptions_provider_subscription_idx
       ON account_subscriptions(provider, provider_subscription_id)
@@ -2926,14 +2938,34 @@ app.post(
         });
       }
 
+      const subject = billingSubject(req.user.id);
       const session = await startBillingCheckoutSession({
-        subject: billingSubject(req.user.id),
+        subject,
         email: req.user.email,
         planTier: "top",
         successUrl: process.env.BILLING_SUCCESS_URL || null,
         cancelUrl: process.env.BILLING_CANCEL_URL || null,
         requestId: req.requestId || null
       });
+
+      await pool.query(
+        `INSERT INTO account_subscriptions (
+           user_id, provider, status, plan_tier, billing_subject_hash, created_at, updated_at
+         )
+         VALUES ($1, $2, 'incomplete', 'top', $3, NOW(), NOW())
+         ON CONFLICT (user_id)
+         DO UPDATE SET
+           provider = EXCLUDED.provider,
+           status = CASE
+             WHEN account_subscriptions.status IN ('active', 'trialing')
+               THEN account_subscriptions.status
+             ELSE 'incomplete'
+           END,
+           plan_tier = 'top',
+           billing_subject_hash = EXCLUDED.billing_subject_hash,
+           updated_at = NOW()`,
+        [req.user.id, session.provider, subject]
+      );
 
       return res.status(201).json({
         checkout: {
@@ -4832,6 +4864,157 @@ function buildCurrentOperationalSnapshot() {
     http: getRequestObservabilitySnapshot()
   };
 }
+
+app.post(
+  BILLING_WEBHOOK_PATH,
+  requireDatabase,
+  async (req, res) => {
+    const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from("");
+    const payloadSha256 = crypto.createHash("sha256").update(rawBody).digest("hex");
+    let event;
+
+    try {
+      event = await processBillingWebhook({
+        rawBody,
+        headers: req.headers,
+        requestId: req.requestId || null
+      });
+    } catch (error) {
+      if (String(error?.code || "").startsWith("BILLING_")) {
+        return res.status(Number(error.statusCode) || 400).json({
+          error: error.publicMessage || "Billing webhook rejected.",
+          code: error.code
+        });
+      }
+      console.error("UNBOUND AI BILLING WEBHOOK VERIFY ERROR:", error);
+      return res.status(500).json({ error: "Could not process billing webhook." });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const eventInsert = await client.query(
+        `INSERT INTO billing_webhook_events (
+           provider, provider_event_id, event_type, status, payload_sha256, received_at
+         )
+         VALUES ($1, $2, $3, 'received', $4, NOW())
+         ON CONFLICT (provider, provider_event_id) DO NOTHING
+         RETURNING id`,
+        [event.provider, event.providerEventId, event.eventType, payloadSha256]
+      );
+
+      if (!eventInsert.rows[0]) {
+        await client.query("COMMIT");
+        return res.status(200).json({ ok: true, duplicate: true });
+      }
+
+      const eventRowId = eventInsert.rows[0].id;
+      const subscriptionResult = await client.query(
+        `SELECT id, user_id, provider_customer_id, provider_subscription_id,
+                status, plan_tier, current_period_start, current_period_end,
+                cancel_at_period_end, last_event_at
+         FROM account_subscriptions
+         WHERE provider = $1 AND billing_subject_hash = $2
+         LIMIT 1
+         FOR UPDATE`,
+        [event.provider, event.subject]
+      );
+      const subscription = subscriptionResult.rows[0] || null;
+
+      if (!subscription) {
+        await client.query(
+          `UPDATE billing_webhook_events
+           SET status = 'failed', error_text = 'billing-subject-not-found', processed_at = NOW()
+           WHERE id = $1`,
+          [eventRowId]
+        );
+        await client.query("COMMIT");
+        return res.status(202).json({ ok: true, accepted: true });
+      }
+
+      const eventTime = new Date(event.occurredAt).getTime();
+      const lastEventTime = subscription.last_event_at
+        ? new Date(subscription.last_event_at).getTime()
+        : 0;
+      if (Number.isFinite(lastEventTime) && lastEventTime > eventTime) {
+        await client.query(
+          `UPDATE billing_webhook_events
+           SET status = 'processed', error_text = 'ignored-stale-event', processed_at = NOW()
+           WHERE id = $1`,
+          [eventRowId]
+        );
+        await client.query("COMMIT");
+        return res.status(200).json({ ok: true, ignored: true, reason: "stale-event" });
+      }
+
+      if (event.providerSubscriptionId) {
+        const conflicting = await client.query(
+          `SELECT user_id FROM account_subscriptions
+           WHERE provider = $1 AND provider_subscription_id = $2 AND user_id <> $3
+           LIMIT 1`,
+          [event.provider, event.providerSubscriptionId, subscription.user_id]
+        );
+        if (conflicting.rows[0]) {
+          await client.query(
+            `UPDATE billing_webhook_events
+             SET status = 'failed', error_text = 'provider-subscription-conflict', processed_at = NOW()
+             WHERE id = $1`,
+            [eventRowId]
+          );
+          await client.query("COMMIT");
+          return res.status(409).json({ ok: false, error: "Billing subscription mapping conflict." });
+        }
+      }
+
+      await client.query(
+        `UPDATE account_subscriptions
+         SET provider_customer_id = COALESCE($2, provider_customer_id),
+             provider_subscription_id = COALESCE($3, provider_subscription_id),
+             status = $4,
+             plan_tier = $5,
+             current_period_start = COALESCE($6, current_period_start),
+             current_period_end = COALESCE($7, current_period_end),
+             cancel_at_period_end = $8,
+             last_event_at = $9,
+             updated_at = NOW()
+         WHERE user_id = $1`,
+        [
+          subscription.user_id,
+          event.providerCustomerId,
+          event.providerSubscriptionId,
+          event.status,
+          event.planTier,
+          event.currentPeriodStart,
+          event.currentPeriodEnd,
+          event.cancelAtPeriodEnd,
+          event.occurredAt
+        ]
+      );
+
+      await client.query(
+        `UPDATE billing_webhook_events
+         SET status = 'processed', error_text = NULL, processed_at = NOW()
+         WHERE id = $1`,
+        [eventRowId]
+      );
+
+      await client.query("COMMIT");
+      return res.status(200).json({
+        ok: true,
+        processed: true,
+        status: event.status,
+        planTier: event.planTier
+      });
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch (_) {}
+      console.error("UNBOUND AI BILLING WEBHOOK DATABASE ERROR:", error);
+      return res.status(500).json({ error: "Could not persist billing webhook." });
+    } finally {
+      client.release();
+    }
+  }
+);
 
 app.post(
   AGE_VERIFICATION_WEBHOOK_PATH,
