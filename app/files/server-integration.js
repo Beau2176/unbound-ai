@@ -40,11 +40,11 @@ function integrateFileAnalysisServerSource(serverSource) {
     "file-analysis-json-parser-bypass"
   );
 
-  const indexRoute = `app.get("/index.html", (req, res) => {\n  res.setHeader("Cache-Control", "no-cache");\n  return res.sendFile(path.join(__dirname, "index.html"));\n});`;
+  const accountIndexRoutes = `app.get("/index.html", sendAccountIndexPage);\napp.get("/email-account-ui.js", sendEmailAccountUiScript);`;
   source = replaceExactlyOnce(
     source,
-    indexRoute,
-    `app.get("/", sendFileAwareIndex);\napp.get("/index.html", sendFileAwareIndex);\napp.get("/files.html", sendFileAnalysisPage);`,
+    accountIndexRoutes,
+    `app.get("/index.html", sendFileAwareIndex);\napp.get("/email-account-ui.js", sendEmailAccountUiScript);\napp.get("/files.html", sendFileAnalysisPage);`,
     "file-analysis-page-routes"
   );
 
@@ -62,6 +62,13 @@ function integrateFileAnalysisServerSource(serverSource) {
     healthRoute,
     `app.use(\n  "/api/file-analysis",\n  requireDatabase,\n  requireSignedIn,\n  fileAnalysisRateLimit,\n  requireCapability("file_analysis"),\n  createFileAnalysisRouter({\n    recordUsageEvent,\n    estimateProviderCostMicros\n  })\n);\n\n${healthRoute}`,
     "file-analysis-api-mount"
+  );
+
+  source = replaceExactlyOnce(
+    source,
+    `app.get("/", sendAccountIndexPage);`,
+    `app.get("/", sendFileAwareIndex);`,
+    "file-analysis-root-route"
   );
 
   return source;
