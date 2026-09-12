@@ -471,7 +471,8 @@
         <div class="card stat"><div class="label">AI Requests</div><div class="value" id="usageRequests">—</div></div>
         <div class="card stat"><div class="label">Input Tokens</div><div class="value" id="usageInputTokens">—</div></div>
         <div class="card stat"><div class="label">Output Tokens</div><div class="value" id="usageOutputTokens">—</div></div>
-        <div class="card stat"><div class="label">Estimated Cost</div><div class="value" id="usageCost">—</div></div>
+        <div class="card stat"><div class="label">Web Searches</div><div class="value" id="usageWebSearches">—</div></div>
+        <div class="card stat"><div class="label">Estimated Token Cost</div><div class="value" id="usageCost">—</div></div>
       </section>
 
       <div class="table-wrap">
@@ -482,11 +483,12 @@
               <th>Model</th>
               <th>Requests</th>
               <th>Total Tokens</th>
-              <th>Estimated Cost</th>
+              <th>Web Searches</th>
+              <th>Estimated Token Cost</th>
             </tr>
           </thead>
           <tbody id="usageModelsBody">
-            <tr><td colspan="5" class="loading">Loading usage…</td></tr>
+            <tr><td colspan="6" class="loading">Loading usage…</td></tr>
           </tbody>
         </table>
       </div>
@@ -542,6 +544,7 @@
     const usageRequests = document.getElementById("usageRequests");
     const usageInputTokens = document.getElementById("usageInputTokens");
     const usageOutputTokens = document.getElementById("usageOutputTokens");
+    const usageWebSearches = document.getElementById("usageWebSearches");
     const usageCost = document.getElementById("usageCost");
     const usageModelsBody = document.getElementById("usageModelsBody");
     const usageFeedback = document.getElementById("usageFeedback");
@@ -658,7 +661,7 @@
         setFeedback(auditFeedback, `Showing ${auditEvents.length} recent action${auditEvents.length === 1 ? "" : "s"}.`, "ok");
       } catch (error) {
         auditBody.innerHTML =
-          `<tr><td colspan="5" class="loading">${escapeHtml(error.message)}</td></tr>`;
+          `<tr><td colspan="6" class="loading">${escapeHtml(error.message)}</td></tr>`;
         setFeedback(auditFeedback, error.message, "error");
       }
     }
@@ -681,6 +684,7 @@
       usageRequests.textContent = formatInteger(usageSummary.totals.requests);
       usageInputTokens.textContent = formatInteger(usageSummary.totals.inputTokens);
       usageOutputTokens.textContent = formatInteger(usageSummary.totals.outputTokens);
+      usageWebSearches.textContent = formatInteger(usageSummary.totals.webSearchCalls || 0);
       usageCost.textContent = formatMicrosUsd(
         usageSummary.totals.estimatedCostMicros,
         usageSummary.pricingConfigured
@@ -688,7 +692,7 @@
 
       if (!usageSummary.models.length) {
         usageModelsBody.innerHTML =
-          '<tr><td colspan="5" class="loading">No metered AI requests yet.</td></tr>';
+          '<tr><td colspan="6" class="loading">No metered AI requests yet.</td></tr>';
       } else {
         usageModelsBody.innerHTML = usageSummary.models.map((item) => `
           <tr>
@@ -696,6 +700,7 @@
             <td><strong>${escapeHtml(item.model)}</strong></td>
             <td>${escapeHtml(formatInteger(item.requests))}</td>
             <td>${escapeHtml(formatInteger(item.totalTokens))}</td>
+            <td>${escapeHtml(formatInteger(item.webSearchCalls || 0))}</td>
             <td>${escapeHtml(formatMicrosUsd(item.estimatedCostMicros, usageSummary.pricingConfigured))}</td>
           </tr>
         `).join("");
@@ -703,7 +708,7 @@
 
       const pricingMessage = usageSummary.pricingConfigured
         ? "Cost estimate is based on the configured per-million-token rates."
-        : "Token metering is active. Set OPENAI_INPUT_USD_PER_MILLION and OPENAI_OUTPUT_USD_PER_MILLION to enable dollar cost estimates.";
+        : "Token and web-search metering are active. Set OPENAI_INPUT_USD_PER_MILLION and OPENAI_OUTPUT_USD_PER_MILLION to enable token-cost estimates. Web-search tool fees are counted separately and are not included in this dollar estimate yet.";
 
       setFeedback(usageFeedback, pricingMessage, usageSummary.pricingConfigured ? "ok" : "");
     }

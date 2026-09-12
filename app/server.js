@@ -53,7 +53,17 @@ Response-depth style: WORK MODE.
 - Compare relevant options when useful.
 - Clearly separate established facts, estimates, recommendations, predictions, and uncertainty when those distinctions matter.
 - Do not stop at a shallow first answer when a deeper treatment is useful.
-- This server does not yet provide external web/research tools to the model. Never claim external research, browsing, source verification, or tool use unless those capabilities are actually added and invoked.
+- Use external research only when research tools are actually provided for the current request. Never claim browsing, verification, or tool use unless it actually occurred.
+`;
+
+const RESEARCH_MODE_PROMPT = `
+Product mode: RESEARCH MODE.
+- Use the provided web-search tool before answering.
+- Prefer primary, official, recent, and directly relevant sources when they are available.
+- Cross-check important or disputed claims across more than one source when practical.
+- Clearly distinguish verified facts, uncertainty, estimates, and interpretation.
+- Do not invent sources, citations, quotes, dates, or claims that were not supported by the research.
+- Keep citations attached to the claims they support. The user interface will make cited URLs visible and clickable.
 `;
 
 app.disable("x-powered-by");
@@ -166,10 +176,14 @@ async function initializeDatabase() {
       input_tokens INTEGER NOT NULL DEFAULT 0,
       output_tokens INTEGER NOT NULL DEFAULT 0,
       total_tokens INTEGER NOT NULL DEFAULT 0,
+      web_search_calls INTEGER NOT NULL DEFAULT 0,
       estimated_cost_micros BIGINT,
       provider_response_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    ALTER TABLE usage_events
+      ADD COLUMN IF NOT EXISTS web_search_calls INTEGER NOT NULL DEFAULT 0;
 
     CREATE INDEX IF NOT EXISTS usage_events_created_at_idx
       ON usage_events(created_at DESC);
@@ -399,6 +413,7 @@ async function recordUsageEvent({
   model,
   eventType = "chat",
   usage = null,
+  webSearchCalls = 0,
   estimatedCostMicros = null,
   providerResponseId = null
 }) {
@@ -422,10 +437,11 @@ async function recordUsageEvent({
        input_tokens,
        output_tokens,
        total_tokens,
+       web_search_calls,
        estimated_cost_micros,
        provider_response_id
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     [
       userId,
       provider,
@@ -434,6 +450,7 @@ async function recordUsageEvent({
       inputTokens,
       outputTokens,
       totalTokens,
+      Math.max(0, Number(webSearchCalls || 0)),
       estimatedCostMicros,
       providerResponseId
     ]
@@ -768,6 +785,7 @@ app.get(
              COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
              COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens,
              COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+             COALESCE(SUM(web_search_calls), 0)::bigint AS web_search_calls,
              COUNT(estimated_cost_micros)::bigint AS priced_events,
              COALESCE(SUM(estimated_cost_micros), 0)::bigint AS estimated_cost_micros
            FROM usage_events
@@ -780,6 +798,7 @@ app.get(
              model,
              COUNT(*)::bigint AS requests,
              COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+             COALESCE(SUM(web_search_calls), 0)::bigint AS web_search_calls,
              COUNT(estimated_cost_micros)::bigint AS priced_events,
              COALESCE(SUM(estimated_cost_micros), 0)::bigint AS estimated_cost_micros
            FROM usage_events
@@ -794,6 +813,7 @@ app.get(
              DATE_TRUNC('day', created_at) AS day,
              COUNT(*)::bigint AS requests,
              COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+             COALESCE(SUM(web_search_calls), 0)::bigint AS web_search_calls,
              COUNT(estimated_cost_micros)::bigint AS priced_events,
              COALESCE(SUM(estimated_cost_micros), 0)::bigint AS estimated_cost_micros
            FROM usage_events
@@ -817,6 +837,7 @@ app.get(
           inputTokens: Number(totals.input_tokens),
           outputTokens: Number(totals.output_tokens),
           totalTokens: Number(totals.total_tokens),
+          webSearchCalls: Number(totals.web_search_calls),
           pricedEvents: Number(totals.priced_events),
           estimatedCostMicros: Number(totals.estimated_cost_micros)
         },
@@ -825,6 +846,7 @@ app.get(
           model: row.model,
           requests: Number(row.requests),
           totalTokens: Number(row.total_tokens),
+          webSearchCalls: Number(row.web_search_calls),
           pricedEvents: Number(row.priced_events),
           estimatedCostMicros: Number(row.estimated_cost_micros)
         })),
@@ -832,6 +854,7 @@ app.get(
           day: row.day,
           requests: Number(row.requests),
           totalTokens: Number(row.total_tokens),
+          webSearchCalls: Number(row.web_search_calls),
           pricedEvents: Number(row.priced_events),
           estimatedCostMicros: Number(row.estimated_cost_micros)
         }))
@@ -1209,6 +1232,105 @@ function normalizeDepthStyle(value) {
     : "casual";
 }
 
+function normalizeProductMode(value) {
+  return String(value || "").trim().toLowerCase() === "research"
+    ? "research"
+    : "standard";
+}
+
+function normalizeHttpUrl(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function extractWebResearchMetadata(response) {
+  const sources = [];
+  const sourceNumbers = new Map();
+  const citations = [];
+  let webSearchCalls = 0;
+
+  function addSource(rawUrl, rawTitle) {
+    const url = normalizeHttpUrl(rawUrl);
+    if (!url) return null;
+
+    if (sourceNumbers.has(url)) {
+      return sourceNumbers.get(url);
+    }
+
+    if (sources.length >= 12) {
+      return null;
+    }
+
+    const number = sources.length + 1;
+    const title = String(rawTitle || "Source").trim().slice(0, 220) || "Source";
+    sources.push({ number, title, url });
+    sourceNumbers.set(url, number);
+    return number;
+  }
+
+  for (const item of response?.output || []) {
+    if (item?.type === "web_search_call") {
+      webSearchCalls += 1;
+      const actionSources = Array.isArray(item?.action?.sources)
+        ? item.action.sources
+        : [];
+
+      for (const source of actionSources) {
+        addSource(source?.url || source?.link, source?.title || source?.name);
+      }
+    }
+
+    if (item?.type !== "message" || !Array.isArray(item.content)) {
+      continue;
+    }
+
+    for (const content of item.content) {
+      if (!Array.isArray(content?.annotations)) continue;
+
+      for (const annotation of content.annotations) {
+        const citation =
+          annotation?.type === "url_citation"
+            ? annotation
+            : annotation?.url_citation || null;
+
+        if (!citation) continue;
+
+        const sourceNumber = addSource(citation.url, citation.title);
+        const startIndex = Number(citation.start_index);
+        const endIndex = Number(citation.end_index);
+
+        if (
+          sourceNumber &&
+          Number.isInteger(startIndex) &&
+          Number.isInteger(endIndex) &&
+          startIndex >= 0 &&
+          endIndex >= startIndex
+        ) {
+          citations.push({
+            sourceNumber,
+            startIndex,
+            endIndex
+          });
+        }
+      }
+    }
+  }
+
+  citations.sort((a, b) => {
+    if (a.endIndex !== b.endIndex) return a.endIndex - b.endIndex;
+    return a.sourceNumber - b.sourceNumber;
+  });
+
+  return { sources, citations, webSearchCalls };
+}
+
 function cleanHistory(history) {
   if (!Array.isArray(history)) {
     return [];
@@ -1255,8 +1377,11 @@ app.post("/api/chat", async (req, res) => {
 
     const history = cleanHistory(req.body.history);
     const depthStyle = normalizeDepthStyle(req.body.depthStyle);
+    const productMode = normalizeProductMode(req.body.productMode);
     const depthInstructions =
       depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT;
+    const modeInstructions =
+      productMode === "research" ? RESEARCH_MODE_PROMPT : "";
 
     const input = [
       ...history,
@@ -1267,11 +1392,26 @@ app.post("/api/chat", async (req, res) => {
     ];
 
     const model = "gpt-5.6-luna";
-    const response = await client.responses.create({
+    const responseRequest = {
       model,
-      instructions: `${UNBOUND_SYSTEM_PROMPT}\n\n${depthInstructions}`,
+      instructions: [UNBOUND_SYSTEM_PROMPT, depthInstructions, modeInstructions]
+        .filter(Boolean)
+        .join("\n\n"),
       input
-    });
+    };
+
+    if (productMode === "research") {
+      responseRequest.tools = [{ type: "web_search" }];
+      responseRequest.tool_choice = "required";
+      responseRequest.include = ["web_search_call.action.sources"];
+      responseRequest.max_tool_calls = depthStyle === "work" ? 8 : 4;
+    }
+
+    const response = await client.responses.create(responseRequest);
+    const researchMetadata =
+      productMode === "research"
+        ? extractWebResearchMetadata(response)
+        : { sources: [], citations: [], webSearchCalls: 0 };
 
     if (databaseReady && pool && response.usage) {
       try {
@@ -1281,8 +1421,9 @@ app.post("/api/chat", async (req, res) => {
           userId: sessionUser?.id || null,
           provider: "openai",
           model: response.model || model,
-          eventType: `chat_${depthStyle}`,
+          eventType: `chat_${productMode}_${depthStyle}`,
           usage: response.usage,
+          webSearchCalls: researchMetadata.webSearchCalls,
           estimatedCostMicros: estimateOpenAICostMicros(response.usage),
           providerResponseId: response.id || null
         });
@@ -1293,7 +1434,11 @@ app.post("/api/chat", async (req, res) => {
 
     res.json({
       reply: response.output_text,
-      depthStyle
+      depthStyle,
+      productMode,
+      sources: researchMetadata.sources,
+      citations: researchMetadata.citations,
+      webSearchCalls: researchMetadata.webSearchCalls
     });
   } catch (error) {
     console.error("UNBOUND AI ERROR:", error);
