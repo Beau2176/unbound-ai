@@ -98,6 +98,7 @@ const {
   getRequestObservabilitySnapshot,
   createRequestObservabilityMiddleware
 } = require("./ops/request-observability");
+const { buildInfrastructureReadiness } = require("./ops/infrastructure-readiness");
 const { buildLaunchReadiness } = require("./ops/launch-readiness");
 
 const app = express();
@@ -4849,6 +4850,7 @@ function buildCurrentOperationalSnapshot() {
     maintenanceStatus: maintenance,
     aiStatus: ai
   });
+  const infrastructure = buildInfrastructureReadiness();
   const recovery = buildRecoveryReadiness();
   const legal = legalPublishingState();
   const billing = getBillingGatewayStatus();
@@ -4856,6 +4858,7 @@ function buildCurrentOperationalSnapshot() {
   const launch = buildLaunchReadiness({
     runtime,
     maintenance,
+    infrastructure,
     recovery,
     legal,
     billing,
@@ -4866,6 +4869,7 @@ function buildCurrentOperationalSnapshot() {
   return {
     runtime,
     maintenance,
+    infrastructure,
     recovery,
     legal,
     billing,
