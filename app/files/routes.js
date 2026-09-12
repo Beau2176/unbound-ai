@@ -2,6 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const { analyzeFile, getGatewayStatus } = require("../ai/gateway");
+const { injectEmailAccountUi } = require("../email/account-page");
 const {
   getFileAnalysisConfig,
   normalizeFileAnalysisRequest,
@@ -180,7 +181,12 @@ function buildFileAwareIndexHtml(indexHtml) {
     error.code = "FILE_ANALYSIS_INDEX_MARKER_CHANGED";
     throw error;
   }
-  return source.replace(INDEX_NAV_MARKER, `${INDEX_NAV_MARKER}\n      ${FILES_NAV_LINK}`);
+
+  const withFileNavigation = source.replace(
+    INDEX_NAV_MARKER,
+    `${INDEX_NAV_MARKER}\n      ${FILES_NAV_LINK}`
+  );
+  return injectEmailAccountUi(withFileNavigation);
 }
 
 let cachedIndexHtml = null;
