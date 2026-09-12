@@ -78,6 +78,12 @@ const CAPABILITY_CATALOG = Object.freeze({
     implemented: true,
     minimumPlan: "free"
   }),
+  legal_consent: Object.freeze({
+    label: "Privacy & Terms controls",
+    description: "Versioned Terms of Use and Privacy Notice acceptance records with account-visible status.",
+    implemented: true,
+    minimumPlan: "free"
+  }),
   file_analysis: Object.freeze({
     label: "File analysis",
     description: "Upload and analyze supported documents and data files.",
