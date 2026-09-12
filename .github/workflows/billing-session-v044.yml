@@ -1,0 +1,51 @@
+name: Billing Session Foundation v0.44
+
+on:
+  push:
+    branches:
+      - billing-session-foundation-v0.44
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Apply billing session integration
+        run: node app/scripts/migrate-v044.js
+
+      - name: Install locked dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Run full permanent CI
+        working-directory: app
+        run: npm run ci
+
+      - name: Verify billing route contract
+        run: |
+          grep -q '"/api/account/billing/checkout"' app/server.js
+          grep -q '"/api/account/billing/portal"' app/server.js
+          grep -q 'startBillingCheckoutSession' app/server.js
+          grep -q 'startBillingCustomerPortalSession' app/server.js
+          grep -q 'provider_customer_id' app/server.js
+          grep -q 'BILLING_SUCCESS_URL' app/server.js
+          grep -q 'BILLING_PORTAL_RETURN_URL' app/server.js
+
+      - name: Commit completed v0.44 and remove one-time migration
+        run: |
+          rm app/scripts/migrate-v044.js
+          rm .github/workflows/billing-session-v044.yml
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/billing/gateway.js app/package.json app/scripts/billing-session-contract.js app/scripts/migrate-v044.js .github/workflows/billing-session-v044.yml
+          git commit -m "Add provider-neutral billing sessions v0.44"
+          git push origin HEAD:billing-session-foundation-v0.44
