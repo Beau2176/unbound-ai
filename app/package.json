@@ -4,7 +4,7 @@
   "description": "UNBOUND AI server",
   "main": "server.js",
   "scripts": {
-    "start": "node ../bootstrap-v04.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.22.2",
