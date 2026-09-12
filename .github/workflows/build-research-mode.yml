@@ -1,0 +1,69 @@
+name: Build and validate Research Mode
+
+on:
+  push:
+    branches:
+      - feature-research-mode
+    paths:
+      - .research-build/research.patch.gz.b64
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Decode and apply Research Mode patch
+        run: |
+          base64 -d .research-build/research.patch.gz.b64 | gzip -d > /tmp/research-mode.patch
+          git apply --check /tmp/research-mode.patch
+          git apply /tmp/research-mode.patch
+      - name: Install exact dependencies
+        working-directory: app
+        run: npm ci
+      - name: Check server syntax
+        working-directory: app
+        run: node --check server.js
+      - name: Check browser JavaScript syntax
+        working-directory: app
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          for (const file of ['index.html', 'admin.html']) {
+            const html = fs.readFileSync(file, 'utf8');
+            const blocks = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(Boolean);
+            for (const [i, code] of blocks.entries()) {
+              try { new Function(code); }
+              catch (error) { console.error(`${file} script ${i + 1}:`, error); process.exit(1); }
+            }
+          }
+          console.log('Browser JavaScript syntax OK.');
+          NODE
+      - name: Verify Research Mode wiring
+        working-directory: app
+        run: |
+          grep -q 'type: "web_search"' server.js
+          grep -q 'web_search_call.action.sources' server.js
+          grep -q 'tool_choice = "required"' server.js
+          grep -q 'data-product-mode="research"' index.html
+          grep -q 'class="inline-citation"' index.html
+          grep -q 'web_search_calls' server.js
+      - name: Audit production dependencies
+        working-directory: app
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Commit validated source
+        run: |
+          git config user.name "UNBOUND Research Builder"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/index.html app/admin.html
+          git commit -m "Build Research Mode with web citations and metering"
+          git push
