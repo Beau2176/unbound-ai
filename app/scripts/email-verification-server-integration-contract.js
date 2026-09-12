@@ -17,20 +17,16 @@ function main() {
   const source = fs.readFileSync(serverPath, "utf8");
   const integrated = integrateEmailVerificationServerSource(source);
 
-  assert.strictEqual(INTEGRATION_VERSION, "v0.56");
+  assert.strictEqual(INTEGRATION_VERSION, "v0.57");
   assert.strictEqual(count(integrated, 'require("./email/store")'), 1);
   assert.strictEqual(count(integrated, 'require("./email/readiness")'), 1);
   assert.strictEqual(count(integrated, 'require("./email/routes")'), 1);
-  assert.strictEqual(
-    count(integrated, 'app.get("/verify-email", sendEmailVerificationPage);'),
-    1,
-    "verification landing page must be mounted exactly once"
-  );
-  assert.strictEqual(
-    count(integrated, "await initializeEmailVerificationSchema(pool);"),
-    1,
-    "verification schema initialization must run exactly once"
-  );
+  assert.strictEqual(count(integrated, 'require("./email/account-page")'), 1);
+  assert.strictEqual(count(integrated, 'app.get("/verify-email", sendEmailVerificationPage);'), 1);
+  assert.strictEqual(count(integrated, 'app.get("/email-account-ui.js", sendEmailAccountUiScript);'), 1);
+  assert.strictEqual(count(integrated, 'app.get("/index.html", sendAccountIndexPage);'), 1);
+  assert.strictEqual(count(integrated, 'app.get("/", sendAccountIndexPage);'), 1);
+  assert.strictEqual(count(integrated, "await initializeEmailVerificationSchema(pool);"), 1);
   assert.strictEqual(count(integrated, '"/api/email-verification"'), 1);
   assert.strictEqual(count(integrated, "RATE_LIMIT_POLICY.emailVerificationSend"), 1);
   assert.strictEqual(count(integrated, "RATE_LIMIT_POLICY.emailVerificationConsume"), 1);
@@ -43,21 +39,9 @@ function main() {
     1,
     "shared operational snapshot must build email-delivery readiness exactly once"
   );
-  assert.strictEqual(
-    count(integrated, "    emailDelivery,\n    ai\n  });"),
-    1,
-    "shared launch-gate call must receive email-delivery readiness exactly once"
-  );
-  assert.strictEqual(
-    count(integrated, "    emailDelivery,\n    ai,\n    launch,"),
-    1,
-    "shared operations snapshot must expose non-secret email-delivery readiness exactly once"
-  );
-  assert.strictEqual(
-    count(integrated, "emailDelivery: buildEmailDeliveryReadiness(),"),
-    1,
-    "system health must expose non-secret email delivery state once"
-  );
+  assert.strictEqual(count(integrated, "    emailDelivery,\n    ai\n  });"), 1);
+  assert.strictEqual(count(integrated, "    emailDelivery,\n    ai,\n    launch,"), 1);
+  assert.strictEqual(count(integrated, "emailDelivery: buildEmailDeliveryReadiness(),"), 1);
 
   const schemaPosition = integrated.indexOf("await initializeEmailVerificationSchema(pool);");
   const userSchemaPosition = integrated.indexOf("CREATE TABLE IF NOT EXISTS users");
@@ -75,6 +59,14 @@ function main() {
     () => integrateEmailVerificationServerSource(source.replace(
       'app.get("/api/health", (req, res) => {',
       'app.get("/api/health-renamed", (req, res) => {'
+    )),
+    (error) => error?.code === "EMAIL_SERVER_INTEGRATION_MARKER_MISSING"
+  );
+
+  assert.throws(
+    () => integrateEmailVerificationServerSource(source.replace(
+      'app.get("/index.html", (req, res) => {',
+      'app.get("/home.html", (req, res) => {'
     )),
     (error) => error?.code === "EMAIL_SERVER_INTEGRATION_MARKER_MISSING"
   );
