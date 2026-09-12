@@ -1,1 +1,1 @@
-Merge validated Account Security controls onto the newest Account Access-enabled main baseline.
+Retry Account Security merge with Account Access overlap explicitly resolved and modal state cross-checked.
