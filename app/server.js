@@ -3,7 +3,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { promisify } = require("util");
 const { Pool } = require("pg");
-const { generateChat, getGatewayStatus } = require("./ai/gateway");
+const { generateChat, streamChat, getGatewayStatus } = require("./ai/gateway");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1310,6 +1310,113 @@ app.post("/api/chat", async (req, res) => {
     });
   } catch (error) {
     console.error("UNBOUND AI ERROR:", error);
+
+    res.status(500).json({
+      error: error.message || "UNBOUND AI could not get a response."
+    });
+  }
+});
+
+
+app.post("/api/chat/stream", async (req, res) => {
+  try {
+    const message =
+      typeof req.body.message === "string" ? req.body.message.trim() : "";
+
+    if (!message) {
+      return res.status(400).json({ error: "Please enter a message." });
+    }
+
+    const gatewayStatus = getGatewayStatus();
+
+    if (!gatewayStatus.configured) {
+      return res.status(503).json({
+        error:
+          gatewayStatus.error === "unsupported-provider"
+            ? "AI provider '" + gatewayStatus.provider + "' is not supported."
+            : "AI provider '" + gatewayStatus.provider + "' is not configured."
+      });
+    }
+
+    const history = cleanHistory(req.body.history);
+    const depthStyle = normalizeDepthStyle(req.body.depthStyle);
+    const depthInstructions =
+      depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT;
+    const input = [
+      ...history,
+      { role: "user", content: message.slice(0, 12000) }
+    ];
+
+    res.status(200);
+    res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    const writeEvent = (event) => {
+      if (!res.writableEnded && !res.destroyed) {
+        res.write(JSON.stringify(event) + "\n");
+      }
+    };
+
+    writeEvent({
+      type: "meta",
+      depthStyle,
+      provider: gatewayStatus.provider,
+      model: gatewayStatus.model
+    });
+
+    const aiResponse = await streamChat({
+      model: gatewayStatus.model,
+      instructions: UNBOUND_SYSTEM_PROMPT + "\n\n" + depthInstructions,
+      input,
+      onDelta: async (delta) => {
+        writeEvent({ type: "delta", delta });
+      }
+    });
+
+    if (databaseReady && pool && aiResponse.usage) {
+      try {
+        const sessionUser = await findSessionUser(req);
+        await recordUsageEvent({
+          userId: sessionUser?.id || null,
+          provider: aiResponse.provider,
+          model: aiResponse.model,
+          eventType: "chat_stream_" + depthStyle,
+          usage: aiResponse.usage,
+          estimatedCostMicros: estimateProviderCostMicros(
+            aiResponse.provider,
+            aiResponse.usage
+          ),
+          providerResponseId: aiResponse.responseId
+        });
+      } catch (usageError) {
+        console.error("UNBOUND AI STREAM USAGE METER ERROR:", usageError);
+      }
+    }
+
+    writeEvent({
+      type: "done",
+      depthStyle,
+      provider: aiResponse.provider,
+      model: aiResponse.model
+    });
+    res.end();
+  } catch (error) {
+    console.error("UNBOUND AI STREAM ERROR:", error);
+
+    if (res.headersSent) {
+      if (!res.writableEnded && !res.destroyed) {
+        res.write(
+          JSON.stringify({
+            type: "error",
+            error: error.message || "UNBOUND AI could not get a response."
+          }) + "\n"
+        );
+        res.end();
+      }
+      return;
+    }
 
     res.status(500).json({
       error: error.message || "UNBOUND AI could not get a response."
