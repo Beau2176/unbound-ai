@@ -52,31 +52,87 @@ for (const forbidden of [
 }
 
 const ageWebhookPath = 'const AGE_VERIFICATION_WEBHOOK_PATH = "/api/webhooks/age-verification";';
+const billingWebhookPath = 'const BILLING_WEBHOOK_PATH = "/api/webhooks/billing";';
 requireText(server, ageWebhookPath, "exact age-verification webhook path constant");
+requireText(server, billingWebhookPath, "exact billing webhook path constant");
 requireText(
   server,
-  "exemptPaths: [AGE_VERIFICATION_WEBHOOK_PATH]",
-  "age webhook exact same-origin exemption"
+  "exemptPaths: [AGE_VERIFICATION_WEBHOOK_PATH, BILLING_WEBHOOK_PATH]",
+  "only known webhook paths may bypass same-origin mutation guard"
+);
+requireText(
+  server,
+  "const RAW_WEBHOOK_PATHS = new Set([AGE_VERIFICATION_WEBHOOK_PATH, BILLING_WEBHOOK_PATH]);",
+  "explicit raw webhook path allowlist"
 );
 requireText(
   server,
   'express.raw({ type: "*/*", limit: "100kb" })',
-  "age webhook raw-body parser"
+  "webhook raw-body parser"
 );
 requireText(
   server,
-  "if (req.path === AGE_VERIFICATION_WEBHOOK_PATH) return next();",
-  "age webhook JSON-parser bypass"
+  "if (RAW_WEBHOOK_PATHS.has(req.path)) return next();",
+  "known webhooks must bypass JSON parser"
 );
 
-const webhookStart = server.indexOf("app.post(\n  AGE_VERIFICATION_WEBHOOK_PATH");
-const webhookEnd = webhookStart >= 0
-  ? server.indexOf("/* ----------------------------- ADMIN API", webhookStart)
+const billingWebhookStart = server.indexOf("app.post(\n  BILLING_WEBHOOK_PATH");
+const ageWebhookStart = server.indexOf("app.post(\n  AGE_VERIFICATION_WEBHOOK_PATH");
+const webhookEnd = ageWebhookStart >= 0
+  ? server.indexOf("/* ----------------------------- ADMIN API", ageWebhookStart)
   : -1;
-if (webhookStart < 0 || webhookEnd <= webhookStart) {
-  throw new Error("Security contract missing: authenticated age-verification webhook route");
+if (billingWebhookStart < 0 || ageWebhookStart <= billingWebhookStart || webhookEnd <= ageWebhookStart) {
+  throw new Error("Security contract missing: authenticated billing/age webhook routes");
 }
-const ageWebhookRoute = server.slice(webhookStart, webhookEnd);
+const billingWebhookRoute = server.slice(billingWebhookStart, ageWebhookStart);
+const ageWebhookRoute = server.slice(ageWebhookStart, webhookEnd);
+
+requireText(
+  billingWebhookRoute,
+  "processBillingWebhook({",
+  "billing webhook must verify and normalize provider callback through adapter"
+);
+requireText(
+  billingWebhookRoute,
+  'crypto.createHash("sha256").update(rawBody).digest("hex")',
+  "billing webhook raw payload hash"
+);
+requireText(
+  billingWebhookRoute,
+  "ON CONFLICT (provider, provider_event_id) DO NOTHING",
+  "billing webhook event deduplication"
+);
+requireText(
+  billingWebhookRoute,
+  "billing_subject_hash = $2",
+  "billing webhook opaque subject lookup"
+);
+requireText(
+  billingWebhookRoute,
+  "ignored-stale-event",
+  "billing webhook stale-event protection"
+);
+requireText(
+  billingWebhookRoute,
+  "provider-subscription-conflict",
+  "billing webhook subscription collision protection"
+);
+forbidText(
+  billingWebhookRoute,
+  "cardNumber",
+  "billing webhook route must not handle card numbers"
+);
+forbidText(
+  billingWebhookRoute,
+  "paymentMethod",
+  "billing webhook route must not persist payment methods"
+);
+forbidText(
+  billingWebhookRoute,
+  "rawBody,\n           received_at",
+  "billing webhook must not persist raw payload"
+);
+
 requireText(
   ageWebhookRoute,
   "processAgeVerificationWebhook({",
