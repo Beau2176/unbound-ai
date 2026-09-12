@@ -1,0 +1,39 @@
+name: History import fix
+
+on:
+  push:
+    branches:
+      - history-import-fix-v0.7.1
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Apply fix
+        run: python scripts/fix-history-import.py
+      - name: Validate server syntax and history caps
+        run: |
+          node --check app/server.js
+          grep -q 'return history' app/server.js || true
+          grep -q '.slice(-50);' app/server.js
+          test "$(grep -c 'cleanHistory(req.body.history).slice(-20)' app/server.js)" -eq 2
+      - name: Commit fix
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git commit -m "Preserve full legacy browser history during import"
+          git push
