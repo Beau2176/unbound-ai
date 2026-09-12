@@ -17,9 +17,10 @@ function main() {
   const source = fs.readFileSync(serverPath, "utf8");
   const integrated = integrateEmailVerificationServerSource(source);
 
-  assert.strictEqual(INTEGRATION_VERSION, "v0.57");
+  assert.strictEqual(INTEGRATION_VERSION, "v0.58");
   assert.strictEqual(count(integrated, 'require("./email/store")'), 1);
   assert.strictEqual(count(integrated, 'require("./email/readiness")'), 1);
+  assert.strictEqual(count(integrated, 'require("./email/registration")'), 1);
   assert.strictEqual(count(integrated, 'require("./email/routes")'), 1);
   assert.strictEqual(count(integrated, 'require("./email/account-page")'), 1);
   assert.strictEqual(count(integrated, 'app.get("/verify-email", sendEmailVerificationPage);'), 1);
@@ -42,6 +43,25 @@ function main() {
   assert.strictEqual(count(integrated, "    emailDelivery,\n    ai\n  });"), 1);
   assert.strictEqual(count(integrated, "    emailDelivery,\n    ai,\n    launch,"), 1);
   assert.strictEqual(count(integrated, "emailDelivery: buildEmailDeliveryReadiness(),"), 1);
+
+  assert.strictEqual(
+    count(integrated, "await attemptRegistrationEmailVerification({"),
+    1,
+    "registration should attempt initial verification exactly once"
+  );
+  const registrationSessionPosition = integrated.indexOf('authMethod: "registration"');
+  const registrationAttemptPosition = integrated.indexOf("await attemptRegistrationEmailVerification({");
+  const registrationResponsePosition = integrated.indexOf(
+    "return res.status(201).json({",
+    registrationSessionPosition
+  );
+  assert.ok(registrationSessionPosition >= 0);
+  assert.ok(registrationAttemptPosition > registrationSessionPosition);
+  assert.ok(registrationResponsePosition > registrationAttemptPosition);
+  assert.match(
+    integrated,
+    /registrationEmailVerification\.state === "failed"[\s\S]*console\.warn\("UNBOUND AI registration email verification could not be completed\."\)/
+  );
 
   const schemaPosition = integrated.indexOf("await initializeEmailVerificationSchema(pool);");
   const userSchemaPosition = integrated.indexOf("CREATE TABLE IF NOT EXISTS users");
@@ -77,6 +97,14 @@ function main() {
       '  const ageVerification = getAgeVerificationGatewayStatus();\n  const launchRenamed = buildLaunchReadiness({'
     )),
     (error) => error?.code === "EMAIL_SERVER_INTEGRATION_MARKER_COUNT_CHANGED"
+  );
+
+  assert.throws(
+    () => integrateEmailVerificationServerSource(source.replace(
+      '      authMethod: "registration"',
+      '      authMethod: "signup"'
+    )),
+    (error) => error?.code === "EMAIL_SERVER_INTEGRATION_MARKER_MISSING"
   );
 
   const packageJson = JSON.parse(fs.readFileSync(path.join(appRoot, "package.json"), "utf8"));

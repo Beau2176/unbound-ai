@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v0.57";
+const INTEGRATION_VERSION = "v0.58";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const firstIndex = source.indexOf(marker);
@@ -44,7 +44,7 @@ function integrateEmailVerificationServerSource(serverSource) {
   source = replaceExactlyOnce(
     source,
     importMarker,
-    `${importMarker}\nconst { initializeEmailVerificationSchema } = require("./email/store");\nconst { buildEmailDeliveryReadiness } = require("./email/readiness");\nconst {\n  createEmailVerificationRouter,\n  sendEmailVerificationPage\n} = require("./email/routes");\nconst {\n  sendAccountIndexPage,\n  sendEmailAccountUiScript\n} = require("./email/account-page");`,
+    `${importMarker}\nconst { initializeEmailVerificationSchema } = require("./email/store");\nconst { buildEmailDeliveryReadiness } = require("./email/readiness");\nconst { attemptRegistrationEmailVerification } = require("./email/registration");\nconst {\n  createEmailVerificationRouter,\n  sendEmailVerificationPage\n} = require("./email/routes");\nconst {\n  sendAccountIndexPage,\n  sendEmailAccountUiScript\n} = require("./email/account-page");`,
     "imports"
   );
 
@@ -105,6 +105,14 @@ function integrateEmailVerificationServerSource(serverSource) {
     '    billing,\n    ageVerification,\n    emailDelivery,\n    ai,\n    launch,',
     1,
     "ops-email-delivery-output"
+  );
+
+  const registrationMarker = `    await createSession(user.id, res, req, {\n      notifyNewDevice: false,\n      authMethod: "registration"\n    });\n\n    return res.status(201).json({`;
+  source = replaceExactlyOnce(
+    source,
+    registrationMarker,
+    `    await createSession(user.id, res, req, {\n      notifyNewDevice: false,\n      authMethod: "registration"\n    });\n\n    const registrationEmailVerification = await attemptRegistrationEmailVerification({\n      pool,\n      user,\n      env: process.env\n    });\n    if (registrationEmailVerification.state === "failed") {\n      console.warn("UNBOUND AI registration email verification could not be completed.");\n    }\n\n    return res.status(201).json({`,
+    "registration-email-verification"
   );
 
   const rootRouteMarker = `app.get("/", (req, res) => {\n  res.setHeader("Cache-Control", "no-cache");\n  return res.sendFile(path.join(__dirname, "index.html"));\n});`;
