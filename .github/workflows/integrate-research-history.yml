@@ -1,0 +1,114 @@
+name: Integrate Research Mode with persistent history
+
+on:
+  push:
+    branches:
+      - feature-research-history-sync
+    paths:
+      - .research-history-integration/trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Preserve validated provider Research implementation
+        run: |
+          git fetch origin feature-research-stream-sync
+          git checkout origin/feature-research-stream-sync -- \
+            app/ai/gateway.js \
+            app/ai/providers/openai.js \
+            app/admin.html
+
+      - name: Integrate Research Mode with current history-enabled source
+        run: python3 .research-history-integration/apply.py
+
+      - name: Install exact dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Check Node syntax
+        run: |
+          node --check app/server.js
+          node --check app/ai/gateway.js
+          node --check app/ai/providers/openai.js
+
+      - name: Check browser JavaScript syntax
+        working-directory: app
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          for (const file of ['index.html', 'admin.html']) {
+            const html = fs.readFileSync(file, 'utf8');
+            const blocks = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
+              .map((match) => match[1])
+              .filter(Boolean);
+            for (const [index, code] of blocks.entries()) {
+              try {
+                new Function(code);
+              } catch (error) {
+                console.error(`${file} script ${index + 1}:`, error);
+                process.exit(1);
+              }
+            }
+          }
+          console.log('Browser JavaScript syntax OK.');
+          NODE
+
+      - name: Verify combined feature wiring
+        run: |
+          grep -q 'type: "web_search"' app/ai/providers/openai.js
+          grep -q 'web_search_call.action.sources' app/ai/providers/openai.js
+          grep -q 'research: providerSupportsResearch(provider)' app/ai/gateway.js
+          grep -q 'app.post("/api/chat/stream"' app/server.js
+          grep -q 'product_mode TEXT NOT NULL DEFAULT' app/server.js
+          grep -q 'research_sources JSONB' app/server.js
+          grep -q 'research_citations JSONB' app/server.js
+          grep -q 'web_search_calls INTEGER' app/server.js
+          grep -q 'normalizeProductMode' app/server.js
+          grep -q 'data-product-mode="research"' app/index.html
+          grep -q 'class="inline-citation"' app/index.html
+          grep -q 'fetch("/api/chat/stream"' app/index.html
+          grep -q 'fetch("/api/chat"' app/index.html
+          grep -q 'conversationId: currentUser ? activeConversationId : null' app/index.html
+          grep -q 'data.conversation?.productMode' app/index.html
+          grep -q 'item.sources || \[\]' app/index.html
+          grep -q 'webSearchCalls' app/admin.html
+          ! grep -R -nE '^(<<<<<<<|=======|>>>>>>>)' app
+          git diff --check
+
+      - name: Verify no broad static source exposure
+        run: |
+          ! grep -q 'express.static(__dirname)' app/server.js
+          grep -q 'app.get("/index.html"' app/server.js
+          grep -q 'app.get("/admin.html"' app/server.js
+          grep -q 'app.get("/unbound-cosmic.png"' app/server.js
+
+      - name: Audit production dependencies
+        working-directory: app
+        run: npm audit --omit=dev --audit-level=moderate
+
+      - name: Commit validated product source
+        run: |
+          git config user.name "UNBOUND Research History Integrator"
+          git config user.email "actions@users.noreply.github.com"
+          git add \
+            app/server.js \
+            app/index.html \
+            app/admin.html \
+            app/ai/gateway.js \
+            app/ai/providers/openai.js
+          git commit -m "Integrate Research Mode with persistent conversation citations"
+          git push
