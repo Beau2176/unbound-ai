@@ -1,0 +1,72 @@
+name: Admin entitlement controls
+
+on:
+  push:
+    branches:
+      - admin-entitlements-v0.9
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+      - name: Apply admin entitlement migration
+        run: python scripts/migrate-admin-entitlements.py
+      - name: Validate server JavaScript
+        run: |
+          node --check app/server.js
+          node --check app/access/entitlements.js
+      - name: Validate admin browser JavaScript
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          html = Path('app/admin.html').read_text()
+          start = html.rfind('<script>')
+          end = html.rfind('</script>')
+          if start < 0 or end <= start: raise SystemExit('admin script block missing')
+          Path('/tmp/unbound-admin.js').write_text(html[start + len('<script>'):end])
+          PY
+          node --check /tmp/unbound-admin.js
+      - name: Verify admin entitlement API and audit
+        run: |
+          grep -q '"/api/admin/entitlements/catalog"' app/server.js
+          grep -q '"/api/admin/users/:id/access"' app/server.js
+          grep -q '"/api/admin/users/:id/entitlements/:key"' app/server.js
+          grep -q 'user.entitlement_override.set' app/server.js
+          grep -q 'user.entitlement_override.cleared' app/server.js
+          grep -q 'isKnownCapability' app/server.js
+      - name: Verify admin UI wiring
+        run: |
+          grep -q 'id="entitlementUser"' app/admin.html
+          grep -q 'id="entitlementCapability"' app/admin.html
+          grep -q 'id="applyEntitlement"' app/admin.html
+          grep -q 'loadSelectedUserAccess' app/admin.html
+          grep -q 'applyEntitlementOverride' app/admin.html
+          grep -q 'clear-entitlement' app/admin.html
+      - name: Dependency audit
+        working-directory: app
+        run: npm audit --omit=dev --audit-level=high
+      - name: Commit production source
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/admin.html
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git commit -m "Add administrator capability override controls"
+          git push
