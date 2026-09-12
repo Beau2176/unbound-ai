@@ -248,6 +248,14 @@ app.get("/admin.html", (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   return res.sendFile(path.join(__dirname, "admin.html"));
 });
+app.get("/terms.html", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache");
+  return res.sendFile(path.join(__dirname, "terms.html"));
+});
+app.get("/privacy.html", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache");
+  return res.sendFile(path.join(__dirname, "privacy.html"));
+});
 app.get("/unbound-cosmic.png", (req, res) => {
   res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
   return res.sendFile(path.join(__dirname, "unbound-cosmic.png"));

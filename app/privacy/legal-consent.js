@@ -5,6 +5,11 @@ const DEFAULT_LEGAL_VERSIONS = Object.freeze({
   privacy: "2026-09-draft"
 });
 
+const DEFAULT_LEGAL_URLS = Object.freeze({
+  terms: "/terms.html",
+  privacy: "/privacy.html"
+});
+
 function cleanVersion(value, fallback) {
   const version = String(value || "").trim().slice(0, 80);
   return version || fallback;
@@ -39,14 +44,14 @@ function getLegalDocumentCatalog(env = process.env) {
       type: "terms",
       label: "Terms of Use",
       version: cleanVersion(env.UNBOUND_TERMS_VERSION, DEFAULT_LEGAL_VERSIONS.terms),
-      url: cleanPolicyUrl(env.UNBOUND_TERMS_URL),
+      url: cleanPolicyUrl(env.UNBOUND_TERMS_URL) || DEFAULT_LEGAL_URLS.terms,
       required: true
     },
     {
       type: "privacy",
       label: "Privacy Notice",
       version: cleanVersion(env.UNBOUND_PRIVACY_VERSION, DEFAULT_LEGAL_VERSIONS.privacy),
-      url: cleanPolicyUrl(env.UNBOUND_PRIVACY_URL),
+      url: cleanPolicyUrl(env.UNBOUND_PRIVACY_URL) || DEFAULT_LEGAL_URLS.privacy,
       required: true
     }
   ];
@@ -105,6 +110,7 @@ function buildLegalConsentStatus({ acceptedRows = [], env = process.env } = {}) 
 module.exports = {
   LEGAL_DOCUMENT_TYPES,
   DEFAULT_LEGAL_VERSIONS,
+  DEFAULT_LEGAL_URLS,
   normalizeLegalDocumentType,
   getLegalDocumentCatalog,
   legalPublishingState,

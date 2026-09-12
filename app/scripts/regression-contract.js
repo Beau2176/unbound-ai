@@ -272,6 +272,8 @@ function forbidText(text, needle, label) {
 function testBrowserContracts() {
   const indexHtml = fs.readFileSync(path.join(appRoot, "index.html"), "utf8");
   const adminHtml = fs.readFileSync(path.join(appRoot, "admin.html"), "utf8");
+  const termsHtml = fs.readFileSync(path.join(appRoot, "terms.html"), "utf8");
+  const privacyHtml = fs.readFileSync(path.join(appRoot, "privacy.html"), "utf8");
 
   requireText(indexHtml, 'id="serviceStatus"', "truthful service status element");
   requireText(indexHtml, 'id="serviceBanner"', "service maintenance banner");
@@ -323,6 +325,13 @@ function testBrowserContracts() {
   );
   forbidText(adminHtml.toLowerCase(), "force launch", "admin must not contain force-launch control");
   forbidText(adminHtml.toLowerCase(), "bypass gate", "admin must not contain gate-bypass control");
+
+  requireText(termsHtml, "DRAFT — NOT YET IN FORCE", "Terms draft warning");
+  requireText(privacyHtml, "DRAFT — NOT YET IN FORCE", "Privacy draft warning");
+  requireText(termsHtml, 'name="robots" content="noindex, nofollow"', "Terms noindex directive");
+  requireText(privacyHtml, 'name="robots" content="noindex, nofollow"', "Privacy noindex directive");
+  requireText(termsHtml, "Review required before launch", "Terms review warning");
+  requireText(privacyHtml, "Review required before launch", "Privacy review warning");
 }
 
 const tests = [

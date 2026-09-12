@@ -19,6 +19,8 @@ function forbidText(text, needle, label) {
 forbidText(server, "express.static(__dirname)", "application source directory must not be publicly exposed");
 requireText(server, 'app.get("/index.html"', "explicit index route");
 requireText(server, 'app.get("/admin.html"', "explicit admin route");
+requireText(server, 'app.get("/terms.html"', "explicit Terms route");
+requireText(server, 'app.get("/privacy.html"', "explicit Privacy route");
 requireText(server, 'app.get("/unbound-cosmic.png"', "explicit branding route");
 forbidText(server, 'app.get("/server.js"', "server source must not be routed publicly");
 requireText(server, "createSameOriginApiGuard", "same-origin API guard");
