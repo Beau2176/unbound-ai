@@ -4,7 +4,13 @@
   "description": "UNBOUND AI server",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check": "node scripts/validate-source.js",
+    "security-check": "node scripts/security-contract.js",
+    "ci": "npm run check && npm run security-check && npm audit --omit=dev --audit-level=moderate"
+  },
+  "engines": {
+    "node": "24.x"
   },
   "dependencies": {
     "@simplewebauthn/server": "14.0.1",
