@@ -1745,6 +1745,9 @@
       productMode = normalizeProductMode(
         data.conversation?.productMode || loadProductMode()
       );
+      if (productMode === "research" && !canUseCapability("web_research")) {
+        productMode = "standard";
+      }
       depthStyle = normalizeDepthStyle(
         data.conversation?.depthStyle || loadDepthStyle()
       );
@@ -1768,7 +1771,9 @@
         body: JSON.stringify({
           messages: legacy,
           depthStyle: loadDepthStyle(),
-          productMode: loadProductMode()
+          productMode: canUseCapability("web_research")
+            ? loadProductMode()
+            : "standard"
         })
       });
       const data = await readJson(response);
@@ -2349,6 +2354,10 @@
         accessButton.hidden = false;
         historyButton.hidden = false;
         researchModeButton.classList.toggle("locked", !canUseCapability("web_research"));
+        researchModeButton.setAttribute(
+          "aria-disabled",
+          canUseCapability("web_research") ? "false" : "true"
+        );
         researchModeButton.title = canUseCapability("web_research") ? "Research Mode" : "Research Mode requires TOP access";
         return;
       }
@@ -2363,12 +2372,13 @@
       accessButton.hidden = true;
       historyButton.hidden = true;
       researchModeButton.classList.add("locked");
+      researchModeButton.setAttribute("aria-disabled", "true");
       researchModeButton.title = "Research Mode requires a signed-in TOP account";
     }
 
     function closeHistory() {
       historyModal.hidden = true;
-      if (authModal.hidden) {
+      if (authModal.hidden && accessModal.hidden) {
         document.body.classList.remove("modal-open");
       }
     }
@@ -2507,7 +2517,9 @@
 
     function closeAuth() {
       authModal.hidden = true;
-      document.body.classList.remove("modal-open");
+      if (historyModal.hidden && accessModal.hidden) {
+        document.body.classList.remove("modal-open");
+      }
       clearAuthFeedback();
     }
 
