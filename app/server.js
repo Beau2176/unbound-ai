@@ -87,6 +87,10 @@ const {
   getMaintenanceStatus,
   createMaintenanceMiddleware
 } = require("./ops/maintenance-mode");
+const {
+  getRequestObservabilitySnapshot,
+  createRequestObservabilityMiddleware
+} = require("./ops/request-observability");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -194,6 +198,7 @@ Product mode: ADULT MODE.
 `;
 
 app.disable("x-powered-by");
+app.use(createRequestObservabilityMiddleware());
 app.use(createHttpSecurityMiddleware({ isProduction: IS_PRODUCTION }));
 app.use(
   compression({
@@ -4574,6 +4579,28 @@ app.get(
   async (req, res) => {
     return res.json({
       maintenance: getMaintenanceStatus()
+    });
+  }
+);
+
+app.get(
+  "/api/admin/ops/status",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    const maintenance = getMaintenanceStatus();
+    return res.json({
+      runtime: buildReadinessStatus({
+        databaseConfigured: Boolean(process.env.DATABASE_URL),
+        databaseReady,
+        databaseError,
+        shuttingDown,
+        maintenanceStatus: maintenance,
+        aiStatus: getGatewayStatus()
+      }),
+      maintenance,
+      recovery: buildRecoveryReadiness(),
+      http: getRequestObservabilitySnapshot()
     });
   }
 );
