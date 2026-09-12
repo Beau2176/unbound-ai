@@ -1639,6 +1639,13 @@
           <button id="ageVerificationStartButton" class="auth-submit secondary" type="button">VERIFY 18+</button>
           <div id="ageVerificationActionNote" class="history-empty" role="status" aria-live="polite"></div>
         </div>
+        <div id="billingActions" class="access-age-actions">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="billingUpgradeButton" class="auth-submit" type="button" hidden>UPGRADE TO TOP</button>
+            <button id="billingPortalButton" class="auth-submit secondary" type="button" hidden>MANAGE BILLING</button>
+          </div>
+          <div id="billingActionNote" class="history-empty" role="status" aria-live="polite"></div>
+        </div>
         <div class="access-section-title">Capabilities</div>
         <div id="accessCapabilityList" class="capability-list"></div>
         <div class="access-section-title">Your data</div>
@@ -1956,6 +1963,10 @@
     const ageVerificationActions = document.getElementById("ageVerificationActions");
     const ageVerificationStartButton = document.getElementById("ageVerificationStartButton");
     const ageVerificationActionNote = document.getElementById("ageVerificationActionNote");
+    const billingActions = document.getElementById("billingActions");
+    const billingUpgradeButton = document.getElementById("billingUpgradeButton");
+    const billingPortalButton = document.getElementById("billingPortalButton");
+    const billingActionNote = document.getElementById("billingActionNote");
     const accessCapabilityList = document.getElementById("accessCapabilityList");
     const dataExportButton = document.getElementById("dataExportButton");
     const legalPolicyStatus = document.getElementById("legalPolicyStatus");
@@ -3080,6 +3091,77 @@
       return `${String(subscription.provider || "Provider")} • ${String(subscription.status || "unknown").replaceAll("_", " ")}`;
     }
 
+    async function startTopCheckout() {
+      if (!currentUser || !accountAccess) return;
+      const gateway = accountAccess.billingGateway || {};
+      if (accountAccess.plan?.tier === "top") {
+        showToast("This account already has TOP access.");
+        return;
+      }
+      if (!gateway.configured || !gateway.checkout) {
+        showToast("Paid TOP subscriptions are not available yet.");
+        return;
+      }
+
+      billingUpgradeButton.disabled = true;
+      billingUpgradeButton.textContent = "OPENING CHECKOUT...";
+      billingActionNote.textContent = "Creating a secure checkout session…";
+      try {
+        const response = await fetch("/api/account/billing/checkout", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: "{}"
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(data.error || "Could not start TOP checkout.");
+        const checkoutUrl = safeHttpUrl(data.checkout?.checkoutUrl);
+        if (!checkoutUrl || !checkoutUrl.startsWith("https://")) {
+          throw new Error("The billing provider returned an invalid secure checkout URL.");
+        }
+        billingActionNote.textContent = "Opening the secure billing provider…";
+        window.location.assign(checkoutUrl);
+      } catch (error) {
+        billingActionNote.textContent = error.message || "Could not start TOP checkout.";
+        billingUpgradeButton.disabled = false;
+        billingUpgradeButton.textContent = "UPGRADE TO TOP";
+      }
+    }
+
+    async function openBillingPortal() {
+      if (!currentUser || !accountAccess) return;
+      const gateway = accountAccess.billingGateway || {};
+      const subscription = accountAccess.subscription || {};
+      if (!subscription.customerConnected || !gateway.configured || !gateway.customerPortal) {
+        showToast("Subscription management is not available for this account.");
+        return;
+      }
+
+      billingPortalButton.disabled = true;
+      billingPortalButton.textContent = "OPENING...";
+      billingActionNote.textContent = "Creating a secure billing-management session…";
+      try {
+        const response = await fetch("/api/account/billing/portal", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: "{}"
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(data.error || "Could not open subscription management.");
+        const portalUrl = safeHttpUrl(data.portal?.portalUrl);
+        if (!portalUrl || !portalUrl.startsWith("https://")) {
+          throw new Error("The billing provider returned an invalid secure management URL.");
+        }
+        billingActionNote.textContent = "Opening the secure billing provider…";
+        window.location.assign(portalUrl);
+      } catch (error) {
+        billingActionNote.textContent = error.message || "Could not open subscription management.";
+        billingPortalButton.disabled = false;
+        billingPortalButton.textContent = "MANAGE BILLING";
+      }
+    }
+
     async function startAgeVerification() {
       if (!currentUser) {
         showToast("Sign in before starting hard 18+ verification.");
@@ -3144,6 +3226,12 @@
         ageVerificationStartButton.hidden = true;
         ageVerificationStartButton.disabled = true;
         ageVerificationActionNote.textContent = "";
+        billingActions.hidden = true;
+        billingUpgradeButton.hidden = true;
+        billingUpgradeButton.disabled = true;
+        billingPortalButton.hidden = true;
+        billingPortalButton.disabled = true;
+        billingActionNote.textContent = "";
         accessCapabilityList.innerHTML = "";
         return;
       }
@@ -3151,6 +3239,34 @@
       accessPlanSource.textContent = accessSourceLabel(accountAccess.plan?.source);
       accessSubscription.textContent = subscriptionLabel(accountAccess.subscription);
       accessCapabilitySummary.textContent = `${accountAccess.summary?.usable || 0} live / ${accountAccess.summary?.catalogSize || 0} tracked`;
+      const billingGateway = accountAccess.billingGateway || {};
+      const subscription = accountAccess.subscription || {};
+      const effectiveTop = accountAccess.plan?.tier === "top";
+      const checkoutAvailable = Boolean(!effectiveTop && billingGateway.configured && billingGateway.checkout);
+      const portalAvailable = Boolean(
+        subscription.customerConnected &&
+        billingGateway.configured &&
+        billingGateway.customerPortal &&
+        subscription.provider &&
+        subscription.provider === billingGateway.provider
+      );
+      billingActions.hidden = false;
+      billingUpgradeButton.hidden = !checkoutAvailable;
+      billingUpgradeButton.disabled = !checkoutAvailable;
+      billingUpgradeButton.textContent = "UPGRADE TO TOP";
+      billingPortalButton.hidden = !portalAvailable;
+      billingPortalButton.disabled = !portalAvailable;
+      billingPortalButton.textContent = "MANAGE BILLING";
+      billingActionNote.textContent = portalAvailable
+        ? "Manage your paid subscription securely with the connected billing provider."
+        : effectiveTop
+          ? accountAccess.plan?.source === "subscription"
+            ? "Your paid TOP access is active, but the connected provider does not currently expose account management."
+            : `Your TOP access comes from ${accessSourceLabel(accountAccess.plan?.source)}; no paid subscription action is required.`
+          : checkoutAvailable
+            ? "Upgrade to TOP through the connected secure billing provider."
+            : "Paid TOP subscriptions are not connected yet. No payment action is available.";
+
       const ageState = accountAccess.ageVerification || {};
       const ageGateway = accountAccess.ageVerificationGateway || {};
       accessAgeVerification.textContent = ageState.verified
@@ -4843,6 +4959,8 @@
 
     newChatButton.addEventListener("click", startNewChat);
     accessButton.addEventListener("click", openAccess);
+    billingUpgradeButton.addEventListener("click", startTopCheckout);
+    billingPortalButton.addEventListener("click", openBillingPortal);
     ageVerificationStartButton.addEventListener("click", startAgeVerification);
     dataExportButton.addEventListener("click", handleDataExport);
     accessCloseButton.addEventListener("click", closeAccess);
