@@ -67,14 +67,23 @@ jobs:
           pid=$!
           cleanup() { kill "$pid" 2>/dev/null || true; }
           trap cleanup EXIT
+          ready=0
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:32191/healthz >/dev/null; then break; fi
+            if curl -fsS http://127.0.0.1:32191/healthz >/dev/null; then
+              ready=1
+              break
+            fi
             sleep 0.25
           done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/unbound-v035.log >&2
+            exit 1
+          fi
 
           curl -sS -D /tmp/status-headers.txt -o /tmp/status-body.json \
             'http://127.0.0.1:32191/api/system/status?email=secret-person@example.com' || true
-          grep -Eiq '^X-Request-ID: [0-9a-f-]{36}\r?$' /tmp/status-headers.txt
+          tr -d '\r' < /tmp/status-headers.txt > /tmp/status-headers-normalized.txt
+          grep -Eiq '^X-Request-ID: [0-9a-f-]{36}$' /tmp/status-headers-normalized.txt
 
           curl -sS -o /dev/null \
             'http://127.0.0.1:32191/not-found/123456789?token=super-secret-query-value' || true
