@@ -688,6 +688,36 @@ function requireCapability(capabilityKey) {
   };
 }
 
+
+async function assertRequestCapability(req, capabilityKey) {
+  if (!databaseReady || !pool) {
+    const error = new Error("Account access is temporarily unavailable.");
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const user = await findSessionUser(req);
+  if (!user) {
+    const error = new Error("Sign in with an account that includes that capability.");
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const access = await buildAccountAccess(user);
+  const capability = access?.capabilities.find((item) => item.key === capabilityKey);
+  if (!capability || !capability.usable) {
+    const error = new Error(
+      capability?.entitled && !capability?.available
+        ? "That capability is included in your access level but is not live yet."
+        : "Your current access level does not include that capability."
+    );
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return { user, access, capability };
+}
+
 async function requireSignedIn(req, res, next) {
   try {
     const user = await findSessionUser(req);
@@ -2193,6 +2223,10 @@ app.post("/api/chat", async (req, res) => {
       return res.status(503).json({
         error: "The active AI provider does not support Research Mode yet."
       });
+    }
+
+    if (productMode === "research") {
+      await assertRequestCapability(req, "web_research");
     }
 
     const persistentChat = await preparePersistentChat(
