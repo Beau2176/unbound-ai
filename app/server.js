@@ -134,6 +134,31 @@ async function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS user_sessions_expires_at_idx
       ON user_sessions(expires_at);
 
+    CREATE TABLE IF NOT EXISTS conversations (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL DEFAULT 'New chat',
+      depth_style TEXT NOT NULL DEFAULT 'casual',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT conversations_depth_style_check CHECK (depth_style IN ('casual', 'work'))
+    );
+
+    CREATE INDEX IF NOT EXISTS conversations_user_updated_idx
+      ON conversations(user_id, updated_at DESC, id DESC);
+
+    CREATE TABLE IF NOT EXISTS conversation_messages (
+      id BIGSERIAL PRIMARY KEY,
+      conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT conversation_messages_role_check CHECK (role IN ('user', 'assistant'))
+    );
+
+    CREATE INDEX IF NOT EXISTS conversation_messages_conversation_id_idx
+      ON conversation_messages(conversation_id, id);
+
     CREATE TABLE IF NOT EXISTS complimentary_top_tier_grants (
       slot SMALLINT PRIMARY KEY,
       user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -450,6 +475,26 @@ async function recordUsageEvent({
   );
 }
 
+async function requireSignedIn(req, res, next) {
+  try {
+    const user = await findSessionUser(req);
+
+    if (!user) {
+      return res.status(401).json({
+        error: "Sign in to access your UNBOUND AI conversation history."
+      });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error("UNBOUND AI USER AUTH ERROR:", error);
+    return res.status(500).json({
+      error: "Could not verify your account session."
+    });
+  }
+}
+
 async function requireAdmin(req, res, next) {
   try {
     const user = await findSessionUser(req);
@@ -629,6 +674,381 @@ app.get("/api/auth/me", requireDatabase, async (req, res) => {
     return res.status(500).json({ error: "Could not load account." });
   }
 });
+
+/* ------------------------- CONVERSATION HISTORY ------------------------ */
+
+function conversationTitleFromMessage(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return (text || "New chat").slice(0, 72);
+}
+
+function validConversationId(value) {
+  return /^\d+$/.test(String(value || "").trim());
+}
+
+function publicConversation(row) {
+  return {
+    id: String(row.id),
+    title: row.title || "New chat",
+    depthStyle: normalizeDepthStyle(row.depth_style),
+    messageCount: Number(row.message_count || 0),
+    preview: row.preview || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+async function getConversationMessages(conversationId, limit = 200, client = pool) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 200, 1), 500);
+  const result = await client.query(
+    `SELECT id, role, content, created_at
+     FROM conversation_messages
+     WHERE conversation_id = $1
+     ORDER BY id DESC
+     LIMIT $2`,
+    [conversationId, safeLimit]
+  );
+
+  return result.rows.reverse().map((row) => ({
+    id: String(row.id),
+    role: row.role,
+    content: row.content,
+    createdAt: row.created_at
+  }));
+}
+
+async function preparePersistentChat(req, message, depthStyle) {
+  if (!databaseReady || !pool) {
+    return null;
+  }
+
+  const user = await findSessionUser(req);
+  if (!user) {
+    return null;
+  }
+
+  const requestedId = String(req.body.conversationId || "").trim();
+  if (requestedId && !validConversationId(requestedId)) {
+    const error = new Error("Invalid conversation ID.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    let conversation;
+
+    if (requestedId) {
+      const result = await client.query(
+        `SELECT id, user_id, title, depth_style, created_at, updated_at
+         FROM conversations
+         WHERE id = $1 AND user_id = $2
+         LIMIT 1
+         FOR UPDATE`,
+        [requestedId, user.id]
+      );
+      conversation = result.rows[0];
+
+      if (!conversation) {
+        const error = new Error("Conversation not found.");
+        error.statusCode = 404;
+        throw error;
+      }
+    } else {
+      const result = await client.query(
+        `INSERT INTO conversations (user_id, title, depth_style)
+         VALUES ($1, $2, $3)
+         RETURNING id, user_id, title, depth_style, created_at, updated_at`,
+        [user.id, conversationTitleFromMessage(message), depthStyle]
+      );
+      conversation = result.rows[0];
+    }
+
+    const priorResult = await client.query(
+      `SELECT role, content
+       FROM conversation_messages
+       WHERE conversation_id = $1
+       ORDER BY id DESC
+       LIMIT 20`,
+      [conversation.id]
+    );
+    const history = priorResult.rows.reverse().map((row) => ({
+      role: row.role,
+      content: row.content
+    }));
+
+    await client.query(
+      `INSERT INTO conversation_messages (conversation_id, role, content)
+       VALUES ($1, 'user', $2)`,
+      [conversation.id, message.slice(0, 12000)]
+    );
+
+    const nextTitle =
+      !conversation.title || conversation.title === "New chat"
+        ? conversationTitleFromMessage(message)
+        : conversation.title;
+
+    await client.query(
+      `UPDATE conversations
+       SET title = $1,
+           depth_style = $2,
+           updated_at = NOW()
+       WHERE id = $3`,
+      [nextTitle, depthStyle, conversation.id]
+    );
+
+    await client.query("COMMIT");
+
+    return {
+      user,
+      conversationId: String(conversation.id),
+      history
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function persistAssistantMessage(persistentChat, content, depthStyle) {
+  if (!persistentChat || !databaseReady || !pool) {
+    return;
+  }
+
+  const text = String(content || "").trim();
+  if (!text) {
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO conversation_messages (conversation_id, role, content)
+       VALUES ($1, 'assistant', $2)`,
+      [persistentChat.conversationId, text.slice(0, 12000)]
+    );
+    await client.query(
+      `UPDATE conversations
+       SET depth_style = $1,
+           updated_at = NOW()
+       WHERE id = $2 AND user_id = $3`,
+      [depthStyle, persistentChat.conversationId, persistentChat.user.id]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+app.get(
+  "/api/conversations",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    try {
+      const requestedLimit = Number.parseInt(String(req.query.limit || "50"), 10);
+      const limit = Number.isFinite(requestedLimit)
+        ? Math.min(Math.max(requestedLimit, 1), 100)
+        : 50;
+
+      const result = await pool.query(
+        `SELECT
+           c.id,
+           c.title,
+           c.depth_style,
+           c.created_at,
+           c.updated_at,
+           COUNT(m.id)::bigint AS message_count,
+           COALESCE((
+             SELECT cm.content
+             FROM conversation_messages cm
+             WHERE cm.conversation_id = c.id
+             ORDER BY cm.id DESC
+             LIMIT 1
+           ), '') AS preview
+         FROM conversations c
+         LEFT JOIN conversation_messages m ON m.conversation_id = c.id
+         WHERE c.user_id = $1
+         GROUP BY c.id
+         ORDER BY c.updated_at DESC, c.id DESC
+         LIMIT $2`,
+        [req.user.id, limit]
+      );
+
+      return res.json({
+        conversations: result.rows.map(publicConversation)
+      });
+    } catch (error) {
+      console.error("UNBOUND AI CONVERSATION LIST ERROR:", error);
+      return res.status(500).json({ error: "Could not load conversation history." });
+    }
+  }
+);
+
+app.get(
+  "/api/conversations/:id",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    try {
+      const conversationId = String(req.params.id || "").trim();
+      if (!validConversationId(conversationId)) {
+        return res.status(400).json({ error: "Invalid conversation ID." });
+      }
+
+      const result = await pool.query(
+        `SELECT id, title, depth_style, created_at, updated_at
+         FROM conversations
+         WHERE id = $1 AND user_id = $2
+         LIMIT 1`,
+        [conversationId, req.user.id]
+      );
+      const conversation = result.rows[0];
+
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation not found." });
+      }
+
+      const messages = await getConversationMessages(conversation.id, 500);
+      return res.json({
+        conversation: publicConversation({
+          ...conversation,
+          message_count: messages.length,
+          preview: messages[messages.length - 1]?.content || ""
+        }),
+        messages
+      });
+    } catch (error) {
+      console.error("UNBOUND AI CONVERSATION LOAD ERROR:", error);
+      return res.status(500).json({ error: "Could not load that conversation." });
+    }
+  }
+);
+
+app.post(
+  "/api/conversations",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    try {
+      const depthStyle = normalizeDepthStyle(req.body.depthStyle);
+      const result = await pool.query(
+        `INSERT INTO conversations (user_id, title, depth_style)
+         VALUES ($1, 'New chat', $2)
+         RETURNING id, title, depth_style, created_at, updated_at`,
+        [req.user.id, depthStyle]
+      );
+      return res.status(201).json({
+        conversation: publicConversation({
+          ...result.rows[0],
+          message_count: 0,
+          preview: ""
+        })
+      });
+    } catch (error) {
+      console.error("UNBOUND AI CONVERSATION CREATE ERROR:", error);
+      return res.status(500).json({ error: "Could not start a new conversation." });
+    }
+  }
+);
+
+app.post(
+  "/api/conversations/import",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    const messages = cleanHistory(req.body.messages).slice(-50);
+    if (!messages.length) {
+      return res.status(400).json({ error: "There is no conversation to import." });
+    }
+
+    const depthStyle = normalizeDepthStyle(req.body.depthStyle);
+    const firstUser = messages.find((item) => item.role === "user");
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const created = await client.query(
+        `INSERT INTO conversations (user_id, title, depth_style)
+         VALUES ($1, $2, $3)
+         RETURNING id, title, depth_style, created_at, updated_at`,
+        [
+          req.user.id,
+          conversationTitleFromMessage(firstUser?.content || "Imported chat"),
+          depthStyle
+        ]
+      );
+      const conversation = created.rows[0];
+
+      for (const item of messages) {
+        await client.query(
+          `INSERT INTO conversation_messages (conversation_id, role, content)
+           VALUES ($1, $2, $3)`,
+          [conversation.id, item.role, item.content.slice(0, 12000)]
+        );
+      }
+
+      await client.query(
+        `UPDATE conversations SET updated_at = NOW() WHERE id = $1`,
+        [conversation.id]
+      );
+      await client.query("COMMIT");
+
+      return res.status(201).json({
+        conversation: publicConversation({
+          ...conversation,
+          message_count: messages.length,
+          preview: messages[messages.length - 1]?.content || ""
+        }),
+        messages
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      console.error("UNBOUND AI CONVERSATION IMPORT ERROR:", error);
+      return res.status(500).json({ error: "Could not import the existing conversation." });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+app.delete(
+  "/api/conversations/:id",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    try {
+      const conversationId = String(req.params.id || "").trim();
+      if (!validConversationId(conversationId)) {
+        return res.status(400).json({ error: "Invalid conversation ID." });
+      }
+
+      const result = await pool.query(
+        `DELETE FROM conversations
+         WHERE id = $1 AND user_id = $2
+         RETURNING id`,
+        [conversationId, req.user.id]
+      );
+
+      if (!result.rows[0]) {
+        return res.status(404).json({ error: "Conversation not found." });
+      }
+
+      return res.json({ ok: true, id: conversationId });
+    } catch (error) {
+      console.error("UNBOUND AI CONVERSATION DELETE ERROR:", error);
+      return res.status(500).json({ error: "Could not delete that conversation." });
+    }
+  }
+);
 
 /* ----------------------------- ADMIN API ----------------------------- */
 
@@ -1262,8 +1682,11 @@ app.post("/api/chat", async (req, res) => {
             : "AI provider '" + gatewayStatus.provider + "' is not configured."
       });
     }
-    const history = cleanHistory(req.body.history);
     const depthStyle = normalizeDepthStyle(req.body.depthStyle);
+    const persistentChat = await preparePersistentChat(req, message, depthStyle);
+    const history = persistentChat
+      ? persistentChat.history
+      : cleanHistory(req.body.history);
     const depthInstructions =
       depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT;
 
@@ -1281,9 +1704,17 @@ app.post("/api/chat", async (req, res) => {
       input
     });
 
+    if (persistentChat) {
+      await persistAssistantMessage(
+        persistentChat,
+        aiResponse.reply,
+        depthStyle
+      );
+    }
+
     if (databaseReady && pool && aiResponse.usage) {
       try {
-        const sessionUser = await findSessionUser(req);
+        const sessionUser = persistentChat?.user || await findSessionUser(req);
 
         await recordUsageEvent({
           userId: sessionUser?.id || null,
@@ -1306,12 +1737,13 @@ app.post("/api/chat", async (req, res) => {
       reply: aiResponse.reply,
       depthStyle,
       provider: aiResponse.provider,
-      model: aiResponse.model
+      model: aiResponse.model,
+      conversationId: persistentChat?.conversationId || null
     });
   } catch (error) {
     console.error("UNBOUND AI ERROR:", error);
 
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       error: error.message || "UNBOUND AI could not get a response."
     });
   }
@@ -1338,8 +1770,11 @@ app.post("/api/chat/stream", async (req, res) => {
       });
     }
 
-    const history = cleanHistory(req.body.history);
     const depthStyle = normalizeDepthStyle(req.body.depthStyle);
+    const persistentChat = await preparePersistentChat(req, message, depthStyle);
+    const history = persistentChat
+      ? persistentChat.history
+      : cleanHistory(req.body.history);
     const depthInstructions =
       depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT;
     const input = [
@@ -1363,7 +1798,8 @@ app.post("/api/chat/stream", async (req, res) => {
       type: "meta",
       depthStyle,
       provider: gatewayStatus.provider,
-      model: gatewayStatus.model
+      model: gatewayStatus.model,
+      conversationId: persistentChat?.conversationId || null
     });
 
     const aiResponse = await streamChat({
@@ -1375,9 +1811,17 @@ app.post("/api/chat/stream", async (req, res) => {
       }
     });
 
+    if (persistentChat) {
+      await persistAssistantMessage(
+        persistentChat,
+        aiResponse.reply,
+        depthStyle
+      );
+    }
+
     if (databaseReady && pool && aiResponse.usage) {
       try {
-        const sessionUser = await findSessionUser(req);
+        const sessionUser = persistentChat?.user || await findSessionUser(req);
         await recordUsageEvent({
           userId: sessionUser?.id || null,
           provider: aiResponse.provider,
@@ -1399,7 +1843,8 @@ app.post("/api/chat/stream", async (req, res) => {
       type: "done",
       depthStyle,
       provider: aiResponse.provider,
-      model: aiResponse.model
+      model: aiResponse.model,
+      conversationId: persistentChat?.conversationId || null
     });
     res.end();
   } catch (error) {
@@ -1418,7 +1863,7 @@ app.post("/api/chat/stream", async (req, res) => {
       return;
     }
 
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       error: error.message || "UNBOUND AI could not get a response."
     });
   }
