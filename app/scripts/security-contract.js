@@ -51,6 +51,78 @@ for (const forbidden of [
   forbidText(exportRoute, forbidden, `data export must not select ${forbidden}`);
 }
 
+const ageWebhookPath = 'const AGE_VERIFICATION_WEBHOOK_PATH = "/api/webhooks/age-verification";';
+requireText(server, ageWebhookPath, "exact age-verification webhook path constant");
+requireText(
+  server,
+  "exemptPaths: [AGE_VERIFICATION_WEBHOOK_PATH]",
+  "age webhook exact same-origin exemption"
+);
+requireText(
+  server,
+  'express.raw({ type: "*/*", limit: "100kb" })',
+  "age webhook raw-body parser"
+);
+requireText(
+  server,
+  "if (req.path === AGE_VERIFICATION_WEBHOOK_PATH) return next();",
+  "age webhook JSON-parser bypass"
+);
+
+const webhookStart = server.indexOf("app.post(\n  AGE_VERIFICATION_WEBHOOK_PATH");
+const webhookEnd = webhookStart >= 0
+  ? server.indexOf("/* ----------------------------- ADMIN API", webhookStart)
+  : -1;
+if (webhookStart < 0 || webhookEnd <= webhookStart) {
+  throw new Error("Security contract missing: authenticated age-verification webhook route");
+}
+const ageWebhookRoute = server.slice(webhookStart, webhookEnd);
+requireText(
+  ageWebhookRoute,
+  "processAgeVerificationWebhook({",
+  "age webhook must verify and normalize provider callback through adapter"
+);
+requireText(
+  ageWebhookRoute,
+  'crypto.createHash("sha256").update(rawBody).digest("hex")',
+  "age webhook raw payload hash"
+);
+requireText(
+  ageWebhookRoute,
+  "ON CONFLICT (provider, provider_event_id) DO NOTHING",
+  "age webhook event deduplication"
+);
+requireText(
+  ageWebhookRoute,
+  "provider_reference_hash = $2",
+  "age webhook hashed provider-reference lookup"
+);
+requireText(
+  ageWebhookRoute,
+  "resolveAgeVerificationTransition(account.status, event.status)",
+  "age webhook safe state transition policy"
+);
+requireText(
+  ageWebhookRoute,
+  'error_text = \'ignored-stale-event\'',
+  "age webhook stale-event protection"
+);
+forbidText(
+  ageWebhookRoute,
+  "providerReference:",
+  "age webhook response must not expose provider reference"
+);
+forbidText(
+  ageWebhookRoute,
+  "userId:",
+  "age webhook response must not expose account user ID"
+);
+forbidText(
+  ageWebhookRoute,
+  "rawBody,\n           received_at",
+  "age webhook must not persist raw payload"
+);
+
 if (pkg.overrides?.qs !== "6.16.0") {
   throw new Error("Security contract violation: qs must remain pinned to patched 6.16.0");
 }
