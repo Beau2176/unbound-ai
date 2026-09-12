@@ -74,6 +74,10 @@ const {
   buildLivenessStatus,
   buildReadinessStatus
 } = require("./ops/runtime-status");
+const {
+  getDatabaseResilienceConfig,
+  databaseRetryDelay
+} = require("./ops/database-resilience");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -196,6 +200,10 @@ app.get("/unbound-cosmic.png", (req, res) => res.sendFile(path.join(__dirname, "
 let pool = null;
 let databaseReady = false;
 let databaseError = null;
+let databaseInitializing = false;
+let databaseInitAttempt = 0;
+let databaseRetryTimer = null;
+const DATABASE_RESILIENCE = getDatabaseResilienceConfig();
 
 function sendStatusJson(res, statusCode, payload) {
   res.setHeader("Cache-Control", "no-store");
@@ -234,13 +242,54 @@ function createPool() {
     return null;
   }
 
-  return new Pool({
+  const nextPool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: IS_PRODUCTION ? { rejectUnauthorized: false } : undefined,
     max: 5,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000
+    connectionTimeoutMillis: DATABASE_RESILIENCE.connectionTimeoutMillis,
+    statement_timeout: DATABASE_RESILIENCE.statementTimeoutMillis,
+    query_timeout: DATABASE_RESILIENCE.queryTimeoutMillis,
+    lock_timeout: DATABASE_RESILIENCE.lockTimeoutMillis,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
+    application_name: "unbound-ai"
   });
+
+  nextPool.on("error", (error) => {
+    databaseReady = false;
+    databaseError = error?.message || "Database pool connection failed.";
+    console.error("UNBOUND AI DATABASE POOL ERROR:", error);
+    scheduleDatabaseInitialization("pool-error");
+  });
+
+  return nextPool;
+}
+
+async function closePoolQuietly(targetPool) {
+  if (!targetPool) return;
+  try {
+    await targetPool.end();
+  } catch (error) {
+    console.warn("UNBOUND AI DATABASE POOL CLOSE WARNING:", error?.message || error);
+  }
+}
+
+function scheduleDatabaseInitialization(reason = "retry") {
+  if (!process.env.DATABASE_URL || databaseRetryTimer || databaseInitializing) {
+    return;
+  }
+
+  const delay = databaseRetryDelay(databaseInitAttempt || 1, DATABASE_RESILIENCE);
+  console.warn(
+    `UNBOUND AI database retry scheduled in ${delay}ms (${reason}).`
+  );
+
+  databaseRetryTimer = setTimeout(() => {
+    databaseRetryTimer = null;
+    void initializeDatabaseWithRetry();
+  }, delay);
+  databaseRetryTimer.unref?.();
 }
 
 function normalizeEmail(value) {
@@ -258,6 +307,10 @@ function cleanDisplayName(value, email) {
 }
 
 async function initializeDatabase() {
+  const previousPool = pool;
+  pool = null;
+  await closePoolQuietly(previousPool);
+
   pool = createPool();
 
   if (!pool) {
@@ -267,6 +320,9 @@ async function initializeDatabase() {
     );
     return;
   }
+
+  await pool.query("SELECT 1");
+  console.log("UNBOUND AI database connection verified; applying schema checks.");
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -670,11 +726,36 @@ async function initializeDatabase() {
   console.log("UNBOUND AI database connected and account tables are ready.");
 }
 
-initializeDatabase().catch((error) => {
+async function initializeDatabaseWithRetry() {
+  if (databaseInitializing) return;
+
+  databaseInitializing = true;
+  databaseInitAttempt += 1;
   databaseReady = false;
-  databaseError = error.message;
-  console.error("UNBOUND AI DATABASE ERROR:", error);
-});
+  console.log(`UNBOUND AI database initialization attempt ${databaseInitAttempt} started.`);
+
+  try {
+    await initializeDatabase();
+    if (databaseReady) {
+      databaseInitAttempt = 0;
+    }
+  } catch (error) {
+    databaseReady = false;
+    databaseError = error?.message || "Database initialization failed.";
+    console.error(
+      `UNBOUND AI DATABASE INITIALIZATION FAILED (attempt ${databaseInitAttempt}):`,
+      error
+    );
+  } finally {
+    databaseInitializing = false;
+  }
+
+  if (!databaseReady && process.env.DATABASE_URL) {
+    scheduleDatabaseInitialization("initialization-failure");
+  }
+}
+
+void initializeDatabaseWithRetry();
 
 function requireDatabase(req, res, next) {
   if (!databaseReady || !pool) {
