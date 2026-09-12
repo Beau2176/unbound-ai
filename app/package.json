@@ -4,10 +4,10 @@
   "description": "UNBOUND AI server",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node start.js",
     "check": "node scripts/validate-source.js",
     "security-check": "node scripts/security-contract.js",
-    "regression-check": "node scripts/regression-contract.js && node scripts/request-id-contract.js && node scripts/age-verification-contract.js && node scripts/billing-session-contract.js && node scripts/advertising-contract.js && node scripts/session-access-contract.js && node scripts/chat-recovery-contract.js && node scripts/email-verification-contract.js && node scripts/email-verification-store-contract.js && node scripts/email-verification-service-contract.js && node scripts/email-verification-routes-contract.js",
+    "regression-check": "node scripts/regression-contract.js && node scripts/request-id-contract.js && node scripts/age-verification-contract.js && node scripts/billing-session-contract.js && node scripts/advertising-contract.js && node scripts/session-access-contract.js && node scripts/chat-recovery-contract.js && node scripts/email-verification-contract.js && node scripts/email-verification-store-contract.js && node scripts/email-verification-service-contract.js && node scripts/email-verification-routes-contract.js && node scripts/email-verification-server-integration-contract.js",
     "ci": "npm run check && npm run security-check && npm run regression-check && npm audit --omit=dev --audit-level=moderate"
   },
   "engines": {
