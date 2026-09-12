@@ -130,6 +130,16 @@ Product mode: RESEARCH MODE.
 - Keep citations attached to the claims they support. The user interface will make cited URLs visible and clickable.
 `;
 
+const CREATIVE_MODE_PROMPT = `
+Product mode: CREATIVE MODE.
+- Prioritize useful imagination, originality, and collaborative creation while following the user's requested format and constraints.
+- Help with brainstorming, fiction, scripts, concepts, names, worldbuilding, marketing concepts, roleplay scenarios, and creative problem-solving.
+- When the user asks for alternatives, produce meaningfully different options rather than superficial rewrites.
+- Preserve continuity, characters, tone, facts, and constraints established in the conversation unless the user asks to change them.
+- Do not present invented details as verified real-world facts. Clearly distinguish creative invention from factual claims when the boundary matters.
+- Do not claim web research or source verification unless a real research capability was actually invoked.
+`;
+
 app.disable("x-powered-by");
 app.use(createHttpSecurityMiddleware({ isProduction: IS_PRODUCTION }));
 app.use(
@@ -5012,9 +5022,10 @@ function normalizeDepthStyle(value) {
 }
 
 function normalizeProductMode(value) {
-  return String(value || "").trim().toLowerCase() === "research"
-    ? "research"
-    : "standard";
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "research") return "research";
+  if (normalized === "creative") return "creative";
+  return "standard";
 }
 
 function cleanHistory(history) {
@@ -5079,6 +5090,9 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
       await assertRequestCapability(req, "web_research");
       await assertRequestCapability(req, "citations");
     }
+    if (productMode === "creative") {
+      await assertOptionalAccountCapability(req, "creative_mode");
+    }
 
     const persistentChat = await preparePersistentChat(
       req,
@@ -5092,7 +5106,11 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
     const depthInstructions =
       depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT;
     const modeInstructions =
-      productMode === "research" ? RESEARCH_MODE_PROMPT : "";
+      productMode === "research"
+        ? RESEARCH_MODE_PROMPT
+        : productMode === "creative"
+          ? CREATIVE_MODE_PROMPT
+          : "";
 
     const input = [
       ...history,
@@ -5211,6 +5229,9 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
       depthStyle === "work" ? "work_mode" : "casual_mode"
     );
     await assertOptionalAccountCapability(req, "streaming");
+    if (productMode === "creative") {
+      await assertOptionalAccountCapability(req, "creative_mode");
+    }
 
     const persistentChat = await preparePersistentChat(
       req,
@@ -5223,6 +5244,8 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
       : cleanHistory(req.body.history).slice(-20);
     const depthInstructions =
       depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT;
+    const modeInstructions =
+      productMode === "creative" ? CREATIVE_MODE_PROMPT : "";
     const input = [
       ...history,
       { role: "user", content: message.slice(0, 12000) }
@@ -5251,7 +5274,9 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
 
     const aiResponse = await streamChat({
       model: gatewayStatus.model,
-      instructions: UNBOUND_SYSTEM_PROMPT + "\n\n" + depthInstructions,
+      instructions: [UNBOUND_SYSTEM_PROMPT, depthInstructions, modeInstructions]
+        .filter(Boolean)
+        .join("\n\n"),
       input,
       onDelta: async (delta) => {
         writeEvent({ type: "delta", delta });

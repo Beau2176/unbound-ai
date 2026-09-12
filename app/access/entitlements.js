@@ -54,6 +54,12 @@ const CAPABILITY_CATALOG = Object.freeze({
     implemented: true,
     minimumPlan: "top"
   }),
+  creative_mode: Object.freeze({
+    label: "Creative Mode",
+    description: "Idea generation, writing, brainstorming, worldbuilding, and creative collaboration.",
+    implemented: true,
+    minimumPlan: "free"
+  }),
   file_analysis: Object.freeze({
     label: "File analysis",
     description: "Upload and analyze supported documents and data files.",

@@ -418,6 +418,12 @@
       box-shadow: inset 0 0 0 1px rgba(188, 145, 255, 0.30);
     }
 
+    .product-button.active[data-product-mode="creative"] {
+      background: rgba(255, 173, 67, 0.16);
+      color: #ffe0b4;
+      box-shadow: inset 0 0 0 1px rgba(255, 190, 105, 0.28);
+    }
+
     .new-chat {
       padding: 7px 10px;
       border: 1px solid rgba(107, 193, 255, 0.30);
@@ -1383,6 +1389,7 @@
         <div class="chat-actions">
           <div class="product-control" role="group" aria-label="Product mode">
             <button id="standardModeButton" class="product-button active" data-product-mode="standard" type="button" aria-pressed="true">STANDARD</button>
+            <button id="creativeModeButton" class="product-button" data-product-mode="creative" type="button" aria-pressed="false">CREATIVE</button>
             <button id="researchModeButton" class="product-button" data-product-mode="research" type="button" aria-pressed="false">RESEARCH</button>
           </div>
           <div class="depth-control" role="group" aria-label="Response depth">
@@ -1717,6 +1724,7 @@
     const sendButton = document.getElementById("sendButton");
     const newChatButton = document.getElementById("newChatButton");
     const standardModeButton = document.getElementById("standardModeButton");
+    const creativeModeButton = document.getElementById("creativeModeButton");
     const researchModeButton = document.getElementById("researchModeButton");
     const productStatus = document.getElementById("productStatus");
     const casualModeButton = document.getElementById("casualModeButton");
@@ -1862,7 +1870,25 @@
     }
 
     function normalizeProductMode(value) {
-      return value === "research" ? "research" : "standard";
+      if (value === "research") return "research";
+      if (value === "creative") return "creative";
+      return "standard";
+    }
+
+    function productModeAllowedForCurrentAccount(value) {
+      const normalized = normalizeProductMode(value);
+      if (normalized === "research") {
+        return Boolean(currentUser) && canUseCapability("web_research");
+      }
+      if (normalized === "creative" && currentUser) {
+        return canUseCapability("creative_mode");
+      }
+      return true;
+    }
+
+    function safeProductMode(value) {
+      const normalized = normalizeProductMode(value);
+      return productModeAllowedForCurrentAccount(normalized) ? normalized : "standard";
     }
 
     function loadProductMode() {
@@ -1884,13 +1910,19 @@
 
     function renderProductMode() {
       const isResearch = productMode === "research";
-      standardModeButton.classList.toggle("active", !isResearch);
+      const isCreative = productMode === "creative";
+      const isStandard = !isResearch && !isCreative;
+      standardModeButton.classList.toggle("active", isStandard);
+      creativeModeButton.classList.toggle("active", isCreative);
       researchModeButton.classList.toggle("active", isResearch);
-      standardModeButton.setAttribute("aria-pressed", isResearch ? "false" : "true");
+      standardModeButton.setAttribute("aria-pressed", isStandard ? "true" : "false");
+      creativeModeButton.setAttribute("aria-pressed", isCreative ? "true" : "false");
       researchModeButton.setAttribute("aria-pressed", isResearch ? "true" : "false");
       productStatus.textContent = isResearch
         ? "Research Mode — Live web search + citations"
-        : "Standard Mode";
+        : isCreative
+          ? "Creative Mode — Ideas, writing + worldbuilding"
+          : "Standard Mode";
     }
 
     function setProductMode(value, { persist = true, announce = false } = {}) {
@@ -1901,7 +1933,9 @@
         showToast(
           productMode === "research"
             ? "Research Mode is active. Web search and citations will be used."
-            : "Standard Mode is active."
+            : productMode === "creative"
+              ? "Creative Mode is active. UNBOUND will prioritize imaginative collaboration."
+              : "Standard Mode is active."
         );
       }
     }
@@ -2090,12 +2124,9 @@
 
       activeConversationId = String(data.conversation?.id || conversationId);
       conversationHistory = normalizeHistory(data.messages || []);
-      productMode = normalizeProductMode(
+      productMode = safeProductMode(
         data.conversation?.productMode || loadProductMode()
       );
-      if (productMode === "research" && !canUseCapability("web_research")) {
-        productMode = "standard";
-      }
       depthStyle = normalizeDepthStyle(
         data.conversation?.depthStyle || loadDepthStyle()
       );
@@ -2119,7 +2150,7 @@
         body: JSON.stringify({
           messages: legacy,
           depthStyle: loadDepthStyle(),
-          productMode: canUseCapability("web_research") ? loadProductMode() : "standard"
+          productMode: safeProductMode(loadProductMode())
         })
       });
       const data = await readJson(response);
@@ -2134,12 +2165,9 @@
     }
 
     async function switchConversationScope() {
-      productMode = loadProductMode();
+      productMode = safeProductMode(loadProductMode());
       depthStyle = loadDepthStyle();
-      if (productMode === "research" && !canUseCapability("web_research")) {
-        productMode = "standard";
-        saveProductMode();
-      }
+      saveProductMode();
 
       if (!currentUser) {
         activeConversationId = null;
@@ -2415,7 +2443,7 @@
             message,
             history: priorHistory,
             depthStyle,
-            productMode: "standard",
+            productMode,
             conversationId: currentUser ? activeConversationId : null
           })
         });
@@ -2631,6 +2659,10 @@
         refreshSecurityAlertBadge().catch(() => {});
         deleteAccountButton.hidden = currentUser.role === "admin";
         historyButton.hidden = false;
+        const creativeAllowed = canUseCapability("creative_mode");
+        creativeModeButton.classList.toggle("locked", !creativeAllowed);
+        creativeModeButton.setAttribute("aria-disabled", creativeAllowed ? "false" : "true");
+        creativeModeButton.title = creativeAllowed ? "Creative Mode" : "Creative Mode is disabled for this account";
         const researchAllowed = canUseCapability("web_research");
         researchModeButton.classList.toggle("locked", !researchAllowed);
         researchModeButton.setAttribute("aria-disabled", researchAllowed ? "false" : "true");
@@ -2650,6 +2682,9 @@
       updateSecurityAlertBadge(0);
       deleteAccountButton.hidden = true;
       historyButton.hidden = true;
+      creativeModeButton.classList.remove("locked");
+      creativeModeButton.setAttribute("aria-disabled", "false");
+      creativeModeButton.title = "Creative Mode";
       researchModeButton.classList.add("locked");
       researchModeButton.setAttribute("aria-disabled", "true");
       researchModeButton.title = "Research Mode requires a signed-in TOP account";
@@ -4013,6 +4048,13 @@
     standardModeButton.addEventListener("click", () =>
       setProductMode("standard", { announce: true })
     );
+    creativeModeButton.addEventListener("click", () => {
+      if (currentUser && !canUseCapability("creative_mode")) {
+        showToast("Creative Mode is disabled for this account.");
+        return;
+      }
+      setProductMode("creative", { announce: true });
+    });
     researchModeButton.addEventListener("click", chooseResearchMode);
     casualModeButton.addEventListener("click", () =>
       setDepthStyle("casual", { announce: true })
