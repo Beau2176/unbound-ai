@@ -28,6 +28,16 @@ function getRateLimitPolicy(env = process.env) {
       limit: positiveIntEnv(env, "RATE_LIMIT_RECOVERY_PER_HOUR", 8, { max: 500 }),
       windowSeconds: 60 * 60
     }),
+    emailVerificationSend: Object.freeze({
+      scope: "email_verification_send",
+      limit: positiveIntEnv(env, "RATE_LIMIT_EMAIL_VERIFICATION_SEND_PER_HOUR", 6, { max: 500 }),
+      windowSeconds: 60 * 60
+    }),
+    emailVerificationConsume: Object.freeze({
+      scope: "email_verification_consume",
+      limit: positiveIntEnv(env, "RATE_LIMIT_EMAIL_VERIFICATION_CONSUME_PER_15_MIN", 40, { max: 2000 }),
+      windowSeconds: 15 * 60
+    }),
     guestChat: Object.freeze({
       scope: "chat_guest",
       limit: positiveIntEnv(env, "RATE_LIMIT_GUEST_CHAT_PER_HOUR", 60, { max: 10000 }),
