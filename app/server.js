@@ -879,8 +879,15 @@ function cleanHistory(history) {
     .slice(-20);
 }
 
-app.post("/api/chat", async (req, res) => {
+app.post("/api/chat", requireDatabase, async (req, res) => {
   try {
+    const user = await findSessionUser(req);
+    if (!user) {
+      return res.status(401).json({
+        error: "Sign in to use UNBOUND AI chat."
+      });
+    }
+
     const message =
       typeof req.body.message === "string" ? req.body.message.trim() : "";
 
