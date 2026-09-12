@@ -1,0 +1,44 @@
+name: Hard Age Verification UI v0.43
+
+on:
+  push:
+    branches:
+      - age-verification-ui-v0.43
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Apply v0.43 verification UI migration
+        run: node app/scripts/migrate-v043.js
+      - name: Install locked dependencies
+        working-directory: app
+        run: npm ci
+      - name: Run full permanent CI
+        working-directory: app
+        run: npm run ci
+      - name: Verify verification UI contract
+        run: |
+          grep -q 'id="ageVerificationStartButton"' app/index.html
+          grep -q 'fetch("/api/account/age-verification/start"' app/index.html
+          grep -q 'verificationUrl.startsWith("https://")' app/index.html
+          grep -q 'window.location.assign(verificationUrl)' app/index.html
+          grep -q 'ageGateway.startVerification' app/index.html
+      - name: Commit completed v0.43 and remove one-time migration
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/index.html app/scripts/regression-contract.js
+          git rm app/scripts/migrate-v043.js .github/workflows/age-verification-ui-v043.yml
+          git commit -m "Add hard-age verification user flow v0.43"
+          git push
