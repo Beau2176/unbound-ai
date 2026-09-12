@@ -24,8 +24,18 @@ The `commercial_adult` launch profile requires:
 5. **Database recovery ready** — backup protection is declared and verified according to the recovery policy, and a current restore drill is recorded.
 6. **Terms and Privacy published** — current policy versions are non-draft and have published URLs.
 7. **Legal consent enforcement enabled** — acceptance is enabled and the server is enforcing the current published policy versions.
-8. **Commercial billing ready** — the billing gateway is configured and supports checkout, customer portal, and webhooks.
-9. **Hard 18+ verification ready** — the age-verification gateway is configured for at least age 18 and supports both starting verification and webhook completion.
+8. **Transactional account email verified** — the email adapter/credentials are configured, the sender identity/domain is verified, production sending access is verified, and a recent successful real-delivery review is recorded.
+9. **Commercial billing ready** — the billing gateway is configured and supports checkout, customer portal, and webhooks.
+10. **Hard 18+ verification ready** — the age-verification gateway is configured for at least age 18 and supports both starting verification and webhook completion.
+
+Transactional email intentionally does not turn green just because an adapter exists or credentials are present. The operational attestations are controlled with:
+
+- `EMAIL_SENDER_IDENTITY_VERIFIED=true`
+- `EMAIL_PROVIDER_PRODUCTION_ACCESS_VERIFIED=true`
+- `EMAIL_DELIVERY_REVIEWED_AT=<ISO-8601 timestamp>`
+- optional `EMAIL_DELIVERY_REVIEW_MAX_AGE_DAYS` (default 90, bounded to 1–365 days)
+
+These values should be set only after the corresponding provider/domain configuration and real delivery test have actually been verified.
 
 ## Current blockers are expected during build-out
 
@@ -35,6 +45,8 @@ Examples of legitimate blockers include:
 
 - Free Render Postgres with no verified durable backup/restore protection;
 - draft or unpublished Terms/Privacy documents;
+- transactional email sender/domain or production access not verified;
+- no recent real verification-email delivery test;
 - billing provider not connected or adapter not installed;
 - hard age-verification provider not connected or adapter not installed;
 - AI provider credentials missing;
@@ -50,6 +62,7 @@ Launch-readiness output contains capability/configuration state only. It must ne
 - database URLs or credentials;
 - webhook secrets;
 - passwords, recovery codes, sessions, cookies, or passkeys;
+- raw email-verification tokens, verification links, or provider message IDs;
 - user emails, names, prompts, responses, or conversation content.
 
 ## What this gate does not mean
