@@ -1,0 +1,130 @@
+name: Production smoke — account deletion and Research history
+
+on:
+  push:
+    branches:
+      - smoke-account-delete-v0.9
+    paths:
+      - .smoke-account-delete/trigger.txt
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SERVICE_URL: https://unbound-ai-app.onrender.com
+    steps:
+      - name: Prepare disposable identity
+        run: |
+          TEST_EMAIL="unbound-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.invalid"
+          TEST_PASSWORD="Smoke-$(openssl rand -hex 18)"
+          echo "TEST_EMAIL=$TEST_EMAIL" >> "$GITHUB_ENV"
+          echo "TEST_PASSWORD=$TEST_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Create disposable account
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/register-body.json
+          import json, os
+          print(json.dumps({
+            'displayName': 'UNBOUND Smoke Test',
+            'email': os.environ['TEST_EMAIL'],
+            'password': os.environ['TEST_PASSWORD'],
+            'adultConfirmed': True
+          }))
+          PY
+          curl -fsS --max-time 30 \
+            -c /tmp/cookies.txt -b /tmp/cookies.txt \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/register-body.json \
+            "$SERVICE_URL/api/auth/register" > /tmp/register.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/register.json'))
+          user=data.get('user') or {}
+          assert user.get('id'), data
+          assert user.get('email','').endswith('@example.invalid'), data
+          print('Disposable account created:', user.get('id'))
+          PY
+
+      - name: Verify signed-in access
+        run: |
+          curl -fsS --max-time 30 -b /tmp/cookies.txt "$SERVICE_URL/api/account/access" > /tmp/access.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/access.json'))
+          assert (data.get('user') or {}).get('id'), data
+          assert data.get('access') is not None, data
+          print('Signed-in entitlement access OK.')
+          PY
+
+      - name: Run signed-in Research query
+        run: |
+          curl -fsS --max-time 150 \
+            -b /tmp/cookies.txt -c /tmp/cookies.txt \
+            -H 'Content-Type: application/json' \
+            -d '{"message":"Use web research to identify the current title shown on OpenAI’s official homepage. Answer in one short sentence and cite the source.","history":[],"depthStyle":"casual","productMode":"research","conversationId":null}' \
+            "$SERVICE_URL/api/chat" > /tmp/research.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/research.json'))
+          assert data.get('productMode') == 'research', data
+          assert int(data.get('webSearchCalls') or 0) >= 1, data
+          assert data.get('conversationId'), data
+          assert len(data.get('sources') or []) >= 1, data
+          assert len(data.get('citations') or []) >= 1, data
+          open('/tmp/conversation_id','w').write(str(data['conversationId']))
+          print('Research query OK; conversation:', data['conversationId'])
+          PY
+
+      - name: Verify citations survive server history round-trip
+        run: |
+          CONVERSATION_ID="$(cat /tmp/conversation_id)"
+          curl -fsS --max-time 30 -b /tmp/cookies.txt \
+            "$SERVICE_URL/api/conversations/$CONVERSATION_ID" > /tmp/history.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/history.json'))
+          conversation=data.get('conversation') or {}
+          messages=data.get('messages') or []
+          assert conversation.get('productMode') == 'research', data
+          assistants=[m for m in messages if m.get('role')=='assistant']
+          assert assistants, data
+          latest=assistants[-1]
+          assert len(latest.get('sources') or []) >= 1, latest
+          assert len(latest.get('citations') or []) >= 1, latest
+          print('Research citations persisted:', len(latest.get('sources') or []), len(latest.get('citations') or []))
+          PY
+
+      - name: Delete disposable account
+        run: |
+          python3 - <<'PY' > /tmp/delete-body.json
+          import json, os
+          print(json.dumps({'password': os.environ['TEST_PASSWORD'], 'confirmation': 'DELETE'}))
+          PY
+          curl -fsS --max-time 30 \
+            -b /tmp/cookies.txt -c /tmp/cookies.txt \
+            -X DELETE -H 'Content-Type: application/json' \
+            --data-binary @/tmp/delete-body.json \
+            "$SERVICE_URL/api/account" > /tmp/delete.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/delete.json'))
+          assert data.get('ok') is True and data.get('deleted') is True, data
+          print('Disposable account deletion confirmed.')
+          PY
+
+      - name: Verify deleted account cannot return
+        run: |
+          me_code="$(curl -sS -o /tmp/me.json -w '%{http_code}' --max-time 20 -b /tmp/cookies.txt "$SERVICE_URL/api/auth/me")"
+          test "$me_code" = "401"
+          python3 - <<'PY' > /tmp/login-body.json
+          import json, os
+          print(json.dumps({'email': os.environ['TEST_EMAIL'], 'password': os.environ['TEST_PASSWORD']}))
+          PY
+          login_code="$(curl -sS -o /tmp/login.json -w '%{http_code}' --max-time 30 -H 'Content-Type: application/json' --data-binary @/tmp/login-body.json "$SERVICE_URL/api/auth/login")"
+          test "$login_code" = "401"
+          echo 'Deleted account cannot be loaded or signed into.'
