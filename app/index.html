@@ -1167,6 +1167,33 @@
       line-height: 1.5;
     }
 
+
+
+    .device-list { display: grid; gap: 8px; margin-bottom: 15px; }
+    .device-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 11px;
+      border: 1px solid rgba(107, 193, 255, 0.18);
+      border-radius: 11px;
+      background: rgba(255,255,255,0.025);
+    }
+    .device-name { font-size: 12px; font-weight: 850; color: #f3f9ff; }
+    .device-meta { margin-top: 3px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .device-actions { display: flex; align-items: center; gap: 7px; }
+    .device-revoke {
+      padding: 7px 9px;
+      border: 1px solid rgba(255,118,118,.32);
+      border-radius: 9px;
+      background: rgba(105,18,27,.24);
+      color: #ffd4d4;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 850;
+    }
+
     .delete-account-warning {
       margin: 0 0 16px;
       padding: 13px 14px;
@@ -1415,9 +1442,17 @@
       <div class="auth-body">
         <div id="securityFeedback" class="auth-feedback" role="status" aria-live="polite"></div>
         <div class="delete-account-warning" style="border-color: rgba(107,193,255,.25); background: rgba(32,88,140,.16); color:#d9efff;">
-          Active sessions: <strong id="activeSessionCount">—</strong>
+          Active sessions: <strong id="activeSessionCount">—</strong> · Registered devices: <strong id="registeredDeviceCount">—</strong>
           <span id="currentSessionExpiry"></span>
         </div>
+
+        <div class="access-section-title">Registered devices</div>
+        <div class="auth-field" style="margin-bottom:10px;">
+          <label for="deviceRevokePassword">Current password for device revocation</label>
+          <input id="deviceRevokePassword" type="password" autocomplete="current-password" maxlength="200" />
+          <div class="auth-help">Required only when you revoke a registered device. The current device cannot revoke itself.</div>
+        </div>
+        <div id="deviceList" class="device-list"><div class="history-empty">Loading registered devices…</div></div>
 
         <form id="passwordChangeForm" class="auth-form" autocomplete="off">
           <div class="auth-field">
@@ -1444,6 +1479,17 @@
             <div class="auth-help">This keeps this device signed in and logs out every other device.</div>
           </div>
           <button id="revokeSessionsSubmit" class="auth-submit secondary" type="submit">LOG OUT OTHER DEVICES</button>
+        </form>
+
+        <div style="height:1px;background:rgba(255,255,255,.08);margin:18px 0;"></div>
+
+        <form id="logoutAllForm" class="auth-form" autocomplete="off">
+          <div class="auth-field">
+            <label for="logoutAllPassword">Current password</label>
+            <input id="logoutAllPassword" type="password" autocomplete="current-password" maxlength="200" required />
+            <div class="auth-help">This immediately logs out every session, including this one. Registered device records remain until revoked.</div>
+          </div>
+          <button id="logoutAllSubmit" class="auth-submit danger" type="submit">LOG OUT ALL DEVICES</button>
         </form>
       </div>
     </section>
@@ -1548,7 +1594,10 @@
     const securityCloseButton = document.getElementById("securityCloseButton");
     const securityFeedback = document.getElementById("securityFeedback");
     const activeSessionCount = document.getElementById("activeSessionCount");
+    const registeredDeviceCount = document.getElementById("registeredDeviceCount");
     const currentSessionExpiry = document.getElementById("currentSessionExpiry");
+    const deviceList = document.getElementById("deviceList");
+    const deviceRevokePassword = document.getElementById("deviceRevokePassword");
     const passwordChangeForm = document.getElementById("passwordChangeForm");
     const currentPasswordForChange = document.getElementById("currentPasswordForChange");
     const newPassword = document.getElementById("newPassword");
@@ -1557,6 +1606,9 @@
     const revokeSessionsForm = document.getElementById("revokeSessionsForm");
     const revokeSessionsPassword = document.getElementById("revokeSessionsPassword");
     const revokeSessionsSubmit = document.getElementById("revokeSessionsSubmit");
+    const logoutAllForm = document.getElementById("logoutAllForm");
+    const logoutAllPassword = document.getElementById("logoutAllPassword");
+    const logoutAllSubmit = document.getElementById("logoutAllSubmit");
     const deleteAccountModal = document.getElementById("deleteAccountModal");
     const deleteAccountCloseButton = document.getElementById("deleteAccountCloseButton");
     const deleteAccountCancelButton = document.getElementById("deleteAccountCancelButton");
@@ -1574,6 +1626,7 @@
     let productMode = "standard";
     let depthStyle = "casual";
     let toastTimer = null;
+    let securityDevices = [];
 
     function escapeHtml(value) {
       return String(value)
@@ -2730,6 +2783,90 @@
       securityFeedback.textContent = message;
     }
 
+    function renderSecurityDevices() {
+      deviceList.innerHTML = "";
+      if (!securityDevices.length) {
+        deviceList.innerHTML = '<div class="history-empty">No registered devices yet.</div>';
+        return;
+      }
+
+      for (const device of securityDevices) {
+        const row = document.createElement("div");
+        row.className = "device-row";
+        const copy = document.createElement("div");
+        const name = document.createElement("div");
+        name.className = "device-name";
+        name.textContent = device.label || "Unknown device";
+        const meta = document.createElement("div");
+        meta.className = "device-meta";
+        const lastSeen = device.lastSeenAt ? new Date(device.lastSeenAt) : null;
+        const seenText = lastSeen && !Number.isNaN(lastSeen.getTime())
+          ? lastSeen.toLocaleString()
+          : "unknown";
+        meta.textContent = `${Number(device.activeSessions || 0)} active session(s) • last seen ${seenText}`;
+        copy.append(name, meta);
+
+        const actions = document.createElement("div");
+        actions.className = "device-actions";
+        if (device.current) {
+          const badge = document.createElement("span");
+          badge.className = "capability-badge live";
+          badge.textContent = "CURRENT";
+          actions.appendChild(badge);
+        } else {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "device-revoke";
+          button.textContent = "REVOKE";
+          button.addEventListener("click", async () => {
+            const password = deviceRevokePassword.value;
+            if (!password) {
+              showSecurityFeedback("Enter your current password above before revoking a device.");
+              deviceRevokePassword.focus();
+              return;
+            }
+            if (!window.confirm(`Revoke ${device.label || "this device"} and log out its active sessions?`)) return;
+            button.disabled = true;
+            try {
+              const response = await fetch(`/api/account/devices/${encodeURIComponent(device.id)}/revoke`, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ password })
+              });
+              const data = await readJson(response);
+              if (!response.ok) throw new Error(data.error || "Could not revoke that device.");
+              deviceRevokePassword.value = "";
+              showSecurityFeedback(
+                `${device.label || "Device"} revoked. ${Number(data.revokedSessions || 0)} session(s) ended.`,
+                "success"
+              );
+              await refreshSecurityStatus();
+            } catch (error) {
+              showSecurityFeedback(error.message || "Could not revoke that device.");
+            } finally {
+              button.disabled = false;
+            }
+          });
+          actions.appendChild(button);
+        }
+        row.append(copy, actions);
+        deviceList.appendChild(row);
+      }
+    }
+
+    async function loadSecurityDevices() {
+      const response = await fetch("/api/account/devices", {
+        method: "GET",
+        credentials: "same-origin",
+        headers: { "Accept": "application/json" }
+      });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error || "Could not load registered devices.");
+      securityDevices = Array.isArray(data.devices) ? data.devices : [];
+      renderSecurityDevices();
+    }
+
     async function refreshSecurityStatus() {
       const response = await fetch("/api/account/security", {
         method: "GET",
@@ -2742,6 +2879,7 @@
       }
 
       activeSessionCount.textContent = String(data.activeSessions ?? 0);
+      registeredDeviceCount.textContent = String(data.registeredDevices ?? 0);
       if (data.currentSessionExpiresAt) {
         const date = new Date(data.currentSessionExpiresAt);
         currentSessionExpiry.textContent = Number.isNaN(date.getTime())
@@ -2750,12 +2888,15 @@
       } else {
         currentSessionExpiry.textContent = "";
       }
+      await loadSecurityDevices();
     }
 
     async function openSecurity() {
       if (!currentUser) return;
       passwordChangeForm.reset();
       revokeSessionsForm.reset();
+      logoutAllForm.reset();
+      deviceRevokePassword.value = "";
       clearSecurityFeedback();
       securityModal.hidden = false;
       document.body.classList.add("modal-open");
@@ -2767,10 +2908,13 @@
     }
 
     function closeSecurity() {
-      if (passwordChangeSubmit.disabled || revokeSessionsSubmit.disabled) return;
+      if (passwordChangeSubmit.disabled || revokeSessionsSubmit.disabled || logoutAllSubmit.disabled) return;
       securityModal.hidden = true;
       passwordChangeForm.reset();
       revokeSessionsForm.reset();
+      logoutAllForm.reset();
+      deviceRevokePassword.value = "";
+      securityDevices = [];
       clearSecurityFeedback();
       if (authModal.hidden && historyModal.hidden && accessModal.hidden && deleteAccountModal.hidden) {
         document.body.classList.remove("modal-open");
@@ -2860,6 +3004,48 @@
       } finally {
         revokeSessionsSubmit.disabled = false;
         revokeSessionsSubmit.textContent = "LOG OUT OTHER DEVICES";
+      }
+    }
+
+
+
+    async function handleLogoutAllDevices(event) {
+      event.preventDefault();
+      clearSecurityFeedback();
+      const password = logoutAllPassword.value;
+      if (!password) {
+        showSecurityFeedback("Enter your current password.");
+        return;
+      }
+
+      logoutAllSubmit.disabled = true;
+      logoutAllSubmit.textContent = "LOGGING OUT...";
+      try {
+        const response = await fetch("/api/account/sessions/revoke-all", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password })
+        });
+        const data = await readJson(response);
+        if (!response.ok || data.loggedOut !== true) {
+          throw new Error(data.error || "Could not log out all devices.");
+        }
+
+        securityModal.hidden = true;
+        currentUser = null;
+        accountAccess = null;
+        activeConversationId = null;
+        securityDevices = [];
+        document.body.classList.remove("modal-open");
+        renderAccountUi();
+        await switchConversationScope();
+        showToast(`${Number(data.revokedSessions || 0)} session(s) logged out across all devices.`);
+      } catch (error) {
+        showSecurityFeedback(error.message || "Could not log out all devices.");
+      } finally {
+        logoutAllSubmit.disabled = false;
+        logoutAllSubmit.textContent = "LOG OUT ALL DEVICES";
       }
     }
 
@@ -3024,6 +3210,7 @@
     securityCloseButton.addEventListener("click", closeSecurity);
     passwordChangeForm.addEventListener("submit", handlePasswordChange);
     revokeSessionsForm.addEventListener("submit", handleRevokeSessions);
+    logoutAllForm.addEventListener("submit", handleLogoutAllDevices);
     deleteAccountButton.addEventListener("click", openDeleteAccount);
     deleteAccountCloseButton.addEventListener("click", closeDeleteAccount);
     deleteAccountCancelButton.addEventListener("click", closeDeleteAccount);

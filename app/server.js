@@ -26,6 +26,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const SESSION_COOKIE = "unbound_session";
 const SESSION_DAYS = 30;
+const DEVICE_COOKIE = "unbound_device";
+const DEVICE_DAYS = 365;
 const IS_PRODUCTION =
   process.env.NODE_ENV === "production" || process.env.RENDER === "true";
 const scryptAsync = promisify(crypto.scrypt);
@@ -160,6 +162,41 @@ async function initializeDatabase() {
 
     CREATE INDEX IF NOT EXISTS user_sessions_expires_at_idx
       ON user_sessions(expires_at);
+
+    CREATE TABLE IF NOT EXISTS account_devices (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      device_token_hash TEXT NOT NULL,
+      device_label TEXT NOT NULL DEFAULT 'Unknown device',
+      first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      revoked_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(user_id, device_token_hash)
+    );
+
+    CREATE INDEX IF NOT EXISTS account_devices_user_active_idx
+      ON account_devices(user_id, revoked_at, last_seen_at DESC);
+
+    ALTER TABLE user_sessions
+      ADD COLUMN IF NOT EXISTS device_id BIGINT REFERENCES account_devices(id) ON DELETE SET NULL;
+
+    CREATE INDEX IF NOT EXISTS user_sessions_device_id_idx
+      ON user_sessions(device_id);
+
+    CREATE TABLE IF NOT EXISTS account_security_events (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      device_id BIGINT REFERENCES account_devices(id) ON DELETE SET NULL,
+      event_type TEXT NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'info',
+      details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS account_security_events_user_created_idx
+      ON account_security_events(user_id, created_at DESC);
+
 
     CREATE TABLE IF NOT EXISTS conversations (
       id BIGSERIAL PRIMARY KEY,
@@ -413,6 +450,143 @@ function hashSessionToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+
+function hashDeviceToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function setDeviceCookie(res, token) {
+  const maxAge = DEVICE_DAYS * 24 * 60 * 60;
+  const secure = IS_PRODUCTION ? "; Secure" : "";
+  res.append(
+    "Set-Cookie",
+    `${DEVICE_COOKIE}=${encodeURIComponent(
+      token
+    )}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${maxAge}${secure}`
+  );
+}
+
+function coarseDeviceLabel(req) {
+  const ua = String(req?.headers?.["user-agent"] || "").toLowerCase();
+  let browser = "Browser";
+  let os = "device";
+
+  if (ua.includes("edg/")) browser = "Edge";
+  else if (ua.includes("firefox/")) browser = "Firefox";
+  else if (ua.includes("chrome/") || ua.includes("crios/")) browser = "Chrome";
+  else if (ua.includes("safari/")) browser = "Safari";
+
+  if (ua.includes("android")) os = "Android";
+  else if (ua.includes("iphone") || ua.includes("ipad")) os = "iPhone/iPad";
+  else if (ua.includes("windows")) os = "Windows";
+  else if (ua.includes("mac os") || ua.includes("macintosh")) os = "Mac";
+  else if (ua.includes("linux")) os = "Linux";
+
+  return `${browser} on ${os}`.slice(0, 80);
+}
+
+async function writeSecurityEvent(
+  client,
+  userId,
+  eventType,
+  deviceId = null,
+  details = {},
+  severity = "info"
+) {
+  await client.query(
+    `INSERT INTO account_security_events (
+       user_id,
+       device_id,
+       event_type,
+       severity,
+       details
+     )
+     VALUES ($1, $2, $3, $4, $5::jsonb)`,
+    [userId, deviceId, eventType, severity, JSON.stringify(details || {})]
+  );
+}
+
+async function ensureDeviceForRequest(userId, req, res, client = pool) {
+  let token = parseCookies(req)[DEVICE_COOKIE];
+  let issuedCookie = false;
+  if (!token) {
+    token = crypto.randomBytes(32).toString("base64url");
+    issuedCookie = true;
+  }
+
+  const tokenHash = hashDeviceToken(token);
+  const label = coarseDeviceLabel(req);
+  const existingResult = await client.query(
+    `SELECT id, device_label, revoked_at
+     FROM account_devices
+     WHERE user_id = $1 AND device_token_hash = $2
+     LIMIT 1`,
+    [userId, tokenHash]
+  );
+  let device = existingResult.rows[0] || null;
+  const isNewOrReactivated = !device || Boolean(device.revoked_at);
+
+  if (device) {
+    const updated = await client.query(
+      `UPDATE account_devices
+       SET device_label = $1,
+           last_seen_at = NOW(),
+           revoked_at = NULL,
+           updated_at = NOW()
+       WHERE id = $2 AND user_id = $3
+       RETURNING id, device_label, first_seen_at, last_seen_at, revoked_at`,
+      [label, device.id, userId]
+    );
+    device = updated.rows[0];
+  } else {
+    const inserted = await client.query(
+      `INSERT INTO account_devices (
+         user_id,
+         device_token_hash,
+         device_label,
+         first_seen_at,
+         last_seen_at,
+         updated_at
+       )
+       VALUES ($1, $2, $3, NOW(), NOW(), NOW())
+       RETURNING id, device_label, first_seen_at, last_seen_at, revoked_at`,
+      [userId, tokenHash, label]
+    );
+    device = inserted.rows[0];
+  }
+
+  if (issuedCookie) {
+    setDeviceCookie(res, token);
+  }
+
+  if (isNewOrReactivated) {
+    await writeSecurityEvent(
+      client,
+      userId,
+      "device.registered",
+      device.id,
+      { label: device.device_label }
+    );
+  }
+
+  return { ...device, isNewOrReactivated };
+}
+
+async function associateCurrentSessionWithDevice(userId, req, res, client = pool) {
+  const token = parseCookies(req)[SESSION_COOKIE];
+  if (!token) return { device: null, tokenHash: null };
+
+  const tokenHash = hashSessionToken(token);
+  const device = await ensureDeviceForRequest(userId, req, res, client);
+  await client.query(
+    `UPDATE user_sessions
+     SET device_id = $1
+     WHERE user_id = $2 AND token_hash = $3`,
+    [device.id, userId, tokenHash]
+  );
+  return { device, tokenHash };
+}
+
 function parseCookies(req) {
   const header = req.headers.cookie || "";
   const cookies = {};
@@ -436,7 +610,7 @@ function setSessionCookie(res, token) {
   const maxAge = SESSION_DAYS * 24 * 60 * 60;
   const secure = IS_PRODUCTION ? "; Secure" : "";
 
-  res.setHeader(
+  res.append(
     "Set-Cookie",
     `${SESSION_COOKIE}=${encodeURIComponent(
       token
@@ -447,20 +621,21 @@ function setSessionCookie(res, token) {
 function clearSessionCookie(res) {
   const secure = IS_PRODUCTION ? "; Secure" : "";
 
-  res.setHeader(
+  res.append(
     "Set-Cookie",
     `${SESSION_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure}`
   );
 }
 
-async function createSession(userId, res) {
+async function createSession(userId, res, req = null) {
   const token = crypto.randomBytes(32).toString("base64url");
   const tokenHash = hashSessionToken(token);
+  const device = req ? await ensureDeviceForRequest(userId, req, res) : null;
 
   await pool.query(
-    `INSERT INTO user_sessions (user_id, token_hash, expires_at)
-     VALUES ($1, $2, NOW() + INTERVAL '${SESSION_DAYS} days')`,
-    [userId, tokenHash]
+    `INSERT INTO user_sessions (user_id, token_hash, expires_at, device_id)
+     VALUES ($1, $2, NOW() + INTERVAL '${SESSION_DAYS} days', $3)`,
+    [userId, tokenHash, device?.id || null]
   );
 
   setSessionCookie(res, token);
@@ -1007,7 +1182,7 @@ app.post("/api/auth/register", requireDatabase, async (req, res) => {
       complimentary_top_tier: false
     };
 
-    await createSession(user.id, res);
+    await createSession(user.id, res, req);
 
     return res.status(201).json({
       user: publicUser(user)
@@ -1050,7 +1225,7 @@ app.post("/api/auth/login", requireDatabase, async (req, res) => {
       });
     }
 
-    await createSession(user.id, res);
+    await createSession(user.id, res, req);
 
     const grantResult = await pool.query(
       `SELECT EXISTS (
@@ -1152,21 +1327,38 @@ app.get(
   requireSignedIn,
   async (req, res) => {
     try {
-      const token = parseCookies(req)[SESSION_COOKIE];
-      const tokenHash = token ? hashSessionToken(token) : null;
-      const result = await pool.query(
-        `SELECT
-           COUNT(*)::int AS active_sessions,
-           MAX(CASE WHEN token_hash = $2 THEN expires_at END) AS current_expires_at
-         FROM user_sessions
-         WHERE user_id = $1
-           AND expires_at > NOW()`,
-        [req.user.id, tokenHash]
+      const association = await associateCurrentSessionWithDevice(
+        req.user.id,
+        req,
+        res
       );
+      const tokenHash = association.tokenHash;
+      const [sessionResult, deviceCountResult] = await Promise.all([
+        pool.query(
+          `SELECT
+             COUNT(*)::int AS active_sessions,
+             MAX(CASE WHEN token_hash = $2 THEN expires_at END) AS current_expires_at,
+             MAX(CASE WHEN token_hash = $2 THEN device_id END) AS current_device_id
+           FROM user_sessions
+           WHERE user_id = $1
+             AND expires_at > NOW()`,
+          [req.user.id, tokenHash]
+        ),
+        pool.query(
+          `SELECT COUNT(*)::int AS registered_devices
+           FROM account_devices
+           WHERE user_id = $1 AND revoked_at IS NULL`,
+          [req.user.id]
+        )
+      ]);
 
       return res.json({
-        activeSessions: Number(result.rows[0]?.active_sessions || 0),
-        currentSessionExpiresAt: result.rows[0]?.current_expires_at || null
+        activeSessions: Number(sessionResult.rows[0]?.active_sessions || 0),
+        registeredDevices: Number(deviceCountResult.rows[0]?.registered_devices || 0),
+        currentDeviceId: sessionResult.rows[0]?.current_device_id
+          ? String(sessionResult.rows[0].current_device_id)
+          : null,
+        currentSessionExpiresAt: sessionResult.rows[0]?.current_expires_at || null
       });
     } catch (error) {
       console.error("UNBOUND AI ACCOUNT SECURITY STATUS ERROR:", error);
@@ -1253,12 +1445,20 @@ app.post(
         [user.id]
       );
 
+      const device = await ensureDeviceForRequest(user.id, req, res, client);
       const token = crypto.randomBytes(32).toString("base64url");
       const tokenHash = hashSessionToken(token);
       await client.query(
-        `INSERT INTO user_sessions (user_id, token_hash, expires_at)
-         VALUES ($1, $2, NOW() + INTERVAL '${SESSION_DAYS} days')`,
-        [user.id, tokenHash]
+        `INSERT INTO user_sessions (user_id, token_hash, expires_at, device_id)
+         VALUES ($1, $2, NOW() + INTERVAL '${SESSION_DAYS} days', $3)`,
+        [user.id, tokenHash, device.id]
+      );
+      await writeSecurityEvent(
+        client,
+        user.id,
+        "password.changed",
+        device.id,
+        { otherSessionsRevoked: Math.max(Number(revoked.rowCount || 0) - 1, 0) }
       );
 
       await client.query("COMMIT");
@@ -1322,7 +1522,7 @@ app.post(
       }
 
       const currentResult = await client.query(
-        `SELECT id
+        `SELECT id, device_id
          FROM user_sessions
          WHERE user_id = $1
            AND token_hash = $2
@@ -1345,6 +1545,13 @@ app.post(
         [user.id, tokenHash]
       );
 
+      await writeSecurityEvent(
+        client,
+        user.id,
+        "sessions.others_revoked",
+        currentResult.rows[0]?.device_id || null,
+        { revokedSessions: Number(revoked.rowCount || 0) }
+      );
       await client.query("COMMIT");
       return res.json({
         ok: true,
@@ -1359,6 +1566,200 @@ app.post(
       }
       console.error("UNBOUND AI SESSION REVOCATION ERROR:", error);
       return res.status(500).json({ error: "Could not revoke other sessions." });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+
+app.get(
+  "/api/account/devices",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    try {
+      const association = await associateCurrentSessionWithDevice(
+        req.user.id,
+        req,
+        res
+      );
+      const currentDeviceId = association.device?.id || null;
+      const result = await pool.query(
+        `SELECT
+           d.id,
+           d.device_label,
+           d.first_seen_at,
+           d.last_seen_at,
+           COUNT(s.id) FILTER (WHERE s.expires_at > NOW())::int AS active_sessions
+         FROM account_devices d
+         LEFT JOIN user_sessions s ON s.device_id = d.id AND s.user_id = d.user_id
+         WHERE d.user_id = $1
+           AND d.revoked_at IS NULL
+         GROUP BY d.id
+         ORDER BY (d.id = $2) DESC, d.last_seen_at DESC, d.id DESC`,
+        [req.user.id, currentDeviceId]
+      );
+
+      return res.json({
+        devices: result.rows.map((row) => ({
+          id: String(row.id),
+          label: row.device_label,
+          current: currentDeviceId !== null && String(row.id) === String(currentDeviceId),
+          firstSeenAt: row.first_seen_at,
+          lastSeenAt: row.last_seen_at,
+          activeSessions: Number(row.active_sessions || 0)
+        }))
+      });
+    } catch (error) {
+      console.error("UNBOUND AI DEVICE LIST ERROR:", error);
+      return res.status(500).json({ error: "Could not load registered devices." });
+    }
+  }
+);
+
+app.post(
+  "/api/account/devices/:id/revoke",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    const deviceId = String(req.params.id || "").trim();
+    const password = typeof req.body.password === "string" ? req.body.password : "";
+    if (!/^\d+$/.test(deviceId)) {
+      return res.status(400).json({ error: "Invalid device ID." });
+    }
+    if (!password || password.length > 200) {
+      return res.status(400).json({ error: "Enter your current password." });
+    }
+
+    const token = parseCookies(req)[SESSION_COOKIE];
+    const tokenHash = token ? hashSessionToken(token) : null;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const userResult = await client.query(
+        `SELECT id, password_hash FROM users WHERE id = $1 LIMIT 1 FOR UPDATE`,
+        [req.user.id]
+      );
+      const user = userResult.rows[0];
+      if (!user || !(await verifyPassword(password, user.password_hash))) {
+        await client.query("ROLLBACK");
+        return res.status(401).json({ error: "Current password is incorrect." });
+      }
+
+      const currentResult = await client.query(
+        `SELECT device_id FROM user_sessions
+         WHERE user_id = $1 AND token_hash = $2 AND expires_at > NOW()
+         LIMIT 1`,
+        [user.id, tokenHash]
+      );
+      const currentDeviceId = currentResult.rows[0]?.device_id;
+      if (currentDeviceId && String(currentDeviceId) === deviceId) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          error: "You cannot revoke the device you are currently using. Use Log Out All Devices if you want to end this session too."
+        });
+      }
+
+      const targetResult = await client.query(
+        `SELECT id, device_label FROM account_devices
+         WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+         LIMIT 1 FOR UPDATE`,
+        [deviceId, user.id]
+      );
+      const target = targetResult.rows[0];
+      if (!target) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "Registered device not found." });
+      }
+
+      const revokedSessions = await client.query(
+        `DELETE FROM user_sessions
+         WHERE user_id = $1 AND device_id = $2
+         RETURNING id`,
+        [user.id, target.id]
+      );
+      await client.query(
+        `UPDATE account_devices
+         SET revoked_at = NOW(), updated_at = NOW()
+         WHERE id = $1 AND user_id = $2`,
+        [target.id, user.id]
+      );
+      await writeSecurityEvent(
+        client,
+        user.id,
+        "device.revoked",
+        null,
+        {
+          revokedDeviceId: String(target.id),
+          label: target.device_label,
+          revokedSessions: Number(revokedSessions.rowCount || 0)
+        },
+        "warning"
+      );
+      await client.query("COMMIT");
+
+      return res.json({
+        ok: true,
+        deviceId,
+        revokedSessions: Number(revokedSessions.rowCount || 0)
+      });
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch (_) {}
+      console.error("UNBOUND AI DEVICE REVOKE ERROR:", error);
+      return res.status(500).json({ error: "Could not revoke that device." });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+app.post(
+  "/api/account/sessions/revoke-all",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    const password = typeof req.body.password === "string" ? req.body.password : "";
+    if (!password || password.length > 200) {
+      return res.status(400).json({ error: "Enter your current password." });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const userResult = await client.query(
+        `SELECT id, password_hash FROM users WHERE id = $1 LIMIT 1 FOR UPDATE`,
+        [req.user.id]
+      );
+      const user = userResult.rows[0];
+      if (!user || !(await verifyPassword(password, user.password_hash))) {
+        await client.query("ROLLBACK");
+        return res.status(401).json({ error: "Current password is incorrect." });
+      }
+
+      const revoked = await client.query(
+        `DELETE FROM user_sessions WHERE user_id = $1 RETURNING id`,
+        [user.id]
+      );
+      await writeSecurityEvent(
+        client,
+        user.id,
+        "sessions.all_revoked",
+        null,
+        { revokedSessions: Number(revoked.rowCount || 0) },
+        "warning"
+      );
+      await client.query("COMMIT");
+      clearSessionCookie(res);
+      return res.json({
+        ok: true,
+        loggedOut: true,
+        revokedSessions: Number(revoked.rowCount || 0)
+      });
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch (_) {}
+      console.error("UNBOUND AI LOGOUT ALL DEVICES ERROR:", error);
+      return res.status(500).json({ error: "Could not log out all devices." });
     } finally {
       client.release();
     }
