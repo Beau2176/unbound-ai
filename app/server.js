@@ -1658,7 +1658,7 @@ function cleanHistory(history) {
       role: item.role,
       content: item.content.trim().slice(0, 12000)
     }))
-    .slice(-20);
+    .slice(-50);
 }
 
 app.post("/api/chat", async (req, res) => {
@@ -1686,7 +1686,7 @@ app.post("/api/chat", async (req, res) => {
     const persistentChat = await preparePersistentChat(req, message, depthStyle);
     const history = persistentChat
       ? persistentChat.history
-      : cleanHistory(req.body.history);
+      : cleanHistory(req.body.history).slice(-20);
     const depthInstructions =
       depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT;
 
@@ -1774,7 +1774,7 @@ app.post("/api/chat/stream", async (req, res) => {
     const persistentChat = await preparePersistentChat(req, message, depthStyle);
     const history = persistentChat
       ? persistentChat.history
-      : cleanHistory(req.body.history);
+      : cleanHistory(req.body.history).slice(-20);
     const depthInstructions =
       depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT;
     const input = [
