@@ -37,6 +37,25 @@ UNBOUND AI brand line:
 "A more open tomorrow starts today."
 `;
 
+const CASUAL_DEPTH_PROMPT = `
+Response-depth style: CASUAL MODE.
+- Prioritize speed and give a concise, direct answer first.
+- Avoid unnecessary detail, repetition, lengthy analysis, or extra steps.
+- State uncertainty clearly when it materially affects the answer.
+- If deeper analysis, verification, or research would improve the answer, say so briefly and let the user choose to go deeper.
+- Never claim to have researched, browsed, verified, or used a tool unless that actually happened.
+`;
+
+const WORK_DEPTH_PROMPT = `
+Response-depth style: WORK MODE.
+- Analyze the request thoroughly before answering.
+- Work through reasonable intermediate steps and produce a complete, organized response.
+- Compare relevant options when useful.
+- Clearly separate established facts, estimates, recommendations, predictions, and uncertainty when those distinctions matter.
+- Do not stop at a shallow first answer when a deeper treatment is useful.
+- This server does not yet provide external web/research tools to the model. Never claim external research, browsing, source verification, or tool use unless those capabilities are actually added and invoked.
+`;
+
 app.disable("x-powered-by");
 app.use(express.json({ limit: "100kb" }));
 app.get("/index.html", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
@@ -120,6 +139,46 @@ async function initializeDatabase() {
       granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT complimentary_slot_check CHECK (slot BETWEEN 1 AND 5)
     );
+
+    CREATE TABLE IF NOT EXISTS admin_audit_log (
+      id BIGSERIAL PRIMARY KEY,
+      admin_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+      admin_email TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+      target_email TEXT,
+      details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS admin_audit_log_created_at_idx
+      ON admin_audit_log(created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS admin_audit_log_target_user_id_idx
+      ON admin_audit_log(target_user_id);
+
+    CREATE TABLE IF NOT EXISTS usage_events (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      event_type TEXT NOT NULL DEFAULT 'chat',
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      total_tokens INTEGER NOT NULL DEFAULT 0,
+      estimated_cost_micros BIGINT,
+      provider_response_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS usage_events_created_at_idx
+      ON usage_events(created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS usage_events_user_id_idx
+      ON usage_events(user_id);
+
+    CREATE INDEX IF NOT EXISTS usage_events_provider_model_idx
+      ON usage_events(provider, model);
   `);
 
   const ownerEmail = normalizeEmail(process.env.OWNER_EMAIL);
@@ -283,6 +342,103 @@ function publicUser(user) {
   };
 }
 
+async function writeAdminAudit(
+  client,
+  adminUser,
+  action,
+  targetUser = null,
+  details = {}
+) {
+  await client.query(
+    `INSERT INTO admin_audit_log (
+       admin_user_id,
+       admin_email,
+       action,
+       target_user_id,
+       target_email,
+       details
+     )
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+    [
+      adminUser?.id || null,
+      adminUser?.email || "unknown-admin",
+      action,
+      targetUser?.id || null,
+      targetUser?.email || null,
+      JSON.stringify(details || {})
+    ]
+  );
+}
+
+function numberFromEnv(name) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function estimateOpenAICostMicros(usage) {
+  const inputRate = numberFromEnv("OPENAI_INPUT_USD_PER_MILLION");
+  const outputRate = numberFromEnv("OPENAI_OUTPUT_USD_PER_MILLION");
+
+  if (inputRate === null || outputRate === null) {
+    return null;
+  }
+
+  const inputTokens = Number(usage?.input_tokens || 0);
+  const outputTokens = Number(usage?.output_tokens || 0);
+
+  return Math.max(
+    0,
+    Math.round(inputTokens * inputRate + outputTokens * outputRate)
+  );
+}
+
+async function recordUsageEvent({
+  userId = null,
+  provider,
+  model,
+  eventType = "chat",
+  usage = null,
+  estimatedCostMicros = null,
+  providerResponseId = null
+}) {
+  if (!databaseReady || !pool || !usage) {
+    return;
+  }
+
+  const inputTokens = Math.max(0, Number(usage.input_tokens || 0));
+  const outputTokens = Math.max(0, Number(usage.output_tokens || 0));
+  const totalTokens = Math.max(
+    0,
+    Number(usage.total_tokens || inputTokens + outputTokens)
+  );
+
+  await pool.query(
+    `INSERT INTO usage_events (
+       user_id,
+       provider,
+       model,
+       event_type,
+       input_tokens,
+       output_tokens,
+       total_tokens,
+       estimated_cost_micros,
+       provider_response_id
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      userId,
+      provider,
+      model,
+      eventType,
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      estimatedCostMicros,
+      providerResponseId
+    ]
+  );
+}
+
 async function requireAdmin(req, res, next) {
   try {
     const user = await findSessionUser(req);
@@ -363,9 +519,7 @@ app.post("/api/auth/register", requireDatabase, async (req, res) => {
 
     await createSession(user.id, res);
 
-    return res.status(201).json({
-      user: publicUser(user)
-    });
+    return res.status(201).json({ user: publicUser(user) });
   } catch (error) {
     if (error.code === "23505") {
       return res.status(409).json({
@@ -399,9 +553,7 @@ app.post("/api/auth/login", requireDatabase, async (req, res) => {
       : false;
 
     if (!user || !passwordMatches) {
-      return res.status(401).json({
-        error: "Email or password is incorrect."
-      });
+      return res.status(401).json({ error: "Email or password is incorrect." });
     }
 
     await createSession(user.id, res);
@@ -418,9 +570,7 @@ app.post("/api/auth/login", requireDatabase, async (req, res) => {
     user.complimentary_top_tier =
       grantResult.rows[0].complimentary_top_tier;
 
-    return res.json({
-      user: publicUser(user)
-    });
+    return res.json({ user: publicUser(user) });
   } catch (error) {
     console.error("UNBOUND AI LOGIN ERROR:", error);
     return res.status(500).json({ error: "Login failed." });
@@ -432,10 +582,9 @@ app.post("/api/auth/logout", requireDatabase, async (req, res) => {
     const token = parseCookies(req)[SESSION_COOKIE];
 
     if (token) {
-      await pool.query(
-        "DELETE FROM user_sessions WHERE token_hash = $1",
-        [hashSessionToken(token)]
-      );
+      await pool.query("DELETE FROM user_sessions WHERE token_hash = $1", [
+        hashSessionToken(token)
+      ]);
     }
 
     clearSessionCookie(res);
@@ -461,8 +610,6 @@ app.get("/api/auth/me", requireDatabase, async (req, res) => {
     return res.status(500).json({ error: "Could not load account." });
   }
 });
-
-/* ----------------------------- ADMIN API ----------------------------- */
 
 app.get(
   "/api/admin/overview",
@@ -543,6 +690,151 @@ app.get(
   }
 );
 
+app.get(
+  "/api/admin/audit",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const requestedLimit = Number.parseInt(String(req.query.limit || "100"), 10);
+      const limit = Number.isFinite(requestedLimit)
+        ? Math.min(Math.max(requestedLimit, 1), 250)
+        : 100;
+
+      const result = await pool.query(
+        `SELECT
+           id,
+           admin_user_id,
+           admin_email,
+           action,
+           target_user_id,
+           target_email,
+           details,
+           created_at
+         FROM admin_audit_log
+         ORDER BY created_at DESC, id DESC
+         LIMIT $1`,
+        [limit]
+      );
+
+      return res.json({
+        events: result.rows.map((event) => ({
+          id: String(event.id),
+          adminUserId:
+            event.admin_user_id === null ? null : String(event.admin_user_id),
+          adminEmail: event.admin_email,
+          action: event.action,
+          targetUserId:
+            event.target_user_id === null ? null : String(event.target_user_id),
+          targetEmail: event.target_email,
+          details: event.details || {},
+          createdAt: event.created_at
+        }))
+      });
+    } catch (error) {
+      console.error("UNBOUND AI ADMIN AUDIT ERROR:", error);
+      return res.status(500).json({
+        error: "Could not load the administrator audit log."
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/admin/usage/summary",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const requestedDays = Number.parseInt(String(req.query.days || "30"), 10);
+      const days = Number.isFinite(requestedDays)
+        ? Math.min(Math.max(requestedDays, 1), 365)
+        : 30;
+
+      const [totalsResult, modelResult, dailyResult] = await Promise.all([
+        pool.query(
+          `SELECT
+             COUNT(*)::bigint AS requests,
+             COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
+             COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens,
+             COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+             COUNT(estimated_cost_micros)::bigint AS priced_events,
+             COALESCE(SUM(estimated_cost_micros), 0)::bigint AS estimated_cost_micros
+           FROM usage_events
+           WHERE created_at >= NOW() - ($1::text || ' days')::interval`,
+          [days]
+        ),
+        pool.query(
+          `SELECT
+             provider,
+             model,
+             COUNT(*)::bigint AS requests,
+             COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+             COUNT(estimated_cost_micros)::bigint AS priced_events,
+             COALESCE(SUM(estimated_cost_micros), 0)::bigint AS estimated_cost_micros
+           FROM usage_events
+           WHERE created_at >= NOW() - ($1::text || ' days')::interval
+           GROUP BY provider, model
+           ORDER BY total_tokens DESC
+           LIMIT 20`,
+          [days]
+        ),
+        pool.query(
+          `SELECT
+             DATE_TRUNC('day', created_at) AS day,
+             COUNT(*)::bigint AS requests,
+             COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+             COUNT(estimated_cost_micros)::bigint AS priced_events,
+             COALESCE(SUM(estimated_cost_micros), 0)::bigint AS estimated_cost_micros
+           FROM usage_events
+           WHERE created_at >= NOW() - ($1::text || ' days')::interval
+           GROUP BY DATE_TRUNC('day', created_at)
+           ORDER BY day DESC`,
+          [days]
+        )
+      ]);
+
+      const totals = totalsResult.rows[0];
+      const pricingConfigured =
+        numberFromEnv("OPENAI_INPUT_USD_PER_MILLION") !== null &&
+        numberFromEnv("OPENAI_OUTPUT_USD_PER_MILLION") !== null;
+
+      return res.json({
+        days,
+        pricingConfigured,
+        totals: {
+          requests: Number(totals.requests),
+          inputTokens: Number(totals.input_tokens),
+          outputTokens: Number(totals.output_tokens),
+          totalTokens: Number(totals.total_tokens),
+          pricedEvents: Number(totals.priced_events),
+          estimatedCostMicros: Number(totals.estimated_cost_micros)
+        },
+        models: modelResult.rows.map((row) => ({
+          provider: row.provider,
+          model: row.model,
+          requests: Number(row.requests),
+          totalTokens: Number(row.total_tokens),
+          pricedEvents: Number(row.priced_events),
+          estimatedCostMicros: Number(row.estimated_cost_micros)
+        })),
+        daily: dailyResult.rows.map((row) => ({
+          day: row.day,
+          requests: Number(row.requests),
+          totalTokens: Number(row.total_tokens),
+          pricedEvents: Number(row.priced_events),
+          estimatedCostMicros: Number(row.estimated_cost_micros)
+        }))
+      });
+    } catch (error) {
+      console.error("UNBOUND AI USAGE SUMMARY ERROR:", error);
+      return res.status(500).json({
+        error: "Could not load usage and cost totals."
+      });
+    }
+  }
+);
+
 app.patch(
   "/api/admin/users/:id/plan",
   requireDatabase,
@@ -560,9 +852,7 @@ app.patch(
       }
 
       if (!["free", "top"].includes(planTier)) {
-        return res.status(400).json({
-          error: "Plan must be FREE or TOP."
-        });
+        return res.status(400).json({ error: "Plan must be FREE or TOP." });
       }
 
       const targetResult = await pool.query(
@@ -574,13 +864,11 @@ app.patch(
       );
 
       const target = targetResult.rows[0];
-
       if (!target) {
         return res.status(404).json({ error: "User not found." });
       }
 
       const ownerEmail = normalizeEmail(process.env.OWNER_EMAIL);
-
       if (normalizeEmail(target.email) === ownerEmail && planTier !== "top") {
         return res.status(400).json({
           error: "The owner account must remain on the TOP plan."
@@ -588,15 +876,20 @@ app.patch(
       }
 
       const client = await pool.connect();
-
       try {
         await client.query("BEGIN");
+        let removedComplimentarySlot = null;
 
         if (planTier !== "top") {
-          await client.query(
-            "DELETE FROM complimentary_top_tier_grants WHERE user_id = $1",
+          const removedGrant = await client.query(
+            `DELETE FROM complimentary_top_tier_grants
+             WHERE user_id = $1
+             RETURNING slot`,
             [userId]
           );
+          if (removedGrant.rows[0]) {
+            removedComplimentarySlot = Number(removedGrant.rows[0].slot);
+          }
         }
 
         const updateResult = await client.query(
@@ -608,8 +901,13 @@ app.patch(
           [planTier, userId]
         );
 
-        await client.query("COMMIT");
+        await writeAdminAudit(client, req.adminUser, "user.plan.changed", target, {
+          previousPlanTier: target.plan_tier,
+          newPlanTier: planTier,
+          removedComplimentarySlot
+        });
 
+        await client.query("COMMIT");
         return res.json({
           user: {
             id: String(updateResult.rows[0].id),
@@ -628,9 +926,7 @@ app.patch(
       }
     } catch (error) {
       console.error("UNBOUND AI ADMIN PLAN ERROR:", error);
-      return res.status(500).json({
-        error: "Could not update that user's plan."
-      });
+      return res.status(500).json({ error: "Could not update that user's plan." });
     }
   }
 );
@@ -642,7 +938,6 @@ app.post(
   async (req, res) => {
     try {
       const email = normalizeEmail(req.body.email);
-
       if (!isValidEmail(email)) {
         return res.status(400).json({
           error: "Enter the email address of an existing UNBOUND AI account."
@@ -650,7 +945,6 @@ app.post(
       }
 
       const ownerEmail = normalizeEmail(process.env.OWNER_EMAIL);
-
       if (email === ownerEmail) {
         return res.status(400).json({
           error: "The owner account already has permanent TOP access."
@@ -664,9 +958,7 @@ app.post(
          LIMIT 1`,
         [email]
       );
-
       const user = userResult.rows[0];
-
       if (!user) {
         return res.status(404).json({
           error:
@@ -675,7 +967,6 @@ app.post(
       }
 
       const client = await pool.connect();
-
       try {
         await client.query("BEGIN");
         await client.query(
@@ -719,19 +1010,16 @@ app.post(
         if (!slotResult.rows[0]) {
           await client.query("ROLLBACK");
           return res.status(409).json({
-            error:
-              "All five complimentary TOP-tier gift slots are already assigned."
+            error: "All five complimentary TOP-tier gift slots are already assigned."
           });
         }
 
         const slot = Number(slotResult.rows[0].slot);
-
         await client.query(
           `INSERT INTO complimentary_top_tier_grants (slot, user_id)
            VALUES ($1, $2)`,
           [slot, user.id]
         );
-
         await client.query(
           `UPDATE users
            SET plan_tier = 'top',
@@ -739,7 +1027,17 @@ app.post(
            WHERE id = $1`,
           [user.id]
         );
-
+        await writeAdminAudit(
+          client,
+          req.adminUser,
+          "complimentary_top_tier.granted",
+          user,
+          {
+            slot,
+            previousPlanTier: user.plan_tier,
+            newPlanTier: "top"
+          }
+        );
         await client.query("COMMIT");
 
         return res.status(201).json({
@@ -763,7 +1061,6 @@ app.post(
           error: "That complimentary slot could not be assigned. Try again."
         });
       }
-
       console.error("UNBOUND AI ADMIN GIFT ERROR:", error);
       return res.status(500).json({
         error: "Could not grant complimentary TOP-tier access."
@@ -779,7 +1076,6 @@ app.delete(
   async (req, res) => {
     try {
       const userId = String(req.params.userId || "").trim();
-
       if (!/^\d+$/.test(userId)) {
         return res.status(400).json({ error: "Invalid user ID." });
       }
@@ -791,15 +1087,12 @@ app.delete(
          LIMIT 1`,
         [userId]
       );
-
       const target = targetResult.rows[0];
-
       if (!target) {
         return res.status(404).json({ error: "User not found." });
       }
 
       const ownerEmail = normalizeEmail(process.env.OWNER_EMAIL);
-
       if (normalizeEmail(target.email) === ownerEmail) {
         return res.status(400).json({
           error: "The owner account cannot use a complimentary gift slot."
@@ -807,10 +1100,8 @@ app.delete(
       }
 
       const client = await pool.connect();
-
       try {
         await client.query("BEGIN");
-
         const deleted = await client.query(
           `DELETE FROM complimentary_top_tier_grants
            WHERE user_id = $1
@@ -835,12 +1126,19 @@ app.delete(
           );
         }
 
+        await writeAdminAudit(
+          client,
+          req.adminUser,
+          "complimentary_top_tier.revoked",
+          target,
+          {
+            slot: Number(deleted.rows[0].slot),
+            resultingPlanTier: target.role === "admin" ? "top" : "free"
+          }
+        );
         await client.query("COMMIT");
 
-        return res.json({
-          ok: true,
-          slot: Number(deleted.rows[0].slot)
-        });
+        return res.json({ ok: true, slot: Number(deleted.rows[0].slot) });
       } catch (error) {
         await client.query("ROLLBACK");
         throw error;
@@ -856,7 +1154,11 @@ app.delete(
   }
 );
 
-/* ----------------------------- CHAT API ------------------------------ */
+function normalizeDepthStyle(value) {
+  return String(value || "").trim().toLowerCase() === "work"
+    ? "work"
+    : "casual";
+}
 
 function cleanHistory(history) {
   if (!Array.isArray(history)) {
@@ -885,24 +1187,20 @@ app.post("/api/chat", async (req, res) => {
       typeof req.body.message === "string" ? req.body.message.trim() : "";
 
     if (!message) {
-      return res.status(400).json({
-        error: "Please enter a message."
-      });
+      return res.status(400).json({ error: "Please enter a message." });
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({
-        error: "OPENAI_API_KEY is not loaded."
-      });
+      return res.status(500).json({ error: "OPENAI_API_KEY is not loaded." });
     }
 
     const OpenAI = (await import("openai")).default;
-
-    const client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
-    });
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const history = cleanHistory(req.body.history);
+    const depthStyle = normalizeDepthStyle(req.body.depthStyle);
+    const depthInstructions =
+      depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT;
 
     const input = [
       ...history,
@@ -912,18 +1210,33 @@ app.post("/api/chat", async (req, res) => {
       }
     ];
 
+    const model = "gpt-5.6-luna";
     const response = await client.responses.create({
-      model: "gpt-5.6-luna",
-      instructions: UNBOUND_SYSTEM_PROMPT,
+      model,
+      instructions: `${UNBOUND_SYSTEM_PROMPT}\n\n${depthInstructions}`,
       input
     });
 
-    res.json({
-      reply: response.output_text
-    });
+    if (databaseReady && pool && response.usage) {
+      try {
+        const sessionUser = await findSessionUser(req);
+        await recordUsageEvent({
+          userId: sessionUser?.id || null,
+          provider: "openai",
+          model: response.model || model,
+          eventType: `chat_${depthStyle}`,
+          usage: response.usage,
+          estimatedCostMicros: estimateOpenAICostMicros(response.usage),
+          providerResponseId: response.id || null
+        });
+      } catch (usageError) {
+        console.error("UNBOUND AI USAGE METER ERROR:", usageError);
+      }
+    }
+
+    res.json({ reply: response.output_text, depthStyle });
   } catch (error) {
     console.error("UNBOUND AI ERROR:", error);
-
     res.status(500).json({
       error: error.message || "UNBOUND AI could not get a response."
     });
