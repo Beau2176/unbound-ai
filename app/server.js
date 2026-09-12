@@ -66,6 +66,9 @@ const {
   buildDataExport
 } = require("./privacy/data-export");
 const {
+  publicDeletionBlock
+} = require("./privacy/account-deletion");
+const {
   normalizeLegalDocumentType,
   getLegalDocumentCatalog,
   buildLegalConsentStatus
@@ -3495,6 +3498,48 @@ app.delete(
         await client.query("ROLLBACK");
         return res.status(401).json({ error: "Current password is incorrect." });
       }
+
+      const subscriptionResult = await client.query(
+        `SELECT
+           provider,
+           provider_subscription_id,
+           status,
+           cancel_at_period_end,
+           current_period_end
+         FROM account_subscriptions
+         WHERE user_id = $1
+         LIMIT 1
+         FOR UPDATE`,
+        [lockedUser.id]
+      );
+      const deletionBlock = publicDeletionBlock(subscriptionResult.rows[0] || null);
+
+      if (deletionBlock) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          error:
+            "Cancel the external subscription and wait until it reaches canceled status before deleting this UNBOUND AI account.",
+          deletionBlocked: deletionBlock
+        });
+      }
+
+      // Operational usage and provider webhook records may be retained for
+      // aggregate integrity, fraud prevention, or reconciliation. Remove the
+      // account link and provider-response/error correlation fields first.
+      await client.query(
+        `UPDATE usage_events
+         SET user_id = NULL,
+             provider_response_id = NULL
+         WHERE user_id = $1`,
+        [lockedUser.id]
+      );
+      await client.query(
+        `UPDATE age_verification_events
+         SET user_id = NULL,
+             error_text = NULL
+         WHERE user_id = $1`,
+        [lockedUser.id]
+      );
 
       // Audit records are intentionally retained for platform integrity, but
       // identifying account email fields are scrubbed before the user row is
