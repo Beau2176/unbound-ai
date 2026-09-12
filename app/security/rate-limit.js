@@ -18,6 +18,11 @@ function getRateLimitPolicy(env = process.env) {
       limit: positiveIntEnv(env, "RATE_LIMIT_REGISTER_PER_HOUR", 6, { max: 1000 }),
       windowSeconds: 60 * 60
     }),
+    passkeyAuth: Object.freeze({
+      scope: "auth_passkey",
+      limit: positiveIntEnv(env, "RATE_LIMIT_PASSKEY_AUTH_PER_15_MIN", 40, { max: 2000 }),
+      windowSeconds: 15 * 60
+    }),
     guestChat: Object.freeze({
       scope: "chat_guest",
       limit: positiveIntEnv(env, "RATE_LIMIT_GUEST_CHAT_PER_HOUR", 60, { max: 10000 }),
