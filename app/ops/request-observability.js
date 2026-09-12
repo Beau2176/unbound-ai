@@ -28,8 +28,11 @@ function sanitizedRequestPath(req) {
   return normalized.startsWith("/") ? normalized : `/${normalized}`;
 }
 
-function requestId() {
-  return crypto.randomUUID();
+function requestId(req) {
+  const existing = typeof req?.requestId === "string"
+    ? req.requestId.trim().slice(0, 128)
+    : "";
+  return existing || crypto.randomUUID();
 }
 
 function roundMs(value) {
@@ -56,7 +59,7 @@ function getRequestObservabilitySnapshot() {
 
 function createRequestObservabilityMiddleware({ logger = console.log } = {}) {
   return function unboundRequestObservability(req, res, next) {
-    const id = requestId();
+    const id = requestId(req);
     const method = String(req.method || "GET").toUpperCase();
     const path = sanitizedRequestPath(req);
     const started = process.hrtime.bigint();

@@ -48,7 +48,10 @@ function createHttpSecurityMiddleware({ isProduction = false } = {}) {
   const csp = buildContentSecurityPolicy({ isProduction });
 
   return function unboundHttpSecurity(req, res, next) {
-    const requestId = crypto.randomUUID();
+    const existingRequestId = typeof req?.requestId === "string"
+      ? req.requestId.trim().slice(0, 128)
+      : "";
+    const requestId = existingRequestId || crypto.randomUUID();
     req.requestId = requestId;
     res.setHeader("X-Request-ID", requestId);
     res.setHeader("X-Content-Type-Options", "nosniff");
