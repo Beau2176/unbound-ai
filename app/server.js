@@ -39,7 +39,9 @@ UNBOUND AI brand line:
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "100kb" }));
-app.use(express.static(__dirname));
+app.get("/index.html", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
+app.get("/admin.html", (req, res) => res.sendFile(path.join(__dirname, "admin.html")));
+app.get("/unbound-cosmic.png", (req, res) => res.sendFile(path.join(__dirname, "unbound-cosmic.png")));
 
 let pool = null;
 let databaseReady = false;
