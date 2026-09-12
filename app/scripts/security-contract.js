@@ -5,6 +5,11 @@ const appRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(appRoot, "..");
 const serverPath = path.join(appRoot, "server.js");
 const packagePath = path.join(appRoot, "package.json");
+const customInstructionsPath = path.join(
+  appRoot,
+  "preferences",
+  "custom-instructions.js"
+);
 const server = fs.readFileSync(serverPath, "utf8");
 const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
 
@@ -49,6 +54,24 @@ for (const forbidden of [
   "user_handle"
 ]) {
   forbidText(exportRoute, forbidden, `data export must not select ${forbidden}`);
+}
+
+if (fs.existsSync(customInstructionsPath)) {
+  const customInstructions = fs.readFileSync(customInstructionsPath, "utf8");
+  requireText(customInstructions, 'role: "user"', "custom instructions must enter model context as user-level content");
+  requireText(customInstructions, "not system or developer authority", "custom instruction authority disclaimer");
+  requireText(customInstructions, "MAX_CUSTOM_INSTRUCTIONS = 2000", "custom instruction size limit");
+
+  const contextCount = (
+    server.match(/customPreferenceMessage \? \[customPreferenceMessage\] : \[\]/g) || []
+  ).length;
+  if (contextCount < 2) {
+    throw new Error("Security contract violation: custom instructions must be injected into both chat inputs as user-level context");
+  }
+
+  if (/instructions\s*:\s*\[[^\]]*(?:customPreferenceMessage|customInstructions)/s.test(server)) {
+    throw new Error("Security contract violation: custom instructions must never be promoted into provider system/developer instructions");
+  }
 }
 
 if (pkg.overrides?.qs !== "6.16.0") {
