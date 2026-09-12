@@ -1,0 +1,122 @@
+name: Request Observability v0.35
+
+on:
+  push:
+    branches:
+      - observability-v0.35
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: observability-v0.35
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Apply observability migration
+        run: python tools/apply_observability_v035.py
+
+      - name: Install locked dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Run permanent CI checks
+        working-directory: app
+        run: npm run ci
+
+      - name: Verify observability module
+        working-directory: app
+        run: |
+          node <<'NODE'
+          const assert = require('assert');
+          const {
+            sanitizedRequestPath,
+            getRequestObservabilitySnapshot
+          } = require('./ops/request-observability');
+
+          assert.equal(
+            sanitizedRequestPath({ path: '/api/admin/users/12345/access' }),
+            '/api/admin/users/:id/access'
+          );
+          assert.equal(
+            sanitizedRequestPath({ path: '/api/conversations/550e8400-e29b-41d4-a716-446655440000' }),
+            '/api/conversations/:id'
+          );
+          assert.equal(
+            sanitizedRequestPath({ path: '/api/token/abcdefghijklmnopqrstuvwxyz1234567890' }),
+            '/api/token/:token'
+          );
+          const snapshot = getRequestObservabilitySnapshot();
+          assert.equal(snapshot.scope, 'current_process');
+          assert.equal(typeof snapshot.completedRequests, 'number');
+          NODE
+
+      - name: Smoke test request IDs and privacy-safe logs
+        run: |
+          PORT=32191 NODE_ENV=test node app/server.js > /tmp/unbound-v035.log 2>&1 &
+          pid=$!
+          cleanup() { kill "$pid" 2>/dev/null || true; }
+          trap cleanup EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:32191/healthz >/dev/null; then break; fi
+            sleep 0.25
+          done
+
+          curl -sS -D /tmp/status-headers.txt -o /tmp/status-body.json \
+            'http://127.0.0.1:32191/api/system/status?email=secret-person@example.com' || true
+          grep -Eiq '^X-Request-ID: [0-9a-f-]{36}\r?$' /tmp/status-headers.txt
+
+          curl -sS -o /dev/null \
+            'http://127.0.0.1:32191/not-found/123456789?token=super-secret-query-value' || true
+          sleep 0.2
+
+          grep -q '"event":"http_request"' /tmp/unbound-v035.log
+          grep -q '"path":"/api/system/status"' /tmp/unbound-v035.log
+          grep -q '"path":"/not-found/:id"' /tmp/unbound-v035.log
+          if grep -q 'secret-person@example.com' /tmp/unbound-v035.log; then
+            echo 'Query-string PII leaked into request logs.' >&2
+            exit 1
+          fi
+          if grep -q 'super-secret-query-value' /tmp/unbound-v035.log; then
+            echo 'Query-string secret leaked into request logs.' >&2
+            exit 1
+          fi
+
+          kill -TERM "$pid"
+          set +e
+          wait "$pid"
+          exit_code=$?
+          set -e
+          trap - EXIT
+          test "$exit_code" -eq 0
+
+      - name: Verify source contract
+        run: |
+          grep -q 'createRequestObservabilityMiddleware' app/server.js
+          grep -q '"/api/admin/ops/status"' app/server.js
+          grep -q 'getRequestObservabilitySnapshot' app/server.js
+          grep -q 'request or response bodies' docs/OBSERVABILITY.md
+          grep -q 'query strings' docs/OBSERVABILITY.md
+
+      - name: Commit completed v0.35 and remove one-time migration
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js app/ops/request-observability.js docs/OBSERVABILITY.md
+          git rm tools/apply_observability_v035.py .github/workflows/observability-v035.yml
+          if git diff --cached --quiet; then
+            echo "No final changes to commit."
+          else
+            git commit -m "Add privacy-safe request observability v0.35"
+            git push origin HEAD:observability-v0.35
+          fi
