@@ -1,0 +1,1 @@
+Build and validate Research Mode with server-persistent product mode, sources, and citations.
