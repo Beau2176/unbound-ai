@@ -1,0 +1,86 @@
+name: Device security hardening v0.12
+
+on:
+  push:
+    branches:
+      - device-security-v0.12
+
+permissions:
+  contents: write
+
+jobs:
+  harden-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+      - name: Apply current-device hardening
+        run: python scripts/harden-current-device-v012.py
+      - name: Validate JavaScript
+        run: |
+          node --check app/server.js
+          python - <<'PY'
+          from pathlib import Path
+          html = Path('app/index.html').read_text()
+          start = html.rfind('<script>')
+          end = html.rfind('</script>')
+          if start < 0 or end <= start:
+              raise SystemExit('index script block missing')
+          Path('/tmp/unbound-index.js').write_text(html[start + len('<script>'):end])
+          PY
+          node --check /tmp/unbound-index.js
+      - name: Verify current-device protection is server-side
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s = Path('app/server.js').read_text()
+          route = s.split('"/api/account/devices/:id/revoke"', 1)[1].split('app.post(', 1)[0]
+          if 'associateCurrentSessionWithDevice(' not in route:
+              raise SystemExit('Revoke endpoint does not associate current session/device before protection check.')
+          if 'You cannot revoke the device you are currently using' not in route:
+              raise SystemExit('Current-device refusal is missing.')
+          if 'verifyPassword(password, user.password_hash)' not in route:
+              raise SystemExit('Password verification is missing from device revoke route.')
+          print('Current-device server-side protection verified.')
+          PY
+      - name: Verify v0.12 privacy and control surface
+        run: |
+          grep -q 'device_token_hash TEXT NOT NULL' app/server.js
+          grep -q 'CREATE TABLE IF NOT EXISTS account_security_events' app/server.js
+          grep -q '"/api/account/devices"' app/server.js
+          grep -q '"/api/account/sessions/revoke-all"' app/server.js
+          grep -q 'id="deviceList"' app/index.html
+          grep -q 'id="logoutAllForm"' app/index.html
+          if grep -Eiq 'ip_address|remote_addr|client_ip|last_ip' app/server.js; then
+            echo 'IP persistence field detected.'
+            exit 1
+          fi
+      - name: Verify previous platform features survived
+        run: |
+          grep -q '"/api/account/age-verification"' app/server.js
+          grep -q '"/api/admin/billing/summary"' app/server.js
+          grep -q 'RESEARCH_MODE_PROMPT' app/server.js
+          grep -q 'deleteAccountModal' app/index.html
+      - name: Dependency audit
+        working-directory: app
+        run: npm audit --omit=dev --audit-level=high
+      - name: Commit hardened production source
+        run: |
+          git config user.name "UNBOUND Build Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/server.js
+          if git diff --cached --quiet; then
+            echo "No production hardening change to commit."
+            exit 0
+          fi
+          git commit -m "Harden current device revocation protection"
+          git push
