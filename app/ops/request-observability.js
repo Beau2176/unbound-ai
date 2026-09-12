@@ -73,7 +73,7 @@ function createRequestObservabilityMiddleware({ logger = console.log } = {}) {
 
       const elapsedNs = process.hrtime.bigint() - started;
       const durationMs = Number(elapsedNs) / 1_000_000;
-      const statusCode = Number(res.statusCode || (aborted ? 499 : 0));
+      const statusCode = aborted ? 499 : Number(res.statusCode || 0);
 
       state.completedRequests += 1;
       state.totalDurationMs += durationMs;
