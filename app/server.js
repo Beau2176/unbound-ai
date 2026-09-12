@@ -1,4 +1,5 @@
 const express = require("express");
+const compression = require("compression");
 const path = require("path");
 const crypto = require("crypto");
 const { promisify } = require("util");
@@ -190,15 +191,37 @@ Product mode: ADULT MODE.
 app.disable("x-powered-by");
 app.use(createHttpSecurityMiddleware({ isProduction: IS_PRODUCTION }));
 app.use(
+  compression({
+    threshold: 1024,
+    filter: (req, res) => {
+      if (req.path === "/api/chat/stream") return false;
+      return compression.filter(req, res);
+    }
+  })
+);
+app.use(
   createSameOriginApiGuard({
     isProduction: IS_PRODUCTION,
     publicOrigin: process.env.PUBLIC_APP_ORIGIN || ""
   })
 );
 app.use(express.json({ limit: "100kb" }));
-app.get("/index.html", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
-app.get("/admin.html", (req, res) => res.sendFile(path.join(__dirname, "admin.html")));
-app.get("/unbound-cosmic.png", (req, res) => res.sendFile(path.join(__dirname, "unbound-cosmic.png")));
+app.use("/api", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
+app.get("/index.html", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache");
+  return res.sendFile(path.join(__dirname, "index.html"));
+});
+app.get("/admin.html", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache");
+  return res.sendFile(path.join(__dirname, "admin.html"));
+});
+app.get("/unbound-cosmic.png", (req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+  return res.sendFile(path.join(__dirname, "unbound-cosmic.png"));
+});
 
 let pool = null;
 let databaseReady = false;
@@ -6010,7 +6033,8 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "index.html"));
+  res.setHeader("Cache-Control", "no-cache");
+  return res.sendFile(path.join(__dirname, "index.html"));
 });
 
 app.listen(PORT, "0.0.0.0", () => {
