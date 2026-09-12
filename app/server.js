@@ -937,6 +937,227 @@ app.get(
 
 
 
+
+
+app.get(
+  "/api/account/security",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    try {
+      const token = parseCookies(req)[SESSION_COOKIE];
+      const tokenHash = token ? hashSessionToken(token) : null;
+      const result = await pool.query(
+        `SELECT
+           COUNT(*)::int AS active_sessions,
+           MAX(CASE WHEN token_hash = $2 THEN expires_at END) AS current_expires_at
+         FROM user_sessions
+         WHERE user_id = $1
+           AND expires_at > NOW()`,
+        [req.user.id, tokenHash]
+      );
+
+      return res.json({
+        activeSessions: Number(result.rows[0]?.active_sessions || 0),
+        currentSessionExpiresAt: result.rows[0]?.current_expires_at || null
+      });
+    } catch (error) {
+      console.error("UNBOUND AI ACCOUNT SECURITY STATUS ERROR:", error);
+      return res.status(500).json({ error: "Could not load account security status." });
+    }
+  }
+);
+
+app.post(
+  "/api/account/password",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    const currentPassword =
+      typeof req.body.currentPassword === "string"
+        ? req.body.currentPassword
+        : "";
+    const newPassword =
+      typeof req.body.newPassword === "string" ? req.body.newPassword : "";
+    const newPasswordConfirm =
+      typeof req.body.newPasswordConfirm === "string"
+        ? req.body.newPasswordConfirm
+        : "";
+
+    if (!currentPassword || currentPassword.length > 200) {
+      return res.status(400).json({ error: "Enter your current password." });
+    }
+
+    if (newPassword.length < 12 || newPassword.length > 200) {
+      return res.status(400).json({
+        error: "New password must be between 12 and 200 characters."
+      });
+    }
+
+    if (newPassword !== newPasswordConfirm) {
+      return res.status(400).json({ error: "The new passwords do not match." });
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const userResult = await client.query(
+        `SELECT id, password_hash
+         FROM users
+         WHERE id = $1
+         LIMIT 1
+         FOR UPDATE`,
+        [req.user.id]
+      );
+      const user = userResult.rows[0];
+
+      if (!user) {
+        await client.query("ROLLBACK");
+        clearSessionCookie(res);
+        return res.status(404).json({ error: "Account not found." });
+      }
+
+      if (!(await verifyPassword(currentPassword, user.password_hash))) {
+        await client.query("ROLLBACK");
+        return res.status(401).json({ error: "Current password is incorrect." });
+      }
+
+      if (await verifyPassword(newPassword, user.password_hash)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          error: "Choose a new password that is different from your current password."
+        });
+      }
+
+      const nextHash = await hashPassword(newPassword);
+      await client.query(
+        `UPDATE users
+         SET password_hash = $1,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [nextHash, user.id]
+      );
+
+      const revoked = await client.query(
+        `DELETE FROM user_sessions
+         WHERE user_id = $1
+         RETURNING id`,
+        [user.id]
+      );
+
+      const token = crypto.randomBytes(32).toString("base64url");
+      const tokenHash = hashSessionToken(token);
+      await client.query(
+        `INSERT INTO user_sessions (user_id, token_hash, expires_at)
+         VALUES ($1, $2, NOW() + INTERVAL '${SESSION_DAYS} days')`,
+        [user.id, tokenHash]
+      );
+
+      await client.query("COMMIT");
+      setSessionCookie(res, token);
+
+      return res.json({
+        ok: true,
+        passwordChanged: true,
+        otherSessionsRevoked: Math.max(Number(revoked.rowCount || 0) - 1, 0),
+        activeSessions: 1
+      });
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error("UNBOUND AI PASSWORD CHANGE ROLLBACK ERROR:", rollbackError);
+      }
+      console.error("UNBOUND AI PASSWORD CHANGE ERROR:", error);
+      return res.status(500).json({ error: "Could not change the password." });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+app.post(
+  "/api/account/sessions/revoke-others",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    const password =
+      typeof req.body.password === "string" ? req.body.password : "";
+    const token = parseCookies(req)[SESSION_COOKIE];
+
+    if (!password || password.length > 200) {
+      return res.status(400).json({ error: "Enter your current password." });
+    }
+
+    if (!token) {
+      return res.status(401).json({ error: "Your current session is not available." });
+    }
+
+    const tokenHash = hashSessionToken(token);
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const userResult = await client.query(
+        `SELECT id, password_hash
+         FROM users
+         WHERE id = $1
+         LIMIT 1
+         FOR UPDATE`,
+        [req.user.id]
+      );
+      const user = userResult.rows[0];
+
+      if (!user || !(await verifyPassword(password, user.password_hash))) {
+        await client.query("ROLLBACK");
+        return res.status(401).json({ error: "Current password is incorrect." });
+      }
+
+      const currentResult = await client.query(
+        `SELECT id
+         FROM user_sessions
+         WHERE user_id = $1
+           AND token_hash = $2
+           AND expires_at > NOW()
+         LIMIT 1`,
+        [user.id, tokenHash]
+      );
+
+      if (!currentResult.rows[0]) {
+        await client.query("ROLLBACK");
+        clearSessionCookie(res);
+        return res.status(401).json({ error: "Your current session has expired." });
+      }
+
+      const revoked = await client.query(
+        `DELETE FROM user_sessions
+         WHERE user_id = $1
+           AND token_hash <> $2
+         RETURNING id`,
+        [user.id, tokenHash]
+      );
+
+      await client.query("COMMIT");
+      return res.json({
+        ok: true,
+        revokedSessions: Number(revoked.rowCount || 0),
+        activeSessions: 1
+      });
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error("UNBOUND AI SESSION REVOCATION ROLLBACK ERROR:", rollbackError);
+      }
+      console.error("UNBOUND AI SESSION REVOCATION ERROR:", error);
+      return res.status(500).json({ error: "Could not revoke other sessions." });
+    } finally {
+      client.release();
+    }
+  }
+);
+
 app.delete(
   "/api/account",
   requireDatabase,

@@ -1234,6 +1234,7 @@
         </div>
         <button id="accessButton" class="account-button" type="button" hidden>ACCESS</button>
         <button id="adminButton" class="account-button primary" type="button" hidden>ADMIN</button>
+        <button id="securityButton" class="account-button" type="button" hidden>SECURITY</button>
         <button id="deleteAccountButton" class="account-button danger" type="button" hidden>DELETE ACCOUNT</button>
         <button id="logoutButton" class="logout-button" type="button">LOG OUT</button>
       </div>
@@ -1399,6 +1400,55 @@
 
 
 
+
+
+  <div id="securityModal" class="auth-modal" hidden>
+    <section class="auth-card" role="dialog" aria-modal="true" aria-labelledby="securityTitle">
+      <div class="auth-card-head">
+        <div>
+          <h2 id="securityTitle">Account Security</h2>
+          <p>Manage your password and signed-in devices.</p>
+        </div>
+        <button id="securityCloseButton" class="auth-close" type="button" aria-label="Close">×</button>
+      </div>
+
+      <div class="auth-body">
+        <div id="securityFeedback" class="auth-feedback" role="status" aria-live="polite"></div>
+        <div class="delete-account-warning" style="border-color: rgba(107,193,255,.25); background: rgba(32,88,140,.16); color:#d9efff;">
+          Active sessions: <strong id="activeSessionCount">—</strong>
+          <span id="currentSessionExpiry"></span>
+        </div>
+
+        <form id="passwordChangeForm" class="auth-form" autocomplete="off">
+          <div class="auth-field">
+            <label for="currentPasswordForChange">Current password</label>
+            <input id="currentPasswordForChange" type="password" autocomplete="current-password" maxlength="200" required />
+          </div>
+          <div class="auth-field">
+            <label for="newPassword">New password</label>
+            <input id="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="200" required />
+          </div>
+          <div class="auth-field">
+            <label for="newPasswordConfirm">Confirm new password</label>
+            <input id="newPasswordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="200" required />
+          </div>
+          <button id="passwordChangeSubmit" class="auth-submit" type="submit">CHANGE PASSWORD</button>
+        </form>
+
+        <div style="height:1px;background:rgba(255,255,255,.08);margin:18px 0;"></div>
+
+        <form id="revokeSessionsForm" class="auth-form" autocomplete="off">
+          <div class="auth-field">
+            <label for="revokeSessionsPassword">Current password</label>
+            <input id="revokeSessionsPassword" type="password" autocomplete="current-password" maxlength="200" required />
+            <div class="auth-help">This keeps this device signed in and logs out every other device.</div>
+          </div>
+          <button id="revokeSessionsSubmit" class="auth-submit secondary" type="submit">LOG OUT OTHER DEVICES</button>
+        </form>
+      </div>
+    </section>
+  </div>
+
   <div id="deleteAccountModal" class="auth-modal" hidden>
     <section class="auth-card" role="dialog" aria-modal="true" aria-labelledby="deleteAccountTitle">
       <div class="auth-card-head">
@@ -1477,6 +1527,7 @@
     const signedInActions = document.getElementById("signedInActions");
     const signInButton = document.getElementById("signInButton");
     const adminButton = document.getElementById("adminButton");
+    const securityButton = document.getElementById("securityButton");
     const createAccountButton = document.getElementById("createAccountButton");
     const deleteAccountButton = document.getElementById("deleteAccountButton");
     const logoutButton = document.getElementById("logoutButton");
@@ -1493,6 +1544,19 @@
     const loginSubmit = document.getElementById("loginSubmit");
     const registerSubmit = document.getElementById("registerSubmit");
     const authFeedback = document.getElementById("authFeedback");
+    const securityModal = document.getElementById("securityModal");
+    const securityCloseButton = document.getElementById("securityCloseButton");
+    const securityFeedback = document.getElementById("securityFeedback");
+    const activeSessionCount = document.getElementById("activeSessionCount");
+    const currentSessionExpiry = document.getElementById("currentSessionExpiry");
+    const passwordChangeForm = document.getElementById("passwordChangeForm");
+    const currentPasswordForChange = document.getElementById("currentPasswordForChange");
+    const newPassword = document.getElementById("newPassword");
+    const newPasswordConfirm = document.getElementById("newPasswordConfirm");
+    const passwordChangeSubmit = document.getElementById("passwordChangeSubmit");
+    const revokeSessionsForm = document.getElementById("revokeSessionsForm");
+    const revokeSessionsPassword = document.getElementById("revokeSessionsPassword");
+    const revokeSessionsSubmit = document.getElementById("revokeSessionsSubmit");
     const deleteAccountModal = document.getElementById("deleteAccountModal");
     const deleteAccountCloseButton = document.getElementById("deleteAccountCloseButton");
     const deleteAccountCancelButton = document.getElementById("deleteAccountCancelButton");
@@ -2291,7 +2355,7 @@
 
     function closeAccess() {
       accessModal.hidden = true;
-      if (historyModal.hidden && authModal.hidden && deleteAccountModal.hidden) document.body.classList.remove("modal-open");
+      if (historyModal.hidden && authModal.hidden && securityModal.hidden && deleteAccountModal.hidden) document.body.classList.remove("modal-open");
     }
 
     async function chooseResearchMode() {
@@ -2318,6 +2382,7 @@
         userPlan.classList.toggle("gift", Boolean(currentUser.complimentaryTopTier));
         adminButton.hidden = currentUser.role !== "admin";
         accessButton.hidden = false;
+        securityButton.hidden = false;
         deleteAccountButton.hidden = currentUser.role === "admin";
         historyButton.hidden = false;
         const researchAllowed = canUseCapability("web_research");
@@ -2335,6 +2400,7 @@
       userPlan.classList.remove("gift");
       adminButton.hidden = true;
       accessButton.hidden = true;
+      securityButton.hidden = true;
       deleteAccountButton.hidden = true;
       historyButton.hidden = true;
       researchModeButton.classList.add("locked");
@@ -2344,7 +2410,7 @@
 
     function closeHistory() {
       historyModal.hidden = true;
-      if (authModal.hidden && accessModal.hidden && deleteAccountModal.hidden) {
+      if (authModal.hidden && accessModal.hidden && securityModal.hidden && deleteAccountModal.hidden) {
         document.body.classList.remove("modal-open");
       }
     }
@@ -2652,6 +2718,151 @@
 
 
 
+
+
+    function clearSecurityFeedback() {
+      securityFeedback.className = "auth-feedback";
+      securityFeedback.textContent = "";
+    }
+
+    function showSecurityFeedback(message, type = "error") {
+      securityFeedback.className = `auth-feedback visible ${type}`;
+      securityFeedback.textContent = message;
+    }
+
+    async function refreshSecurityStatus() {
+      const response = await fetch("/api/account/security", {
+        method: "GET",
+        credentials: "same-origin",
+        headers: { "Accept": "application/json" }
+      });
+      const data = await readJson(response);
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load security status.");
+      }
+
+      activeSessionCount.textContent = String(data.activeSessions ?? 0);
+      if (data.currentSessionExpiresAt) {
+        const date = new Date(data.currentSessionExpiresAt);
+        currentSessionExpiry.textContent = Number.isNaN(date.getTime())
+          ? ""
+          : ` • current session expires ${date.toLocaleString()}`;
+      } else {
+        currentSessionExpiry.textContent = "";
+      }
+    }
+
+    async function openSecurity() {
+      if (!currentUser) return;
+      passwordChangeForm.reset();
+      revokeSessionsForm.reset();
+      clearSecurityFeedback();
+      securityModal.hidden = false;
+      document.body.classList.add("modal-open");
+      try {
+        await refreshSecurityStatus();
+      } catch (error) {
+        showSecurityFeedback(error.message || "Could not load security status.");
+      }
+    }
+
+    function closeSecurity() {
+      if (passwordChangeSubmit.disabled || revokeSessionsSubmit.disabled) return;
+      securityModal.hidden = true;
+      passwordChangeForm.reset();
+      revokeSessionsForm.reset();
+      clearSecurityFeedback();
+      if (authModal.hidden && historyModal.hidden && accessModal.hidden && deleteAccountModal.hidden) {
+        document.body.classList.remove("modal-open");
+      }
+    }
+
+    async function handlePasswordChange(event) {
+      event.preventDefault();
+      clearSecurityFeedback();
+
+      const currentPassword = currentPasswordForChange.value;
+      const nextPassword = newPassword.value;
+      const confirmPassword = newPasswordConfirm.value;
+
+      if (nextPassword.length < 12) {
+        showSecurityFeedback("New password must be at least 12 characters.");
+        return;
+      }
+      if (nextPassword !== confirmPassword) {
+        showSecurityFeedback("The new passwords do not match.");
+        return;
+      }
+
+      passwordChangeSubmit.disabled = true;
+      passwordChangeSubmit.textContent = "CHANGING...";
+      try {
+        const response = await fetch("/api/account/password", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            currentPassword,
+            newPassword: nextPassword,
+            newPasswordConfirm: confirmPassword
+          })
+        });
+        const data = await readJson(response);
+        if (!response.ok || data.passwordChanged !== true) {
+          throw new Error(data.error || "Password change failed.");
+        }
+
+        passwordChangeForm.reset();
+        showSecurityFeedback(
+          `Password changed. ${Number(data.otherSessionsRevoked || 0)} other session(s) were revoked.`,
+          "success"
+        );
+        await refreshSecurityStatus();
+      } catch (error) {
+        showSecurityFeedback(error.message || "Password change failed.");
+      } finally {
+        passwordChangeSubmit.disabled = false;
+        passwordChangeSubmit.textContent = "CHANGE PASSWORD";
+      }
+    }
+
+    async function handleRevokeSessions(event) {
+      event.preventDefault();
+      clearSecurityFeedback();
+      const password = revokeSessionsPassword.value;
+      if (!password) {
+        showSecurityFeedback("Enter your current password.");
+        return;
+      }
+
+      revokeSessionsSubmit.disabled = true;
+      revokeSessionsSubmit.textContent = "REVOKING...";
+      try {
+        const response = await fetch("/api/account/sessions/revoke-others", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password })
+        });
+        const data = await readJson(response);
+        if (!response.ok) {
+          throw new Error(data.error || "Could not log out other devices.");
+        }
+
+        revokeSessionsForm.reset();
+        showSecurityFeedback(
+          `${Number(data.revokedSessions || 0)} other session(s) logged out.`,
+          "success"
+        );
+        await refreshSecurityStatus();
+      } catch (error) {
+        showSecurityFeedback(error.message || "Could not log out other devices.");
+      } finally {
+        revokeSessionsSubmit.disabled = false;
+        revokeSessionsSubmit.textContent = "LOG OUT OTHER DEVICES";
+      }
+    }
+
     function clearDeleteAccountFeedback() {
       deleteAccountFeedback.className = "auth-feedback";
       deleteAccountFeedback.textContent = "";
@@ -2680,7 +2891,7 @@
       deleteAccountModal.hidden = true;
       deleteAccountForm.reset();
       clearDeleteAccountFeedback();
-      if (authModal.hidden && historyModal.hidden && accessModal.hidden) {
+      if (authModal.hidden && historyModal.hidden && accessModal.hidden && securityModal.hidden) {
         document.body.classList.remove("modal-open");
       }
     }
@@ -2809,6 +3020,10 @@
 
     signInButton.addEventListener("click", () => openAuth("login"));
     createAccountButton.addEventListener("click", () => openAuth("register"));
+    securityButton.addEventListener("click", openSecurity);
+    securityCloseButton.addEventListener("click", closeSecurity);
+    passwordChangeForm.addEventListener("submit", handlePasswordChange);
+    revokeSessionsForm.addEventListener("submit", handleRevokeSessions);
     deleteAccountButton.addEventListener("click", openDeleteAccount);
     deleteAccountCloseButton.addEventListener("click", closeDeleteAccount);
     deleteAccountCancelButton.addEventListener("click", closeDeleteAccount);
@@ -2837,6 +3052,12 @@ adminButton.addEventListener("click", () => {
       }
     });
 
+    securityModal.addEventListener("click", (event) => {
+      if (event.target === securityModal) {
+        closeSecurity();
+      }
+    });
+
     deleteAccountModal.addEventListener("click", (event) => {
       if (event.target === deleteAccountModal) {
         closeDeleteAccount();
@@ -2845,6 +3066,10 @@ adminButton.addEventListener("click", () => {
 
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
+      if (!securityModal.hidden) {
+        closeSecurity();
+        return;
+      }
       if (!deleteAccountModal.hidden) {
         closeDeleteAccount();
         return;
