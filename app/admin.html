@@ -560,6 +560,42 @@
 
 
 
+
+
+    <section class="card section">
+      <div class="section-head">
+        <div>
+          <h2>Hard 18+ Age Verification</h2>
+          <p>Provider-neutral verification state with minimal retained data. UNBOUND does not store raw ID images, face scans, or biometric templates.</p>
+        </div>
+        <button class="btn" id="refreshAgeVerification" type="button">Refresh Age Status</button>
+      </div>
+
+      <section class="stats">
+        <div class="card stat"><div class="label">Age Adapter</div><div class="value" id="ageAdapter">—</div></div>
+        <div class="card stat"><div class="label">Verified 18+</div><div class="value" id="ageVerified">—</div></div>
+        <div class="card stat"><div class="label">Pending</div><div class="value" id="agePending">—</div></div>
+        <div class="card stat"><div class="label">Unavailable</div><div class="value" id="ageUnavailable">—</div></div>
+      </section>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Status</th>
+              <th>Accounts</th>
+            </tr>
+          </thead>
+          <tbody id="ageVerificationBody">
+            <tr><td colspan="3" class="loading">Loading age-verification foundation…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="feedback" id="ageVerificationFeedback"></div>
+    </section>
+
+
     <section class="card section">
       <div class="section-head">
         <div>
@@ -702,6 +738,13 @@
     const billingWebhooks = document.getElementById("billingWebhooks");
     const billingSubscriptionsBody = document.getElementById("billingSubscriptionsBody");
     const billingFeedback = document.getElementById("billingFeedback");
+    const refreshAgeVerification = document.getElementById("refreshAgeVerification");
+    const ageAdapter = document.getElementById("ageAdapter");
+    const ageVerified = document.getElementById("ageVerified");
+    const agePending = document.getElementById("agePending");
+    const ageUnavailable = document.getElementById("ageUnavailable");
+    const ageVerificationBody = document.getElementById("ageVerificationBody");
+    const ageVerificationFeedback = document.getElementById("ageVerificationFeedback");
 
     let dashboard = null;
     let auditEvents = [];
@@ -709,6 +752,7 @@
     let entitlementCatalog = [];
     let selectedUserAccess = null;
     let billingSummary = null;
+    let ageVerificationSummary = null;
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -835,6 +879,56 @@
     }
 
 
+
+
+
+    function renderAgeVerification() {
+      if (!ageVerificationSummary) return;
+      const gateway = ageVerificationSummary.gateway || {};
+      const totals = ageVerificationSummary.totals || {};
+      ageAdapter.textContent = gateway.configured
+        ? String(gateway.provider || "READY").toUpperCase()
+        : gateway.provider
+          ? `${String(gateway.provider).toUpperCase()} / SETUP`
+          : "NOT SELECTED";
+      ageVerified.textContent = formatInteger(totals.verifiedActive);
+      agePending.textContent = formatInteger(totals.pending);
+      ageUnavailable.textContent = formatInteger(totals.unavailable);
+
+      const rows = Array.isArray(ageVerificationSummary.records)
+        ? ageVerificationSummary.records
+        : [];
+      if (!rows.length) {
+        ageVerificationBody.innerHTML =
+          '<tr><td colspan="3" class="loading">No hard age-verification records yet.</td></tr>';
+      } else {
+        ageVerificationBody.innerHTML = rows.map((item) => `
+          <tr>
+            <td>${escapeHtml(item.provider || "unassigned")}</td>
+            <td><span class="badge ${item.status === "verified" ? "gold" : ""}">${escapeHtml(item.status || "unverified")}</span></td>
+            <td>${escapeHtml(formatInteger(item.count))}</td>
+          </tr>
+        `).join("");
+      }
+
+      const message = gateway.configured
+        ? `Age-verification adapter ${gateway.provider} is configured.`
+        : gateway.state === "adapter-not-installed"
+          ? `Age-verification provider ${gateway.provider} is selected, but its adapter is not installed yet.`
+          : "No age-verification provider is selected yet. The minimal-retention server foundation is ready for an approved adapter.";
+      setFeedback(ageVerificationFeedback, message, gateway.configured ? "ok" : "");
+    }
+
+    async function loadAgeVerification() {
+      try {
+        ageVerificationSummary = await api("/api/admin/age-verification/summary");
+        renderAgeVerification();
+      } catch (error) {
+        ageVerificationBody.innerHTML =
+          `<tr><td colspan="3" class="loading">${escapeHtml(error.message)}</td></tr>`;
+        setFeedback(ageVerificationFeedback, error.message, "error");
+      }
+    }
 
     function renderBilling() {
       if (!billingSummary) return;
@@ -1244,7 +1338,7 @@
         renderStats();
         renderGiftSlots();
         renderUsers();
-        await Promise.all([loadUsage(), loadAudit(), loadBilling()]);
+        await Promise.all([loadUsage(), loadAudit(), loadBilling(), loadAgeVerification()]);
         await initializeEntitlements();
       } catch (error) {
         if (error.status === 401 || error.status === 403) {
@@ -1299,6 +1393,7 @@
     refreshAudit.addEventListener("click", loadAudit);
     refreshUsage.addEventListener("click", loadUsage);
     refreshBilling.addEventListener("click", loadBilling);
+    refreshAgeVerification.addEventListener("click", loadAgeVerification);
 
     loadDashboard();
   </script>

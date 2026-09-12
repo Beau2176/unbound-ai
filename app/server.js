@@ -16,6 +16,11 @@ const {
   subscriptionStatusAllowsAccess,
   getBillingGatewayStatus
 } = require("./billing/gateway");
+const {
+  normalizeAgeVerificationStatus,
+  ageVerificationAllowsAdultAccess,
+  getAgeVerificationGatewayStatus
+} = require("./age/gateway");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -235,6 +240,48 @@ async function initializeDatabase() {
 
     CREATE INDEX IF NOT EXISTS billing_webhook_events_provider_status_idx
       ON billing_webhook_events(provider, status, received_at DESC);
+
+    CREATE TABLE IF NOT EXISTS account_age_verification (
+      user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      provider TEXT,
+      status TEXT NOT NULL DEFAULT 'unverified',
+      age_threshold SMALLINT NOT NULL DEFAULT 18,
+      verified_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ,
+      provider_reference_hash TEXT,
+      result_code TEXT,
+      last_event_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT account_age_verification_status_check
+        CHECK (status IN ('unverified', 'pending', 'verified', 'failed', 'expired', 'revoked')),
+      CONSTRAINT account_age_verification_threshold_check
+        CHECK (age_threshold BETWEEN 18 AND 30)
+    );
+
+    CREATE INDEX IF NOT EXISTS account_age_verification_status_idx
+      ON account_age_verification(status, expires_at);
+
+    CREATE TABLE IF NOT EXISTS age_verification_events (
+      id BIGSERIAL PRIMARY KEY,
+      provider TEXT NOT NULL,
+      provider_event_id TEXT NOT NULL,
+      user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+      event_type TEXT,
+      status TEXT NOT NULL DEFAULT 'received',
+      payload_sha256 TEXT NOT NULL,
+      error_text TEXT,
+      received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      processed_at TIMESTAMPTZ,
+      UNIQUE(provider, provider_event_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS age_verification_events_received_idx
+      ON age_verification_events(received_at DESC);
+
+    CREATE INDEX IF NOT EXISTS age_verification_events_provider_status_idx
+      ON age_verification_events(provider, status, received_at DESC);
+
 
 
     CREATE TABLE IF NOT EXISTS account_entitlement_overrides (
@@ -597,6 +644,93 @@ async function loadAccountSubscription(userId, client = pool) {
   return result.rows[0] || null;
 }
 
+
+
+async function loadAgeVerification(userId, client = pool) {
+  const result = await client.query(
+    `SELECT
+       provider,
+       status,
+       age_threshold,
+       verified_at,
+       expires_at,
+       provider_reference_hash IS NOT NULL AS provider_reference_recorded,
+       result_code,
+       last_event_at,
+       created_at,
+       updated_at
+     FROM account_age_verification
+     WHERE user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+
+  return result.rows[0] || null;
+}
+
+function publicAgeVerification(row) {
+  const status = normalizeAgeVerificationStatus(row?.status);
+  return {
+    provider: row?.provider || null,
+    status,
+    verified: ageVerificationAllowsAdultAccess(status, row?.expires_at),
+    ageThreshold: Number(row?.age_threshold || 18),
+    verifiedAt: row?.verified_at || null,
+    expiresAt: row?.expires_at || null,
+    providerReferenceRecorded: Boolean(row?.provider_reference_recorded),
+    resultCode: row?.result_code || null,
+    lastEventAt: row?.last_event_at || null,
+    updatedAt: row?.updated_at || null
+  };
+}
+
+async function buildAgeVerificationState(userId) {
+  const row = await loadAgeVerification(userId);
+  return publicAgeVerification(row);
+}
+
+async function assertAgeVerifiedAdult(req) {
+  if (!databaseReady || !pool) {
+    const error = new Error("Age verification is temporarily unavailable.");
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const user = req.user || (await findSessionUser(req));
+  if (!user) {
+    const error = new Error("Sign in before using age-restricted UNBOUND AI features.");
+    error.statusCode = 401;
+    throw error;
+  }
+
+  const ageVerification = await buildAgeVerificationState(user.id);
+  if (!ageVerification.verified) {
+    const error = new Error(
+      "Hard 18+ age verification is required for that UNBOUND AI feature."
+    );
+    error.statusCode = 403;
+    error.ageVerification = ageVerification;
+    throw error;
+  }
+
+  return { user, ageVerification };
+}
+
+function requireAgeVerifiedAdult(req, res, next) {
+  assertAgeVerifiedAdult(req)
+    .then((result) => {
+      req.user = result.user;
+      req.ageVerification = result.ageVerification;
+      next();
+    })
+    .catch((error) => {
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Could not verify adult access.",
+        ageVerification: error.ageVerification || null
+      });
+    });
+}
+
 async function loadEntitlementOverrides(userId, client = pool) {
   const result = await client.query(
     `SELECT entitlement_key, enabled, reason, expires_at
@@ -639,9 +773,10 @@ function resolveEffectivePlan(user, subscription) {
 async function buildAccountAccess(user) {
   if (!user || !databaseReady || !pool) return null;
 
-  const [subscription, overrides] = await Promise.all([
+  const [subscription, overrides, ageVerification] = await Promise.all([
     loadAccountSubscription(user.id),
-    loadEntitlementOverrides(user.id)
+    loadEntitlementOverrides(user.id),
+    buildAgeVerificationState(user.id)
   ]);
   const effective = resolveEffectivePlan(user, subscription);
   const capabilities = buildCapabilityAccess({
@@ -665,6 +800,7 @@ async function buildAccountAccess(user) {
       cancelAtPeriodEnd: Boolean(subscription?.cancel_at_period_end)
     },
     capabilities,
+    ageVerification,
     summary: {
       usable: capabilities.filter((item) => item.usable).length,
       entitledButNotLive: capabilities.filter(
@@ -822,7 +958,8 @@ app.get("/api/health", (req, res) => {
     accounts: databaseReady ? "ready" : "not-ready",
     ai: getGatewayStatus(),
     commercial: databaseReady ? "entitlements-ready" : "not-ready",
-    billing: getBillingGatewayStatus()
+    billing: getBillingGatewayStatus(),
+    ageVerification: getAgeVerificationGatewayStatus()
   });
 });
 
@@ -990,6 +1127,24 @@ app.get(
 
 
 
+
+
+app.get(
+  "/api/account/age-verification",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    try {
+      return res.json({
+        gateway: getAgeVerificationGatewayStatus(),
+        ageVerification: await buildAgeVerificationState(req.user.id)
+      });
+    } catch (error) {
+      console.error("UNBOUND AI ACCOUNT AGE VERIFICATION ERROR:", error);
+      return res.status(500).json({ error: "Could not load age-verification status." });
+    }
+  }
+);
 
 app.get(
   "/api/account/security",
@@ -2137,6 +2292,73 @@ app.delete(
 
 
 
+
+
+app.get(
+  "/api/admin/age-verification/summary",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const [totalsResult, groupedResult, eventResult] = await Promise.all([
+        pool.query(`
+          SELECT
+            COUNT(*)::int AS records,
+            COUNT(*) FILTER (
+              WHERE status = 'verified'
+                AND (expires_at IS NULL OR expires_at > NOW())
+            )::int AS verified_active,
+            COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+            COUNT(*) FILTER (
+              WHERE status IN ('expired', 'revoked')
+                 OR (status = 'verified' AND expires_at IS NOT NULL AND expires_at <= NOW())
+            )::int AS unavailable
+          FROM account_age_verification
+        `),
+        pool.query(`
+          SELECT
+            COALESCE(NULLIF(provider, ''), 'unassigned') AS provider,
+            status,
+            COUNT(*)::int AS records
+          FROM account_age_verification
+          GROUP BY COALESCE(NULLIF(provider, ''), 'unassigned'), status
+          ORDER BY records DESC, provider, status
+        `),
+        pool.query(`
+          SELECT
+            COUNT(*)::int AS events_30d,
+            COUNT(*) FILTER (WHERE status = 'processed')::int AS processed_30d,
+            COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_30d
+          FROM age_verification_events
+          WHERE received_at >= NOW() - INTERVAL '30 days'
+        `)
+      ]);
+
+      const totals = totalsResult.rows[0] || {};
+      const events = eventResult.rows[0] || {};
+      return res.json({
+        gateway: getAgeVerificationGatewayStatus(),
+        totals: {
+          records: Number(totals.records || 0),
+          verifiedActive: Number(totals.verified_active || 0),
+          pending: Number(totals.pending || 0),
+          unavailable: Number(totals.unavailable || 0),
+          events30d: Number(events.events_30d || 0),
+          processed30d: Number(events.processed_30d || 0),
+          failed30d: Number(events.failed_30d || 0)
+        },
+        records: groupedResult.rows.map((row) => ({
+          provider: row.provider,
+          status: normalizeAgeVerificationStatus(row.status),
+          count: Number(row.records || 0)
+        }))
+      });
+    } catch (error) {
+      console.error("UNBOUND AI ADMIN AGE VERIFICATION SUMMARY ERROR:", error);
+      return res.status(500).json({ error: "Could not load age-verification status." });
+    }
+  }
+);
 
 app.get(
   "/api/admin/billing/summary",
