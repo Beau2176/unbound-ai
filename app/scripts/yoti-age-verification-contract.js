@@ -64,6 +64,7 @@ async function main() {
     YOTI_NOTIFICATION_PUBLIC_KEY: publicPem,
     YOTI_ADULT_INDUSTRY_ONBOARDING_VERIFIED: "true",
     YOTI_OVER_18_TEMPLATE_VERIFIED: "true",
+    YOTI_NON_BIOMETRIC_FALLBACK_VERIFIED: "true",
     YOTI_NOTIFICATION_SIGNATURE_VERIFIED: "true",
     YOTI_VERIFICATION_VALID_DAYS: "365",
     PUBLIC_APP_ORIGIN: "https://unbound.example.invalid"
@@ -76,10 +77,12 @@ async function main() {
   assert.strictEqual(config.configured, true);
   assert.strictEqual(config.ttlSeconds, 900);
   assert.strictEqual(config.verificationValidDays, 365);
+  assert.strictEqual(config.nonBiometricFallbackVerified, true);
 
   for (const key of [
     "YOTI_ADULT_INDUSTRY_ONBOARDING_VERIFIED",
     "YOTI_OVER_18_TEMPLATE_VERIFIED",
+    "YOTI_NON_BIOMETRIC_FALLBACK_VERIFIED",
     "YOTI_NOTIFICATION_SIGNATURE_VERIFIED"
   ]) {
     assert.strictEqual(
@@ -107,7 +110,11 @@ async function main() {
       ok: true,
       status: 201,
       async text() {
-        return JSON.stringify({ id: "def6fd14-dba9-4610-b6c3-9a7e8909aac0" });
+        return JSON.stringify({
+          id: "def6fd14-dba9-4610-b6c3-9a7e8909aac0",
+          status: "PENDING",
+          expires_at: "2099-08-08T23:41:39Z"
+        });
       }
     };
   };
@@ -151,6 +158,7 @@ async function main() {
     assert.strictEqual(session.providerReference, "def6fd14-dba9-4610-b6c3-9a7e8909aac0");
     assert.strictEqual(session.status, "pending");
     assert.strictEqual(session.minimumAge, 18);
+    assert.strictEqual(session.expiresAt, "2099-08-08T23:41:39.000Z");
     assert.ok(!JSON.stringify(session).includes(env.YOTI_API_KEY));
   } finally {
     globalThis.fetch = originalFetch;
@@ -185,6 +193,33 @@ async function main() {
   assert.strictEqual(Object.prototype.hasOwnProperty.call(event, "signature"), false);
   assert.ok(!JSON.stringify(event).includes(notification.reference_id));
 
+  const deprecatedResultRemoved = buildSignedNotification({
+    privateKey,
+    overrides: { result: undefined }
+  });
+  delete deprecatedResultRemoved.result;
+  const unsignedWithoutResult = { ...deprecatedResultRemoved };
+  delete unsignedWithoutResult.sequence_number;
+  delete unsignedWithoutResult.signature;
+  const payloadWithoutResult = JSON.stringify(unsignedWithoutResult).replace(/\s/g, "");
+  deprecatedResultRemoved.signature = crypto.sign(
+    "sha256",
+    Buffer.from(payloadWithoutResult, "utf8"),
+    {
+      key: privateKey,
+      padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+      saltLength: 222
+    }
+  ).toString("base64");
+  const withoutResultBody = Buffer.from(JSON.stringify(deprecatedResultRemoved), "utf8");
+  assert.strictEqual(verifyNotificationSignature({ rawBody: withoutResultBody, env }), true);
+  const withoutResultEvent = await processAgeVerificationWebhook({
+    rawBody: withoutResultBody,
+    headers: {},
+    env
+  });
+  assert.strictEqual(withoutResultEvent.status, "verified");
+
   const tampered = Buffer.from(
     JSON.stringify({ ...notification, result: false }),
     "utf8"
@@ -196,9 +231,23 @@ async function main() {
   );
 
   assert.strictEqual(normalizeNotificationStatus({ state: "COMPLETE", result: true }), "verified");
+  assert.strictEqual(normalizeNotificationStatus({ state: "COMPLETE" }), "verified");
   assert.strictEqual(normalizeNotificationStatus({ state: "COMPLETE", result: false }), "failed");
   assert.strictEqual(normalizeNotificationStatus({ state: "EXPIRED", result: false }), "expired");
+  assert.strictEqual(normalizeNotificationStatus({ state: "CANCELLED" }), "failed");
   assert.strictEqual(normalizeNotificationStatus({ state: "PENDING" }), "pending");
+  assert.strictEqual(normalizeNotificationStatus({ state: "SOMETHING_NEW", result: true }), "unverified");
+
+  const unknown = buildSignedNotification({
+    privateKey,
+    overrides: { state: "SOMETHING_NEW", result: true }
+  });
+  const unknownBody = Buffer.from(JSON.stringify(unknown), "utf8");
+  await assert.rejects(
+    () => processAgeVerificationWebhook({ rawBody: unknownBody, headers: {}, env }),
+    (error) => error?.code === "AGE_VERIFICATION_WEBHOOK_PAYLOAD_INVALID",
+    "unknown future provider states must fail closed"
+  );
 
   const startSource = fs.readFileSync(path.join(__dirname, "..", "start.js"), "utf8");
   assert.match(startSource, /registerBuiltInAgeVerificationProviders/);
