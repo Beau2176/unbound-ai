@@ -13,6 +13,8 @@ const INDEX_NAV_MARKER =
   '<a class="account-button advertiser-link" href="/advertisers.html">ADVERTISE</a>';
 const FILES_NAV_LINK =
   '<a class="account-button advertiser-link" href="/files.html">FILES</a>';
+const IMAGES_NAV_LINK =
+  '<a class="account-button advertiser-link" href="/images.html">IMAGES</a>';
 
 function safeProviderError(error) {
   const code = String(error?.code || "");
@@ -182,11 +184,11 @@ function buildFileAwareIndexHtml(indexHtml) {
     throw error;
   }
 
-  const withFileNavigation = source.replace(
+  const withProductNavigation = source.replace(
     INDEX_NAV_MARKER,
-    `${INDEX_NAV_MARKER}\n      ${FILES_NAV_LINK}`
+    `${INDEX_NAV_MARKER}\n      ${FILES_NAV_LINK}\n      ${IMAGES_NAV_LINK}`
   );
-  return injectEmailAccountUi(withFileNavigation);
+  return injectEmailAccountUi(withProductNavigation);
 }
 
 let cachedIndexHtml = null;
@@ -212,6 +214,7 @@ function sendFileAwareIndex(req, res) {
 module.exports = {
   INDEX_NAV_MARKER,
   FILES_NAV_LINK,
+  IMAGES_NAV_LINK,
   safeProviderError,
   createFileAnalysisRouter,
   sendFileAnalysisPage,
