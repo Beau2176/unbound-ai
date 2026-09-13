@@ -1,4 +1,3 @@
-const DEFAULT_HEYGEN_VOICE_ID = "cbca446e24b94d66a6ef405d9eb8355f";
 const DEFAULT_HEYGEN_VOICE_NAME = "Boyd Voice V3";
 const HEYGEN_SPEECH_URL = "https://api.heygen.com/v3/voices/speech";
 const MAX_SPEECH_CHARS = 5000;
@@ -11,7 +10,7 @@ function clampSpeed(value) {
 
 function getHeyGenVoiceConfig(env = process.env) {
   const apiKey = String(env.HEYGEN_API_KEY || "").trim();
-  const voiceId = String(env.HEYGEN_VOICE_ID || DEFAULT_HEYGEN_VOICE_ID).trim();
+  const voiceId = String(env.HEYGEN_VOICE_ID || "").trim();
   const voiceName = String(env.HEYGEN_VOICE_NAME || DEFAULT_HEYGEN_VOICE_NAME).trim();
   const speed = clampSpeed(env.HEYGEN_VOICE_SPEED || 1);
   return Object.freeze({
@@ -30,12 +29,13 @@ function publicHeyGenVoiceStatus(env = process.env) {
   return {
     provider: config.provider,
     configured: config.configured,
-    voiceId: config.voiceId,
     voiceName: config.voiceName,
     speed: config.speed,
     locale: config.locale,
     engine: "starfish",
-    rawApiKeyExposedToBrowser: false
+    privateVoiceIdConfigured: Boolean(config.voiceId),
+    rawApiKeyExposedToBrowser: false,
+    privateVoiceIdExposedToBrowser: false
   };
 }
 
@@ -111,10 +111,10 @@ async function synthesizeSpeech({
 } = {}) {
   const config = getHeyGenVoiceConfig(env);
   if (!config.configured) {
-    const error = new Error("HEYGEN_API_KEY is not configured.");
+    const error = new Error("HEYGEN_API_KEY and HEYGEN_VOICE_ID must be configured.");
     error.code = "VOICE_PROVIDER_NOT_CONFIGURED";
     error.statusCode = 503;
-    error.publicMessage = "Your UNBOUND voice is ready, but the HeyGen API connection has not been configured on the server yet.";
+    error.publicMessage = "Your UNBOUND voice is selected, but the HeyGen server connection is not fully configured yet.";
     throw error;
   }
   if (typeof fetchImpl !== "function") {
@@ -179,7 +179,6 @@ async function synthesizeSpeech({
 }
 
 module.exports = {
-  DEFAULT_HEYGEN_VOICE_ID,
   DEFAULT_HEYGEN_VOICE_NAME,
   HEYGEN_SPEECH_URL,
   MAX_SPEECH_CHARS,
