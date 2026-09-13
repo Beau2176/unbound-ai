@@ -32,14 +32,14 @@ function buildIntegratedSource() {
 }
 
 function main() {
-  assert.strictEqual(INTEGRATION_VERSION, "v0.71");
+  assert.strictEqual(INTEGRATION_VERSION, "v0.72");
   const integrated = buildIntegratedSource();
   assert.strictEqual(count(integrated, 'require("./command-center/routes")'), 1);
   assert.strictEqual(count(integrated, '"/command-center.html"'), 1);
   assert.strictEqual(count(integrated, '"/api/command-center"'), 1);
   assert.strictEqual(count(integrated, 'requireCapability("command_center")'), 2);
   assert.strictEqual(count(integrated, "createCommandCenterRouter({"), 1);
-  assert.strictEqual(count(integrated, "getPool: () => pool"), 1);
+  assert.strictEqual(count(integrated, "getPool: () => pool"), 2);
 
   const pageRoute = integrated.indexOf('"/command-center.html"');
   const pageDatabase = integrated.indexOf("requireDatabase", pageRoute);
@@ -57,10 +57,12 @@ function main() {
   const signedIn = integrated.indexOf("requireSignedIn", mount);
   const capability = integrated.indexOf('requireCapability("command_center")', mount);
   const router = integrated.indexOf("createCommandCenterRouter({", mount);
+  const getPool = integrated.indexOf("getPool: () => pool", router);
   assert.ok(database > mount);
   assert.ok(signedIn > database);
   assert.ok(capability > signedIn);
   assert.ok(router > capability);
+  assert.ok(getPool > router);
 
   new vm.Script(`(function(require,module,exports,__dirname,__filename){\n${integrated}\n})`);
 
