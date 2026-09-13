@@ -86,6 +86,32 @@ restoring all data. See the official [PostgreSQL pg_restore documentation](https
 
 A local dump is **not** a durable backup until it has been copied to storage that survives loss of the database host and application host.
 
+### v0.68 real PostgreSQL recovery integration gate
+
+Production CI also starts an isolated PostgreSQL 16 service and runs
+`npm run recovery-integration-check`. This test starts the actual integrated
+application (`start.js`) against a new database, registers a synthetic account,
+and seeds conversation, subscription, consent, usage and audit records. It stops
+the application, runs the repository backup script, verifies the checksum,
+restores the dump with `--exit-on-error --single-transaction`, and compares every
+public table's row count and content digest plus every sequence's state. It then
+starts the app against the restored database, signs in, loads recovered history,
+and confirms anonymous access to that history is denied.
+
+For a local run, provide `TEST_POSTGRES_URL` pointing to a disposable loopback
+PostgreSQL server's `/postgres` maintenance database. The script refuses remote
+hosts, other initial database names, and URL query overrides. The test role must
+be able to create/drop databases. It creates uniquely named `unbound_ci_*`
+databases and drops only databases created by that run in its cleanup. Required
+tools are Node 24, Bash, `pg_dump`, `pg_restore` and a SHA-256 utility. Match the
+PostgreSQL client major version to the test server.
+
+No production connection strings, external AI/email/billing credentials or live
+customer data are used. A successful CI run proves the tested schema and
+synthetic records survive a logical backup/restore cycle. It does **not** verify
+offsite backup storage, production retention, production volume, or recovery of
+a real production backup. It must not update production recovery attestations.
+
 ## Verify a backup before depending on it
 
 At minimum:
