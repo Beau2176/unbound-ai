@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#050913" />
+  <title>Connected Apps | UNBOUND AI</title>
+  <style>
+    :root { color-scheme: dark; --bg:#050913; --panel:rgba(7,14,27,.9); --line:rgba(107,193,255,.28); --text:#f6fbff; --muted:#aab8c9; --blue:#6bc1ff; --gold:#ffad43; --green:#65e8a4; --red:#ff8d8d; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--text); background:linear-gradient(180deg,rgba(2,6,14,.25),rgba(2,6,14,.9)),url("/unbound-cosmic.png") center/cover fixed no-repeat; }
+    main { width:min(900px,calc(100% - 28px)); margin:0 auto; padding:32px 0 64px; }
+    a { color:var(--blue); }
+    .top { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:22px; }
+    .brand { font-weight:900; letter-spacing:.16em; }
+    .back { text-decoration:none; padding:9px 12px; border:1px solid var(--line); border-radius:10px; background:rgba(9,20,38,.72); font-weight:800; }
+    .panel { border:1px solid var(--line); border-radius:18px; padding:20px; background:var(--panel); box-shadow:0 20px 60px rgba(0,0,0,.42); backdrop-filter:blur(16px); }
+    h1 { margin:0 0 8px; font-size:clamp(25px,5vw,38px); }
+    p { color:var(--muted); line-height:1.55; }
+    .provider { margin-top:18px; padding:18px; border:1px solid rgba(255,255,255,.1); border-radius:14px; background:rgba(255,255,255,.025); }
+    .provider-head { display:flex; justify-content:space-between; gap:14px; align-items:flex-start; }
+    .provider h2 { margin:0 0 5px; font-size:20px; }
+    .badge { padding:6px 9px; border-radius:999px; border:1px solid rgba(255,255,255,.16); font-size:10px; font-weight:900; letter-spacing:.07em; white-space:nowrap; }
+    .badge.live { color:#baf8d7; border-color:rgba(101,232,164,.35); background:rgba(19,91,59,.22); }
+    .badge.off { color:#ffd297; border-color:rgba(255,173,67,.32); background:rgba(116,68,12,.2); }
+    .actions { display:flex; flex-wrap:wrap; gap:9px; margin-top:15px; }
+    button { border:1px solid rgba(107,193,255,.38); background:rgba(66,165,255,.12); color:#eff9ff; padding:10px 13px; border-radius:10px; font-weight:850; cursor:pointer; }
+    button.primary { border-color:rgba(255,173,67,.5); background:linear-gradient(135deg,rgba(255,173,67,.22),rgba(66,165,255,.16)); }
+    button.danger { border-color:rgba(255,141,141,.38); background:rgba(120,24,32,.22); color:#ffdada; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .status { margin-top:13px; min-height:20px; font-size:13px; color:var(--muted); }
+    .notice { margin-top:16px; padding:12px 13px; border-radius:11px; border:1px solid rgba(255,173,67,.26); background:rgba(116,68,12,.12); color:#ffe0af; font-size:12px; line-height:1.5; }
+    .repo-list { display:grid; gap:8px; margin-top:14px; }
+    .repo { display:flex; justify-content:space-between; gap:12px; padding:11px 12px; border:1px solid rgba(255,255,255,.08); border-radius:10px; background:rgba(255,255,255,.02); }
+    .repo-name { font-weight:800; overflow-wrap:anywhere; }
+    .repo-meta { color:var(--muted); font-size:11px; text-align:right; }
+    .empty { color:var(--muted); font-size:13px; padding:12px 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="top">
+      <div class="brand">UNBOUND <span style="color:#6bc1ff">AI</span></div>
+      <a class="back" href="/">BACK TO CHAT</a>
+    </div>
+    <section class="panel">
+      <h1>Connected Apps</h1>
+      <p>Connect external services only when you choose. UNBOUND starts with minimum permissions and keeps provider tokens encrypted on the server. Connected-app credentials are never shown to browser JavaScript after authorization.</p>
+
+      <article class="provider">
+        <div class="provider-head">
+          <div>
+            <h2>GitHub</h2>
+            <p style="margin:0">Read-only repository and account access. Write operations are intentionally disabled in this release.</p>
+          </div>
+          <span id="githubBadge" class="badge off">CHECKING</span>
+        </div>
+        <div id="githubIdentity" class="status">Loading GitHub connection status…</div>
+        <div class="actions">
+          <button id="connectButton" class="primary" type="button" disabled>CONNECT GITHUB</button>
+          <button id="reposButton" type="button" hidden>LOAD REPOSITORIES</button>
+          <button id="disconnectButton" class="danger" type="button" hidden>DISCONNECT</button>
+        </div>
+        <div id="githubStatus" class="status" role="status" aria-live="polite"></div>
+        <div id="repoList" class="repo-list"></div>
+      </article>
+
+      <div class="notice">GitHub App registration and production credentials must be configured by the UNBOUND owner before Connect becomes active. UNBOUND does not ask you to paste a GitHub password or personal access token.</div>
+    </section>
+  </main>
+  <script>
+    const badge = document.getElementById("githubBadge");
+    const identity = document.getElementById("githubIdentity");
+    const connectButton = document.getElementById("connectButton");
+    const reposButton = document.getElementById("reposButton");
+    const disconnectButton = document.getElementById("disconnectButton");
+    const statusEl = document.getElementById("githubStatus");
+    const repoList = document.getElementById("repoList");
+    let currentStatus = null;
+
+    function setStatus(message) { statusEl.textContent = message || ""; }
+    function renderRepositories(repositories) {
+      repoList.innerHTML = "";
+      if (!repositories.length) {
+        const empty = document.createElement("div"); empty.className = "empty"; empty.textContent = "No repositories are available to this GitHub App installation."; repoList.appendChild(empty); return;
+      }
+      for (const item of repositories) {
+        const row = document.createElement("div"); row.className = "repo";
+        const name = document.createElement("div"); name.className = "repo-name"; name.textContent = item.fullName || "Repository";
+        const meta = document.createElement("div"); meta.className = "repo-meta"; meta.textContent = `${item.private ? "Private" : "Public"}${item.archived ? " • Archived" : ""}`;
+        row.append(name, meta); repoList.appendChild(row);
+      }
+    }
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, { credentials:"same-origin", ...options, headers:{ "Content-Type":"application/json", ...(options.headers || {}) } });
+      const payload = response.status === 204 ? {} : await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Request failed.");
+      return payload;
+    }
+
+    async function refresh() {
+      try {
+        const payload = await api("/api/connections/status");
+        currentStatus = payload;
+        const configured = Boolean(payload.github?.configured);
+        const connected = Boolean(payload.connection);
+        badge.textContent = connected ? "CONNECTED" : configured ? "READY" : "NOT CONFIGURED";
+        badge.className = `badge ${connected ? "live" : "off"}`;
+        identity.textContent = connected
+          ? `Connected as ${payload.connection.accountLogin || "GitHub user"}. Read-only actions only.`
+          : configured
+            ? "GitHub is ready to connect."
+            : "GitHub App registration or deployment credentials are not configured yet.";
+        connectButton.hidden = connected;
+        connectButton.disabled = !configured;
+        reposButton.hidden = !connected;
+        disconnectButton.hidden = !connected;
+      } catch (error) {
+        badge.textContent = "UNAVAILABLE"; badge.className = "badge off"; identity.textContent = "Could not load Connected Apps status."; setStatus(error.message);
+      }
+    }
+
+    connectButton.addEventListener("click", async () => {
+      connectButton.disabled = true; setStatus("Starting secure GitHub authorization…");
+      try {
+        const payload = await api("/api/connections/github/authorize", { method:"POST", body:"{}" });
+        if (!payload.authorizationUrl) throw new Error("GitHub authorization URL was not returned.");
+        location.assign(payload.authorizationUrl);
+      } catch (error) { setStatus(error.message); connectButton.disabled = false; }
+    });
+
+    reposButton.addEventListener("click", async () => {
+      reposButton.disabled = true; setStatus("Loading repositories…"); repoList.innerHTML = "";
+      try { const payload = await api("/api/connections/github/repositories"); renderRepositories(payload.repositories || []); setStatus(`Loaded ${(payload.repositories || []).length} repository${(payload.repositories || []).length === 1 ? "" : "ies"}.`); }
+      catch (error) { setStatus(error.message); }
+      finally { reposButton.disabled = false; }
+    });
+
+    disconnectButton.addEventListener("click", async () => {
+      if (!confirm("Disconnect GitHub from UNBOUND AI?")) return;
+      disconnectButton.disabled = true; setStatus("Disconnecting GitHub…");
+      try { const payload = await api("/api/connections/github", { method:"DELETE" }); repoList.innerHTML = ""; setStatus(payload.warning || "GitHub disconnected."); await refresh(); }
+      catch (error) { setStatus(error.message); }
+      finally { disconnectButton.disabled = false; }
+    });
+
+    const githubResult = new URLSearchParams(location.search).get("github");
+    if (githubResult === "connected") setStatus("GitHub connected successfully.");
+    else if (githubResult) setStatus("GitHub connection was not completed. You can try again.");
+    refresh();
+  </script>
+</body>
+</html>
