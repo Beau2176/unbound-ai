@@ -9,16 +9,17 @@
     :root { --bg:#050913; --panel:#0a1220; --line:rgba(88,179,255,.28); --text:#f7fbff; --muted:#aab8c9; --blue:#42a5ff; --gold:#ffad43; --danger:#ff7676; --success:#65e8a4; }
     * { box-sizing:border-box; }
     body { margin:0; min-height:100vh; color:var(--text); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#050913; }
-    button, select { font:inherit; }
-    :where(button,select,a[href]):focus-visible { outline:3px solid #ffd297; outline-offset:3px; }
+    button, select, textarea, input { font:inherit; }
+    :where(button,select,textarea,input,a[href]):focus-visible { outline:3px solid #ffd297; outline-offset:3px; }
     header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 22px; border-bottom:1px solid rgba(255,255,255,.08); background:#08101d; }
     header h1 { margin:0; font-size:18px; }
+    header nav { display:flex; gap:12px; flex-wrap:wrap; }
     header a { color:#bfe4ff; text-decoration:none; font-size:12px; font-weight:800; }
     main { width:min(1180px,calc(100% - 28px)); margin:0 auto; padding:28px 0 60px; }
     .toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
     .toolbar p { margin:0; color:var(--muted); }
     .controls { display:flex; gap:8px; flex-wrap:wrap; }
-    select,button { border:1px solid var(--line); border-radius:10px; background:#0a1627; color:white; padding:9px 11px; }
+    select,button,textarea { border:1px solid var(--line); border-radius:10px; background:#0a1627; color:white; padding:9px 11px; }
     button { cursor:pointer; font-weight:800; }
     button.primary { border-color:rgba(101,232,164,.4); background:rgba(33,122,76,.24); }
     button.danger { border-color:rgba(255,118,118,.4); background:rgba(120,24,32,.24); }
@@ -45,6 +46,16 @@
     .creative a { color:#bfe4ff; word-break:break-all; }
     .performance { display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; color:#cfeaff; font-size:11px; font-weight:800; }
     .performance span { padding:6px 8px; border:1px solid rgba(88,179,255,.18); border-radius:9px; background:#081522; }
+    .review { margin-top:14px; padding:14px; border:1px solid rgba(255,173,67,.25); border-radius:12px; background:#0a111d; }
+    .review-head { display:flex; justify-content:space-between; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+    .review-head strong { font-size:13px; }
+    .review-head span { color:#ffd297; font-size:10px; font-weight:900; }
+    .review-checks { display:grid; gap:9px; }
+    .review-check { display:grid; grid-template-columns:auto 1fr; gap:9px; align-items:start; color:#dcecff; font-size:12px; line-height:1.45; }
+    .review-check input { margin-top:3px; accent-color:#65e8a4; }
+    .review-check small { display:block; color:var(--muted); margin-top:2px; }
+    .review textarea { width:100%; min-height:70px; margin-top:12px; resize:vertical; }
+    .prior-review { color:var(--muted); font-size:10px; margin-top:8px; }
     .actions { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
     .empty { padding:26px; border:1px dashed var(--line); border-radius:14px; color:var(--muted); text-align:center; }
     @media (max-width:700px) { .metrics { grid-template-columns:1fr; } .order-head { flex-direction:column; } .badges { justify-content:flex-start; } }
@@ -53,11 +64,11 @@
 <body>
   <header>
     <h1>UNBOUND AI — Advertising Admin</h1>
-    <a href="/admin.html">BACK TO ADMIN</a>
+    <nav><a href="/advertising-policy.html" target="_blank" rel="noopener">AD POLICY</a><a href="/admin.html">BACK TO ADMIN</a></nav>
   </header>
   <main>
     <div class="toolbar">
-      <p>Only paid and approved orders become public advertiser placements. Performance reporting is aggregate-only.</p>
+      <p>Only paid orders that pass every required policy check can become public advertiser placements. Performance reporting is aggregate-only.</p>
       <div class="controls">
         <select id="windowDays" aria-label="Analytics window">
           <option value="7">Last 7 days</option>
@@ -93,154 +104,81 @@
     const metricClicks = document.getElementById("metricClicks");
     const metricCtr = document.getElementById("metricCtr");
     let metricsByOrder = new Map();
+    let policy = null;
 
     function money(cents, currency) {
       return new Intl.NumberFormat(undefined,{style:"currency",currency:currency||"USD"}).format(Number(cents||0)/100);
     }
+    function wholeNumber(value) { return new Intl.NumberFormat().format(Math.max(0,Number(value||0))); }
+    function percent(value) { return `${(Math.max(0,Number(value||0))*100).toFixed(2)}%`; }
+    function badge(text, cls="") { const element=document.createElement("span"); element.className=`badge ${cls}`.trim(); element.textContent=text; return element; }
 
-    function wholeNumber(value) {
-      return new Intl.NumberFormat().format(Math.max(0,Number(value||0)));
+    function collectReview(card) {
+      const checks = {};
+      for (const input of card.querySelectorAll("[data-review-key]")) checks[input.dataset.reviewKey] = input.checked === true;
+      return { checks, notes: card.querySelector("[data-review-notes]")?.value || "" };
     }
 
-    function percent(value) {
-      const number = Number(value || 0);
-      return `${(Math.max(0, number) * 100).toFixed(2)}%`;
-    }
-
-    function badge(text, cls="") {
-      const element = document.createElement("span");
-      element.className = `badge ${cls}`.trim();
-      element.textContent = text;
-      return element;
-    }
-
-    async function reviewOrder(id, action) {
+    async function reviewOrder(id, action, card) {
       statusRoot.className = "status";
       statusRoot.textContent = `${action === "approve" ? "Approving" : "Rejecting"} order…`;
+      const review = collectReview(card);
       const response = await fetch(`/api/admin/advertising/orders/${encodeURIComponent(id)}/review`, {
-        method:"POST",
-        credentials:"same-origin",
-        headers:{"Content-Type":"application/json","Accept":"application/json"},
-        body:JSON.stringify({action})
+        method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json","Accept":"application/json"},
+        body:JSON.stringify({action,checks:review.checks,notes:review.notes})
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not review advertiser order.");
-      statusRoot.textContent = action === "approve" ? "Advertiser approved and scheduled." : "Advertiser rejected.";
+      statusRoot.textContent = action === "approve" ? `Advertiser approved under policy ${data.policyVersion || "current"}.` : "Advertiser rejected.";
       await refreshAll();
     }
 
+    function renderReview(card, order) {
+      const review = document.createElement("section");
+      review.className = "review";
+      const head = document.createElement("div"); head.className="review-head";
+      const title = document.createElement("strong"); title.textContent="Required policy review";
+      const version = document.createElement("span"); version.textContent=`POLICY ${policy?.version || "CURRENT"}`;
+      head.append(title,version);
+      const list = document.createElement("div"); list.className="review-checks";
+      for (const item of policy?.reviewChecks || []) {
+        const label = document.createElement("label"); label.className="review-check";
+        const checkbox = document.createElement("input"); checkbox.type="checkbox"; checkbox.dataset.reviewKey=item.key;
+        checkbox.checked = order.reviewAttestation?.[item.key] === true;
+        const copy = document.createElement("span"); copy.textContent=item.label;
+        const help = document.createElement("small"); help.textContent=item.description; copy.appendChild(help);
+        label.append(checkbox,copy); list.appendChild(label);
+      }
+      const notes = document.createElement("textarea"); notes.dataset.reviewNotes="true"; notes.maxLength=1000; notes.placeholder="Review notes / rejection reason (optional, but recommended for restricted or rejected ads)"; notes.value=order.reviewNotes||"";
+      review.append(head,list,notes);
+      if (order.reviewPolicyVersion) { const prior=document.createElement("div"); prior.className="prior-review"; prior.textContent=`Last reviewed under policy ${order.reviewPolicyVersion}.`; review.appendChild(prior); }
+      card.appendChild(review);
+    }
+
     function renderOrders(orders) {
-      ordersRoot.innerHTML = "";
-      if (!orders.length) {
-        ordersRoot.innerHTML = '<div class="empty">No advertiser orders match this view.</div>';
-        return;
-      }
+      ordersRoot.innerHTML="";
+      if (!orders.length) { ordersRoot.innerHTML='<div class="empty">No advertiser orders match this view.</div>'; return; }
       for (const order of orders) {
-        const card = document.createElement("article");
-        card.className = "order";
-
-        const head = document.createElement("div");
-        head.className = "order-head";
-        const copy = document.createElement("div");
-        const title = document.createElement("h2");
-        title.textContent = order.businessName;
-        const meta = document.createElement("div");
-        meta.className = "meta";
-        meta.textContent = `Order #${order.id} • ${order.packageName} • ${money(order.amountCents, order.currency)} • ${order.durationDays} days • ${order.contactEmail}`;
-        copy.append(title,meta);
-        const badges = document.createElement("div");
-        badges.className = "badges";
-        badges.append(badge(order.paymentStatus, order.paymentStatus), badge(order.reviewStatus, order.reviewStatus));
-        if (order.featured) badges.append(badge("featured"));
-        head.append(copy,badges);
-
-        const creative = document.createElement("div");
-        creative.className = "creative";
-        const headline = document.createElement("h3");
-        headline.textContent = order.headline;
-        const description = document.createElement("p");
-        description.textContent = order.description;
-        const link = document.createElement("a");
-        link.href = order.websiteUrl;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.textContent = order.websiteUrl;
-        creative.append(headline,description,link);
-
-        const metric = metricsByOrder.get(String(order.id)) || { impressions:0, clicks:0, clickThroughRate:0 };
-        const performance = document.createElement("div");
-        performance.className = "performance";
-        const impressions = document.createElement("span");
-        impressions.textContent = `${wholeNumber(metric.impressions)} impressions`;
-        const clicks = document.createElement("span");
-        clicks.textContent = `${wholeNumber(metric.clicks)} clicks`;
-        const ctr = document.createElement("span");
-        ctr.textContent = `${percent(metric.clickThroughRate)} CTR`;
-        performance.append(impressions,clicks,ctr);
-
-        const actions = document.createElement("div");
-        actions.className = "actions";
-        const approve = document.createElement("button");
-        approve.type = "button";
-        approve.className = "primary";
-        approve.textContent = "APPROVE";
-        approve.disabled = order.paymentStatus !== "paid" || order.reviewStatus === "approved";
-        approve.addEventListener("click", () => reviewOrder(order.id,"approve").catch(showError));
-        const reject = document.createElement("button");
-        reject.type = "button";
-        reject.className = "danger";
-        reject.textContent = "REJECT";
-        reject.disabled = order.reviewStatus === "rejected";
-        reject.addEventListener("click", () => reviewOrder(order.id,"reject").catch(showError));
-        actions.append(approve,reject);
-
-        card.append(head,creative,performance,actions);
-        ordersRoot.appendChild(card);
+        const card=document.createElement("article"); card.className="order";
+        const head=document.createElement("div"); head.className="order-head";
+        const copy=document.createElement("div"); const title=document.createElement("h2"); title.textContent=order.businessName;
+        const meta=document.createElement("div"); meta.className="meta"; meta.textContent=`Order #${order.id} • ${order.packageName} • ${money(order.amountCents,order.currency)} • ${order.durationDays} days • ${order.contactEmail}`; copy.append(title,meta);
+        const badges=document.createElement("div"); badges.className="badges"; badges.append(badge(order.paymentStatus,order.paymentStatus),badge(order.reviewStatus,order.reviewStatus)); if(order.featured)badges.append(badge("featured")); head.append(copy,badges);
+        const creative=document.createElement("div"); creative.className="creative"; const headline=document.createElement("h3"); headline.textContent=order.headline; const description=document.createElement("p"); description.textContent=order.description; const link=document.createElement("a"); link.href=order.websiteUrl; link.target="_blank"; link.rel="noopener noreferrer"; link.textContent=order.websiteUrl; creative.append(headline,description,link);
+        const metric=metricsByOrder.get(String(order.id))||{impressions:0,clicks:0,clickThroughRate:0}; const performance=document.createElement("div"); performance.className="performance"; for(const text of [`${wholeNumber(metric.impressions)} impressions`,`${wholeNumber(metric.clicks)} clicks`,`${percent(metric.clickThroughRate)} CTR`]){const span=document.createElement("span");span.textContent=text;performance.appendChild(span);}
+        card.append(head,creative,performance); renderReview(card,order);
+        const actions=document.createElement("div"); actions.className="actions";
+        const approve=document.createElement("button"); approve.type="button"; approve.className="primary"; approve.textContent="APPROVE"; approve.disabled=order.paymentStatus!=="paid"||order.reviewStatus==="approved"; approve.addEventListener("click",()=>reviewOrder(order.id,"approve",card).catch(showError));
+        const reject=document.createElement("button"); reject.type="button"; reject.className="danger"; reject.textContent="REJECT"; reject.disabled=order.reviewStatus==="rejected"; reject.addEventListener("click",()=>reviewOrder(order.id,"reject",card).catch(showError)); actions.append(approve,reject); card.appendChild(actions); ordersRoot.appendChild(card);
       }
     }
 
-    function showError(error) {
-      statusRoot.className = "status error";
-      statusRoot.textContent = error.message || "Advertising admin request failed.";
-    }
-
-    async function loadMetrics() {
-      const days = Number.parseInt(windowDays.value,10) || 30;
-      const response = await fetch(`/api/admin/advertising/metrics?days=${encodeURIComponent(days)}`, {
-        credentials:"same-origin",
-        headers:{"Accept":"application/json"}
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not load advertising metrics.");
-      metricsByOrder = new Map((Array.isArray(data.orders) ? data.orders : []).map((item) => [String(item.id),item]));
-      metricImpressions.textContent = wholeNumber(data.totals?.impressions);
-      metricClicks.textContent = wholeNumber(data.totals?.clicks);
-      metricCtr.textContent = percent(data.totals?.clickThroughRate);
-    }
-
-    async function loadOrders() {
-      statusRoot.className = "status";
-      statusRoot.textContent = "Loading advertiser orders…";
-      const query = filter.value === "all" ? "" : `?reviewStatus=${encodeURIComponent(filter.value)}`;
-      const response = await fetch(`/api/admin/advertising/orders${query}`, {
-        credentials:"same-origin",
-        headers:{"Accept":"application/json"}
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not load advertiser orders.");
-      renderOrders(Array.isArray(data.orders) ? data.orders : []);
-      statusRoot.textContent = `${data.orders?.length || 0} advertiser order(s). Analytics window: ${windowDays.value} days.`;
-    }
-
-    async function refreshAll() {
-      await loadMetrics();
-      await loadOrders();
-    }
-
-    refresh.addEventListener("click", () => refreshAll().catch(showError));
-    filter.addEventListener("change", () => loadOrders().catch(showError));
-    windowDays.addEventListener("change", () => refreshAll().catch(showError));
-    refreshAll().catch(showError);
+    function showError(error){statusRoot.className="status error";statusRoot.textContent=error.message||"Advertising admin request failed.";}
+    async function loadPolicy(){const response=await fetch("/api/advertising/policy",{credentials:"same-origin",headers:{"Accept":"application/json"}});const data=await response.json();if(!response.ok||!data.policy)throw new Error(data.error||"Could not load advertising policy.");policy=data.policy;}
+    async function loadMetrics(){const days=Number.parseInt(windowDays.value,10)||30;const response=await fetch(`/api/admin/advertising/metrics?days=${encodeURIComponent(days)}`,{credentials:"same-origin",headers:{"Accept":"application/json"}});const data=await response.json();if(!response.ok)throw new Error(data.error||"Could not load advertising metrics.");metricsByOrder=new Map((Array.isArray(data.orders)?data.orders:[]).map((item)=>[String(item.id),item]));metricImpressions.textContent=wholeNumber(data.totals?.impressions);metricClicks.textContent=wholeNumber(data.totals?.clicks);metricCtr.textContent=percent(data.totals?.clickThroughRate);}
+    async function loadOrders(){statusRoot.className="status";statusRoot.textContent="Loading advertiser orders…";const query=filter.value==="all"?"":`?reviewStatus=${encodeURIComponent(filter.value)}`;const response=await fetch(`/api/admin/advertising/orders${query}`,{credentials:"same-origin",headers:{"Accept":"application/json"}});const data=await response.json();if(!response.ok)throw new Error(data.error||"Could not load advertiser orders.");renderOrders(Array.isArray(data.orders)?data.orders:[]);statusRoot.textContent=`${data.orders?.length||0} advertiser order(s). Analytics window: ${windowDays.value} days. Policy: ${policy?.version||"current"}.`;}
+    async function refreshAll(){await loadPolicy();await loadMetrics();await loadOrders();}
+    refresh.addEventListener("click",()=>refreshAll().catch(showError)); filter.addEventListener("change",()=>loadOrders().catch(showError)); windowDays.addEventListener("change",()=>refreshAll().catch(showError)); refreshAll().catch(showError);
   </script>
 </body>
 </html>
