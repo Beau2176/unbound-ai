@@ -18,24 +18,25 @@
       padding: 24px;
     }
     .panel {
-      width: min(720px, 100%);
+      width: min(760px, 100%);
       border: 1px solid rgba(126, 181, 255, 0.28);
-      background: rgba(3, 10, 23, 0.88);
+      background: rgba(3, 10, 23, 0.9);
       border-radius: 24px;
       padding: 28px;
       box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
     }
     h1 { margin: 0 0 8px; font-size: clamp(32px, 6vw, 56px); letter-spacing: .04em; }
-    .tagline { color: #9ec7ff; margin-bottom: 24px; }
-    .status {
+    .tagline { color: #9ec7ff; margin-bottom: 18px; }
+    .status, .transcript {
       min-height: 52px;
       padding: 14px 16px;
       border-radius: 14px;
       background: rgba(255, 255, 255, 0.06);
-      margin: 18px 0;
+      margin: 14px 0;
       line-height: 1.45;
     }
-    .controls { display: flex; gap: 12px; flex-wrap: wrap; }
+    .transcript { color: #d9e8ff; min-height: 64px; }
+    .controls { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
     button, a {
       appearance: none;
       border: 0;
@@ -45,9 +46,9 @@
       text-decoration: none;
       cursor: pointer;
     }
-    #startButton { background: #eef5ff; color: #061024; }
+    #startButton, #sendButton { background: #eef5ff; color: #061024; }
     #stopButton { background: #7f1d1d; color: #fff; }
-    #stopButton:disabled, #startButton:disabled { opacity: .48; cursor: not-allowed; }
+    button:disabled { opacity: .48; cursor: not-allowed; }
     .back { background: rgba(255,255,255,.08); color: #fff; }
     .note { color: #aebbd0; font-size: .93rem; line-height: 1.55; margin-top: 20px; }
     .pulse {
@@ -57,135 +58,199 @@
       transition: transform .2s ease, box-shadow .2s ease;
     }
     .pulse.live { transform: scale(1.08); box-shadow: 0 0 68px rgba(78, 160, 255, .9); }
+    .fallback { margin-top: 20px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.12); }
+    .fallback label { display: block; font-weight: 700; margin-bottom: 8px; }
+    .fallback-row { display: flex; gap: 10px; }
+    input {
+      width: 100%; min-width: 0; border: 1px solid rgba(255,255,255,.18);
+      background: rgba(255,255,255,.07); color: #fff; border-radius: 999px;
+      padding: 13px 16px; font: inherit;
+    }
   </style>
 </head>
 <body>
   <main class="panel">
     <h1>UNBOUND VOICE</h1>
-    <div class="tagline">A more open tomorrow starts today.</div>
+    <div class="tagline">Powered by Boyd Voice V3 · A more open tomorrow starts today.</div>
     <div id="pulse" class="pulse" aria-hidden="true"></div>
-    <div id="status" class="status" role="status">Checking voice availability…</div>
+    <div id="status" class="status" role="status">Checking your UNBOUND voice…</div>
+    <div id="transcript" class="transcript">Your conversation will appear here.</div>
     <div class="controls">
       <button id="startButton" type="button" disabled>START VOICE</button>
       <button id="stopButton" type="button" disabled>END VOICE</button>
       <a class="back" href="/">BACK TO CHAT</a>
     </div>
-    <audio id="remoteAudio" autoplay playsinline></audio>
+
+    <div class="fallback">
+      <label for="textInput">Text fallback</label>
+      <div class="fallback-row">
+        <input id="textInput" maxlength="12000" placeholder="Type something for UNBOUND AI…" />
+        <button id="sendButton" type="button" disabled>SEND</button>
+      </div>
+    </div>
+
+    <audio id="voiceAudio" preload="none"></audio>
     <div class="note">
-      Voice uses your microphone only while the session is active. Your OpenAI API key stays on the UNBOUND AI server and is never sent to the browser.
+      UNBOUND AI uses your Boyd Voice V3 clone for spoken answers. The HeyGen API key stays on the server. Raw microphone audio is not stored by UNBOUND AI; supported browsers perform speech recognition for your spoken input.
     </div>
   </main>
 
   <script>
     const startButton = document.getElementById("startButton");
     const stopButton = document.getElementById("stopButton");
+    const sendButton = document.getElementById("sendButton");
+    const textInput = document.getElementById("textInput");
     const statusNode = document.getElementById("status");
-    const remoteAudio = document.getElementById("remoteAudio");
+    const transcriptNode = document.getElementById("transcript");
+    const voiceAudio = document.getElementById("voiceAudio");
     const pulse = document.getElementById("pulse");
 
-    let peer = null;
-    let localStream = null;
-    let events = null;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let active = false;
+    let busy = false;
+    let conversationId = null;
+    let voiceReady = false;
 
     function setStatus(message) {
       statusNode.textContent = message;
     }
 
-    function stopVoice(message = "Voice session ended.") {
-      if (events) {
-        try { events.close(); } catch (_) {}
-      }
-      events = null;
-      if (peer) {
-        try { peer.close(); } catch (_) {}
-      }
-      peer = null;
-      if (localStream) {
-        for (const track of localStream.getTracks()) track.stop();
-      }
-      localStream = null;
-      remoteAudio.srcObject = null;
-      startButton.disabled = false;
-      stopButton.disabled = true;
-      pulse.classList.remove("live");
-      setStatus(message);
+    function setTranscript(speaker, text) {
+      transcriptNode.textContent = `${speaker}: ${text}`;
     }
 
-    function waitForIceGatheringComplete(connection) {
-      if (connection.iceGatheringState === "complete") return Promise.resolve();
-      return new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          connection.removeEventListener("icegatheringstatechange", onChange);
-          resolve();
-        }, 5000);
-        function onChange() {
-          if (connection.iceGatheringState !== "complete") return;
-          clearTimeout(timeout);
-          connection.removeEventListener("icegatheringstatechange", onChange);
-          resolve();
-        }
-        connection.addEventListener("icegatheringstatechange", onChange);
+    function refreshButtons() {
+      startButton.disabled = !voiceReady || active || !SpeechRecognition;
+      stopButton.disabled = !active;
+      sendButton.disabled = !voiceReady || busy;
+    }
+
+    function stopRecognition() {
+      if (!recognition) return;
+      try { recognition.stop(); } catch (_) {}
+    }
+
+    function endVoice(message = "Voice session ended.") {
+      active = false;
+      stopRecognition();
+      voiceAudio.pause();
+      voiceAudio.removeAttribute("src");
+      pulse.classList.remove("live");
+      busy = false;
+      refreshButtons();
+      if (message) setStatus(message);
+    }
+
+    function listenAgain() {
+      if (!active || busy || !recognition) return;
+      try {
+        recognition.start();
+        pulse.classList.add("live");
+        setStatus("Listening…");
+      } catch (_) {}
+    }
+
+    async function speakReply(text) {
+      const response = await fetch("/api/voice/speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "UNBOUND Voice could not create speech.");
+
+      await new Promise((resolve, reject) => {
+        voiceAudio.onended = resolve;
+        voiceAudio.onerror = () => reject(new Error("The generated voice audio could not play."));
+        voiceAudio.src = payload.audioUrl;
+        voiceAudio.play().catch(reject);
       });
     }
 
-    async function startVoice() {
-      startButton.disabled = true;
-      stopButton.disabled = false;
-      setStatus("Requesting microphone access…");
+    async function askUnbound(message) {
+      const clean = String(message || "").trim();
+      if (!clean || busy) return;
+      busy = true;
+      refreshButtons();
+      stopRecognition();
+      pulse.classList.remove("live");
+      setTranscript("You", clean);
+      setStatus("UNBOUND AI is thinking…");
 
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        peer = new RTCPeerConnection();
-
-        peer.ontrack = (event) => {
-          remoteAudio.srcObject = event.streams[0] || new MediaStream([event.track]);
-          remoteAudio.play().catch(() => {});
-        };
-
-        peer.onconnectionstatechange = () => {
-          if (!peer) return;
-          const state = peer.connectionState;
-          if (state === "connected") {
-            pulse.classList.add("live");
-            setStatus("Voice is live. Speak normally; you can interrupt UNBOUND AI while it is talking.");
-          } else if (["failed", "closed", "disconnected"].includes(state)) {
-            stopVoice(state === "failed" ? "Voice connection failed. Try again." : "Voice connection ended.");
-          }
-        };
-
-        for (const track of localStream.getTracks()) {
-          peer.addTrack(track, localStream);
-        }
-
-        events = peer.createDataChannel("oai-events");
-        events.addEventListener("message", (event) => {
-          try {
-            const payload = JSON.parse(event.data);
-            if (payload.type === "error") {
-              setStatus("Voice provider reported an error. End the session and try again.");
-            }
-          } catch (_) {}
-        });
-
-        const offer = await peer.createOffer();
-        await peer.setLocalDescription(offer);
-        await waitForIceGatheringComplete(peer);
-
-        setStatus("Connecting to UNBOUND AI Voice…");
-        const response = await fetch("/api/voice/session", {
+        const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sdp: peer.localDescription.sdp })
+          body: JSON.stringify({
+            message: clean,
+            conversationId,
+            depthStyle: "casual",
+            productMode: "unbound"
+          })
         });
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(payload.error || "Voice could not start.");
-        }
+        if (!response.ok) throw new Error(payload.error || "UNBOUND AI could not answer.");
 
-        await peer.setRemoteDescription({ type: "answer", sdp: payload.sdp });
+        conversationId = payload.conversationId || conversationId;
+        const reply = String(payload.reply || "").trim();
+        setTranscript("UNBOUND AI", reply);
+        setStatus("Speaking with Boyd Voice V3…");
+        await speakReply(reply);
+        setStatus(active ? "Listening…" : "Ready.");
       } catch (error) {
-        stopVoice(error?.message || "Voice could not start.");
+        setStatus(error?.message || "Voice conversation failed.");
+      } finally {
+        busy = false;
+        refreshButtons();
+        if (active) listenAgain();
       }
+    }
+
+    function ensureRecognition() {
+      if (!SpeechRecognition || recognition) return;
+      recognition = new SpeechRecognition();
+      recognition.lang = "en-US";
+      recognition.interimResults = true;
+      recognition.continuous = false;
+
+      recognition.onresult = (event) => {
+        let interim = "";
+        let finalText = "";
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const text = event.results[i][0]?.transcript || "";
+          if (event.results[i].isFinal) finalText += text;
+          else interim += text;
+        }
+        if (interim) setTranscript("You", interim);
+        if (finalText.trim()) askUnbound(finalText.trim());
+      };
+
+      recognition.onerror = (event) => {
+        if (!active) return;
+        if (event.error === "no-speech") {
+          setStatus("I didn't hear anything. Listening again…");
+          setTimeout(listenAgain, 350);
+          return;
+        }
+        setStatus(`Microphone recognition error: ${event.error || "unknown"}.`);
+      };
+
+      recognition.onend = () => {
+        pulse.classList.remove("live");
+        if (active && !busy) setTimeout(listenAgain, 250);
+      };
+    }
+
+    function startVoice() {
+      ensureRecognition();
+      if (!recognition) {
+        setStatus("This browser does not support speech recognition. Use the text fallback below.");
+        return;
+      }
+      active = true;
+      refreshButtons();
+      listenAgain();
     }
 
     async function loadStatus() {
@@ -193,26 +258,42 @@
         const response = await fetch("/api/voice/status", { cache: "no-store" });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-          startButton.disabled = true;
+          voiceReady = false;
           setStatus(payload.error || "TOP Voice Conversation is not available for this account.");
+          refreshButtons();
           return;
         }
-        if (!payload.configured) {
-          startButton.disabled = true;
-          setStatus("Voice is not configured on the server yet.");
-          return;
+        voiceReady = Boolean(payload.configured);
+        if (!voiceReady) {
+          setStatus(`${payload.voiceName || "Boyd Voice V3"} is selected, but the HeyGen server connection still needs its API key.`);
+        } else if (!SpeechRecognition) {
+          setStatus(`${payload.voiceName || "Boyd Voice V3"} is ready. This browser lacks speech recognition, so use the text fallback.`);
+        } else {
+          setStatus(`Ready. Spoken answers use ${payload.voiceName || "Boyd Voice V3"}.`);
         }
-        startButton.disabled = false;
-        setStatus(`Ready. ${payload.model} with the ${payload.voice} voice.`);
+        refreshButtons();
       } catch (_) {
-        startButton.disabled = true;
+        voiceReady = false;
         setStatus("Could not load voice status.");
+        refreshButtons();
       }
     }
 
     startButton.addEventListener("click", startVoice);
-    stopButton.addEventListener("click", () => stopVoice());
-    window.addEventListener("beforeunload", () => stopVoice(""));
+    stopButton.addEventListener("click", () => endVoice());
+    sendButton.addEventListener("click", () => {
+      const message = textInput.value.trim();
+      if (!message) return;
+      textInput.value = "";
+      askUnbound(message);
+    });
+    textInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendButton.click();
+      }
+    });
+    window.addEventListener("beforeunload", () => endVoice(""));
     loadStatus();
   </script>
 </body>
