@@ -154,7 +154,10 @@ function sourceContract() {
   assert.ok(advertisers.includes("title.textContent = ad.headline"), "Ad headline must render as text, not HTML.");
   assert.ok(advertisers.includes("body.textContent = ad.description"), "Ad description must render as text, not HTML.");
   assert.ok(advertisers.includes("UNBOUND never inserts paid advertising into AI answers"), "Advertiser page must state ads are separate from AI answers.");
-  assert.ok(advertisingAdmin.includes("Only paid and approved orders become public advertiser placements."));
+  assert.ok(
+    advertisingAdmin.includes("Only paid orders that pass every required policy check can become public advertiser placements."),
+    "Advertising Admin must state the policy-gated publication rule."
+  );
   assert.ok(!server.includes("INSERT INTO advertising_payment_events (raw"), "Raw advertising webhook bodies must not be persisted.");
 }
 
@@ -163,7 +166,7 @@ function sourceContract() {
   testCreativeValidation();
   await testGateway();
   sourceContract();
-  console.log("PASS advertising contract: packages, HTTPS creative, payment verification, paid+approved publication, admin review, ad separation.");
+  console.log("PASS advertising contract: packages, HTTPS creative, payment verification, paid+approved publication, policy-gated admin review, ad separation.");
 })().catch((error) => {
   console.error(error);
   process.exit(1);
