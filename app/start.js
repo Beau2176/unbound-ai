@@ -14,6 +14,9 @@ const {
   integrateImageUnderstandingServerSource
 } = require("./images/server-integration");
 const {
+  integrateVoiceServerSource
+} = require("./voice/server-integration");
+const {
   registerBuiltInAgeVerificationProviders
 } = require("./age/providers/register");
 
@@ -27,7 +30,8 @@ function compileIntegratedServer({
   const emailIntegratedSource = integrateEmailVerificationServerSource(source);
   const billingIntegratedSource = integrateBillingServerSource(emailIntegratedSource);
   const fileIntegratedSource = integrateFileAnalysisServerSource(billingIntegratedSource);
-  const integratedSource = integrateImageUnderstandingServerSource(fileIntegratedSource);
+  const imageIntegratedSource = integrateImageUnderstandingServerSource(fileIntegratedSource);
+  const integratedSource = integrateVoiceServerSource(imageIntegratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
   runtimeModule.filename = serverPath;
