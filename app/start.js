@@ -44,6 +44,9 @@ const {
   integrateConnectedAppsServerSource
 } = require("./connections/server-integration");
 const {
+  integrateLaunchDashboardServerSource
+} = require("./ops/launch-dashboard-server-integration");
+const {
   registerBuiltInAgeVerificationProviders
 } = require("./age/providers/register");
 
@@ -68,6 +71,7 @@ function compileIntegratedServer({
   integratedSource = integrateAdvertisingPolicyServerSource(integratedSource);
   integratedSource = integrateModelRoutingServerSource(integratedSource);
   integratedSource = integrateConnectedAppsServerSource(integratedSource);
+  integratedSource = integrateLaunchDashboardServerSource(integratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
   runtimeModule.filename = serverPath;
