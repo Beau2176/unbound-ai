@@ -3,7 +3,7 @@ const OPENAI_TTS_MODEL = "gpt-4o-mini-tts";
 
 const CLOUD_VOICES = Object.freeze({
   warm: {
-    voice: "coral",
+    voice: "marin",
     label: "Voice 1 — Warm",
     instructions: "Speak naturally and warmly, with relaxed pacing, subtle expression, and no announcer or robotic cadence."
   },
@@ -13,7 +13,7 @@ const CLOUD_VOICES = Object.freeze({
     instructions: "Speak in a natural lower register with calm confidence. Keep the delivery conversational, smooth, and distinctly human, not theatrical."
   },
   bright: {
-    voice: "shimmer",
+    voice: "coral",
     label: "Voice 4 — Bright",
     instructions: "Speak clearly with an upbeat, friendly, natural tone. Keep the energy light and conversational without sounding synthetic or exaggerated."
   },
