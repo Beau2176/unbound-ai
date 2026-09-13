@@ -27,7 +27,7 @@ function isoOrNull(date) {
 
 function ageHours(date, nowMs) {
   if (!date) return null;
-  return Math.max(0, (nowMs - date.getTime()) / 3_600_000);
+  return (nowMs - date.getTime()) / 3_600_000;
 }
 
 function ageDays(date, nowMs) {
@@ -50,11 +50,14 @@ function buildRecoveryReadiness({ env = process.env, nowMs = Date.now() } = {}) 
 
   const backupAgeHours = ageHours(lastBackupVerifiedAt, nowMs);
   const restoreAgeDays = ageDays(lastRestoreTestedAt, nowMs);
+  // Match the email readiness gate's five-minute clock-skew allowance.
+  const backupNotFuture = Boolean(lastBackupVerifiedAt && backupAgeHours >= -5 / 60);
+  const restoreNotFuture = Boolean(lastRestoreTestedAt && restoreAgeDays >= -5 / 1440);
   const externalBackupFresh = Boolean(
-    lastBackupVerifiedAt && backupAgeHours <= backupMaxAgeHours
+    backupNotFuture && backupAgeHours <= backupMaxAgeHours
   );
   const restoreTestFresh = Boolean(
-    lastRestoreTestedAt && restoreAgeDays <= restoreTestMaxAgeDays
+    restoreNotFuture && restoreAgeDays <= restoreTestMaxAgeDays
   );
 
   const blockers = [];
@@ -63,6 +66,8 @@ function buildRecoveryReadiness({ env = process.env, nowMs = Date.now() } = {}) 
   }
   if (externalBackup && !lastBackupVerifiedAt) {
     blockers.push("External backup is declared but no verified backup timestamp is recorded.");
+  } else if (externalBackup && !backupNotFuture) {
+    blockers.push("The verified external backup timestamp is unexpectedly in the future.");
   } else if (externalBackup && !externalBackupFresh) {
     blockers.push(
       `The most recent verified external backup is older than ${backupMaxAgeHours} hours.`
@@ -70,6 +75,8 @@ function buildRecoveryReadiness({ env = process.env, nowMs = Date.now() } = {}) 
   }
   if (!lastRestoreTestedAt) {
     blockers.push("No database restore drill timestamp is recorded.");
+  } else if (!restoreNotFuture) {
+    blockers.push("The database restore drill timestamp is unexpectedly in the future.");
   } else if (!restoreTestFresh) {
     blockers.push(
       `The most recent restore drill is older than ${restoreTestMaxAgeDays} days.`
@@ -89,13 +96,13 @@ function buildRecoveryReadiness({ env = process.env, nowMs = Date.now() } = {}) 
       externalBackup,
       maxAgeHours: backupMaxAgeHours,
       lastVerifiedAt: isoOrNull(lastBackupVerifiedAt),
-      ageHours: backupAgeHours === null ? null : Number(backupAgeHours.toFixed(2)),
+      ageHours: backupAgeHours === null ? null : Number(Math.max(0, backupAgeHours).toFixed(2)),
       fresh: externalBackup ? externalBackupFresh : managedRecovery
     },
     restoreDrill: {
       maxAgeDays: restoreTestMaxAgeDays,
       lastTestedAt: isoOrNull(lastRestoreTestedAt),
-      ageDays: restoreAgeDays === null ? null : Number(restoreAgeDays.toFixed(2)),
+      ageDays: restoreAgeDays === null ? null : Number(Math.max(0, restoreAgeDays).toFixed(2)),
       fresh: restoreTestFresh
     },
     blockers

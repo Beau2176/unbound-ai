@@ -138,6 +138,31 @@ function testRecoveryReadiness() {
   assert.equal(protectedState.launchReady, true);
   assert.equal(protectedState.backup.managedRecovery, true);
   assert.equal(protectedState.backup.externalBackup, true);
+
+  const verifiedEnv = {
+    DATABASE_BACKUP_MODE: "hybrid",
+    DATABASE_BACKUP_LAST_VERIFIED_AT: new Date(now).toISOString(),
+    DATABASE_RESTORE_LAST_TESTED_AT: new Date(now).toISOString()
+  };
+  for (const key of ["DATABASE_BACKUP_LAST_VERIFIED_AT", "DATABASE_RESTORE_LAST_TESTED_AT"]) {
+    for (const offset of [5 * 60000 + 1, 365 * 86400000]) {
+      const future = buildRecoveryReadiness({ env: { ...verifiedEnv, [key]: new Date(now + offset).toISOString() }, nowMs: now });
+      assert.equal(future.launchReady, false, `${key} in the future must not pass the launch gate`);
+      assert(future.blockers.some(item => item.includes("future")));
+    }
+    const skew = buildRecoveryReadiness({ env: { ...verifiedEnv, [key]: new Date(now + 5 * 60000).toISOString() }, nowMs: now });
+    assert.equal(skew.launchReady, true, "Allow bounded clock skew");
+    const invalid = buildRecoveryReadiness({ env: { ...verifiedEnv, [key]: "not a date" }, nowMs: now });
+    assert.equal(invalid.launchReady, false);
+  }
+  const staleBackup = buildRecoveryReadiness({ env: {
+    ...verifiedEnv, DATABASE_BACKUP_LAST_VERIFIED_AT: new Date(now - 27 * 3600000).toISOString()
+  }, nowMs: now });
+  assert.equal(staleBackup.launchReady, false);
+  const staleRestore = buildRecoveryReadiness({ env: {
+    ...verifiedEnv, DATABASE_RESTORE_LAST_TESTED_AT: new Date(now - 91 * 86400000).toISOString()
+  }, nowMs: now });
+  assert.equal(staleRestore.launchReady, false);
 }
 
 function testInfrastructureReadiness() {
@@ -176,6 +201,26 @@ function testInfrastructureReadiness() {
   });
   assert.equal(stale.launchReady, false);
   assert.equal(stale.review.fresh, false);
+
+  const verifiedEnv = {
+    UNBOUND_INFRA_PROFILE: "production",
+    UNBOUND_INFRA_PRODUCTION_READY: "true",
+    UNBOUND_INFRA_ALWAYS_ON_COMPUTE: "true",
+    UNBOUND_INFRA_DURABLE_DATABASE: "true",
+    UNBOUND_INFRA_HEALTH_CHECK_CONFIGURED: "true"
+  };
+  for (const offset of [5 * 60000 + 1, 365 * 86400000]) {
+    const future = buildInfrastructureReadiness({ env: {
+      ...verifiedEnv, UNBOUND_INFRA_REVIEWED_AT: new Date(now + offset).toISOString()
+    }, nowMs: now });
+    assert.equal(future.launchReady, false);
+    assert.equal(future.review.fresh, false);
+    assert(future.blockers.some(item => item.includes("future")));
+  }
+  const skew = buildInfrastructureReadiness({ env: {
+    ...verifiedEnv, UNBOUND_INFRA_REVIEWED_AT: new Date(now + 5 * 60000).toISOString()
+  }, nowMs: now });
+  assert.equal(skew.launchReady, true);
 }
 
 function testMaintenancePolicy() {

@@ -54,6 +54,14 @@ Examples of legitimate blockers include:
 
 Do not bypass a blocker by manually editing the launch response or hardcoding a green status. Fix or verify the underlying dependency.
 
+### v0.69 timestamp validation
+
+Backup verification, restore-drill and infrastructure-review dates more than five
+minutes in the future now block readiness with an explicit future-date message,
+matching the transactional email gate's clock-skew allowance. Future dates must
+not make unverified work appear current. Missing, invalid and expired dates also
+remain blocked. These checks do not change or supply any operational attestation.
+
 ## Security and privacy
 
 Launch-readiness output contains capability/configuration state only. It must never include:

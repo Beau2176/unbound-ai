@@ -31,17 +31,21 @@ jobs:
         run: npm run ci
 
   verify-database-recovery:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: [16, 18]
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:${{ matrix.postgres }}-alpine
         env:
           POSTGRES_PASSWORD: unbound-ci-only
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -58,8 +62,12 @@ jobs:
       - name: Install locked dependencies and PostgreSQL client
         run: |
           npm ci
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location https://www.postgresql.org/media/keys/ACCC4CF8.asc --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq
-          sudo apt-get install -y postgresql-client-16
+          sudo apt-get install -y postgresql-client-${{ matrix.postgres }}
+          echo '/usr/lib/postgresql/${{ matrix.postgres }}/bin' >> "$GITHUB_PATH"
       - name: Verify integrated startup and real backup recovery
         env:
           TEST_POSTGRES_URL: postgresql://postgres:unbound-ci-only@127.0.0.1:5432/postgres
