@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UNBOUND AI Task Center</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: Arial, Helvetica, sans-serif; color: #f5f8ff; background: radial-gradient(circle at top, #18375d 0, #07101d 36%, #020509 75%); }
+    .shell { width: min(1050px, calc(100% - 28px)); margin: auto; padding: 26px 0 56px; }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 20px; }
+    h1 { margin: 0 0 8px; font-size: clamp(34px, 7vw, 58px); letter-spacing: .03em; }
+    .eyebrow { color: #84b9ff; font-size: .78rem; font-weight: 900; letter-spacing: .18em; }
+    .sub, .muted { color: #aebbd0; line-height: 1.5; }
+    a, button { font: inherit; }
+    .button { border: 1px solid rgba(143,189,255,.22); color: #fff; background: rgba(255,255,255,.07); border-radius: 999px; padding: 11px 16px; text-decoration: none; font-weight: 900; cursor: pointer; }
+    .primary { background: #eff6ff; color: #071326; }
+    .danger { background: rgba(153,27,27,.45); }
+    .grid { display: grid; grid-template-columns: 1fr 1.3fr; gap: 14px; align-items: start; }
+    .panel { border: 1px solid rgba(143,189,255,.18); border-radius: 20px; background: rgba(5,13,27,.9); padding: 19px; box-shadow: 0 18px 55px rgba(0,0,0,.25); }
+    h2 { margin: 0 0 14px; font-size: 1.08rem; }
+    label { display: block; color: #b7c8df; font-weight: 800; font-size: .84rem; margin: 12px 0 6px; }
+    input, textarea, select { width: 100%; border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.06); color: #fff; border-radius: 12px; padding: 12px; font: inherit; }
+    textarea { min-height: 90px; resize: vertical; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .actions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 15px; }
+    .task, .event { border-top: 1px solid rgba(255,255,255,.08); padding: 14px 0; }
+    .task:first-child, .event:first-child { border-top: 0; }
+    .task-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+    .task strong, .event strong { display: block; margin-bottom: 5px; }
+    .meta { color: #95a8c2; font-size: .82rem; line-height: 1.45; }
+    .pill { display: inline-block; border-radius: 999px; padding: 5px 8px; font-size: .7rem; font-weight: 900; background: rgba(52,211,153,.12); color: #89efc4; }
+    .pill.paused { background: rgba(148,163,184,.13); color: #bec9da; }
+    .mini { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); color: #fff; border-radius: 999px; padding: 7px 10px; font-size: .76rem; font-weight: 900; cursor: pointer; }
+    #error { display: none; border: 1px solid rgba(248,113,113,.3); background: rgba(127,29,29,.36); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+    #notice { display: none; border: 1px solid rgba(52,211,153,.25); background: rgba(6,78,59,.28); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+    .events-panel { grid-column: 1 / -1; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } .events-panel { grid-column: auto; } .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <div class="eyebrow">UNBOUND AI · TOP</div>
+        <h1>TASK CENTER</h1>
+        <div class="sub">Create one-time or recurring reminders. Due events are stored in your account and surfaced here.</div>
+      </div>
+      <div class="actions">
+        <button id="notificationsButton" class="button" type="button">ENABLE BROWSER ALERTS</button>
+        <a class="button" href="/command-center.html">COMMAND CENTER</a>
+        <a class="button" href="/">CHAT</a>
+      </div>
+    </header>
+
+    <div id="error"></div>
+    <div id="notice"></div>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 id="formTitle">New reminder</h2>
+        <form id="taskForm">
+          <label for="title">Title</label>
+          <input id="title" maxlength="120" required placeholder="Pay the electric bill" />
+          <label for="note">Note</label>
+          <textarea id="note" maxlength="2000" placeholder="Optional details"></textarea>
+          <label for="runAt">First run</label>
+          <input id="runAt" type="datetime-local" required />
+          <div class="row">
+            <div>
+              <label for="recurrence">Repeat</label>
+              <select id="recurrence">
+                <option value="once">ONE TIME</option>
+                <option value="hourly">HOURLY</option>
+                <option value="daily">DAILY</option>
+                <option value="weekly">WEEKLY</option>
+              </select>
+            </div>
+            <div>
+              <label for="intervalCount">Every</label>
+              <input id="intervalCount" type="number" min="1" value="1" />
+            </div>
+          </div>
+          <div class="actions">
+            <button id="saveButton" class="button primary" type="submit">SAVE REMINDER</button>
+            <button id="cancelEdit" class="button" type="button" hidden>CANCEL EDIT</button>
+          </div>
+        </form>
+        <p class="muted">Recurring tasks run no more frequently than hourly. If the web service was unavailable at the exact due time, UNBOUND catches the overdue reminder when the service resumes.</p>
+      </article>
+
+      <article class="panel">
+        <h2>Scheduled</h2>
+        <div id="tasks"><div class="muted">Loading scheduled tasks…</div></div>
+      </article>
+
+      <article class="panel events-panel">
+        <h2>Reminder events</h2>
+        <div id="events"><div class="muted">Loading reminder events…</div></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let tasks = [];
+    let editingId = null;
+    let lastNotifiedEventId = null;
+
+    function showError(message) {
+      const node = $("error");
+      node.textContent = message;
+      node.style.display = message ? "block" : "none";
+    }
+
+    function showNotice(message) {
+      const node = $("notice");
+      node.textContent = message;
+      node.style.display = message ? "block" : "none";
+      if (message) setTimeout(() => { node.style.display = "none"; }, 3500);
+    }
+
+    function localInputValue(dateValue) {
+      const date = new Date(dateValue);
+      if (Number.isNaN(date.getTime())) return "";
+      const offset = date.getTimezoneOffset() * 60000;
+      return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+    }
+
+    function formatDate(value) {
+      if (!value) return "Completed";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+    }
+
+    function recurrenceText(task) {
+      if (task.recurrence === "once") return "One time";
+      const unit = task.recurrence === "hourly" ? "hour" : task.recurrence === "daily" ? "day" : "week";
+      return task.intervalCount === 1 ? `Every ${unit}` : `Every ${task.intervalCount} ${unit}s`;
+    }
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, {
+        ...options,
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Task Center request failed.");
+      return payload;
+    }
+
+    function resetForm() {
+      editingId = null;
+      $("formTitle").textContent = "New reminder";
+      $("saveButton").textContent = "SAVE REMINDER";
+      $("cancelEdit").hidden = true;
+      $("taskForm").reset();
+      $("intervalCount").value = "1";
+      const suggested = new Date(Date.now() + 5 * 60 * 1000);
+      suggested.setSeconds(0, 0);
+      $("runAt").value = localInputValue(suggested);
+    }
+
+    function editTask(task) {
+      editingId = task.id;
+      $("formTitle").textContent = "Edit reminder";
+      $("saveButton").textContent = "SAVE CHANGES";
+      $("cancelEdit").hidden = false;
+      $("title").value = task.title;
+      $("note").value = task.note || "";
+      $("recurrence").value = task.recurrence;
+      $("intervalCount").value = String(task.intervalCount || 1);
+      $("runAt").value = localInputValue(task.nextRunAt || new Date(Date.now() + 5 * 60 * 1000));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function renderTasks() {
+      const container = $("tasks");
+      container.replaceChildren();
+      if (!tasks.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = "No scheduled tasks yet.";
+        container.append(empty);
+        return;
+      }
+      for (const task of tasks) {
+        const item = document.createElement("div");
+        item.className = "task";
+        const top = document.createElement("div");
+        top.className = "task-top";
+        const copy = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = task.title;
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = `${recurrenceText(task)} · Next: ${formatDate(task.nextRunAt)}`;
+        copy.append(title, meta);
+        if (task.note) {
+          const note = document.createElement("div");
+          note.className = "meta";
+          note.textContent = task.note;
+          copy.append(note);
+        }
+        const pill = document.createElement("span");
+        pill.className = task.enabled ? "pill" : "pill paused";
+        pill.textContent = task.enabled ? "ACTIVE" : "PAUSED";
+        top.append(copy, pill);
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        const edit = document.createElement("button");
+        edit.className = "mini";
+        edit.type = "button";
+        edit.textContent = "EDIT";
+        edit.addEventListener("click", () => editTask(task));
+        actions.append(edit);
+        if (task.nextRunAt) {
+          const toggle = document.createElement("button");
+          toggle.className = "mini";
+          toggle.type = "button";
+          toggle.textContent = task.enabled ? "PAUSE" : "RESUME";
+          toggle.addEventListener("click", () => toggleTask(task));
+          actions.append(toggle);
+        }
+        const remove = document.createElement("button");
+        remove.className = "mini danger";
+        remove.type = "button";
+        remove.textContent = "DELETE";
+        remove.addEventListener("click", () => deleteTask(task));
+        actions.append(remove);
+        item.append(top, actions);
+        container.append(item);
+      }
+    }
+
+    async function loadTasks() {
+      try {
+        const data = await api("/api/tasks");
+        tasks = data.tasks || [];
+        renderTasks();
+      } catch (error) {
+        showError(error.message);
+      }
+    }
+
+    async function toggleTask(task) {
+      try {
+        await api(`/api/tasks/${encodeURIComponent(task.id)}/toggle`, {
+          method: "POST",
+          body: JSON.stringify({ enabled: !task.enabled })
+        });
+        await loadTasks();
+      } catch (error) { showError(error.message); }
+    }
+
+    async function deleteTask(task) {
+      if (!confirm(`Delete “${task.title}”?`)) return;
+      try {
+        await api(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "DELETE" });
+        if (editingId === task.id) resetForm();
+        await loadTasks();
+      } catch (error) { showError(error.message); }
+    }
+
+    function notifyEvents(events) {
+      if (!events.length || Notification.permission !== "granted") return;
+      const newest = events[0];
+      if (String(newest.id) === String(lastNotifiedEventId)) return;
+      lastNotifiedEventId = newest.id;
+      const notification = new Notification(`UNBOUND: ${newest.title}`, {
+        body: newest.note || `Scheduled for ${formatDate(newest.scheduledFor)}`
+      });
+      notification.onclick = () => window.focus();
+    }
+
+    async function loadEvents() {
+      try {
+        const data = await api("/api/tasks/events/recent");
+        const events = data.events || [];
+        const container = $("events");
+        container.replaceChildren();
+        if (!events.length) {
+          const empty = document.createElement("div");
+          empty.className = "muted";
+          empty.textContent = "No reminder events yet.";
+          container.append(empty);
+          return;
+        }
+        notifyEvents(events.filter((event) => !event.acknowledgedAt));
+        for (const event of events) {
+          const item = document.createElement("div");
+          item.className = "event";
+          const title = document.createElement("strong");
+          title.textContent = event.title;
+          const meta = document.createElement("div");
+          meta.className = "meta";
+          meta.textContent = `Scheduled: ${formatDate(event.scheduledFor)} · Created: ${formatDate(event.createdAt)}`;
+          item.append(title, meta);
+          if (event.note) {
+            const note = document.createElement("div");
+            note.className = "meta";
+            note.textContent = event.note;
+            item.append(note);
+          }
+          if (!event.acknowledgedAt) {
+            const ack = document.createElement("button");
+            ack.className = "mini";
+            ack.type = "button";
+            ack.textContent = "ACKNOWLEDGE";
+            ack.addEventListener("click", async () => {
+              try {
+                await api(`/api/tasks/events/${encodeURIComponent(event.id)}/ack`, { method: "POST", body: "{}" });
+                await loadEvents();
+              } catch (error) { showError(error.message); }
+            });
+            item.append(ack);
+          }
+          container.append(item);
+        }
+      } catch (error) { showError(error.message); }
+    }
+
+    $("taskForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showError("");
+      const runAt = new Date($("runAt").value);
+      const body = {
+        title: $("title").value,
+        note: $("note").value,
+        runAt: runAt.toISOString(),
+        recurrence: $("recurrence").value,
+        intervalCount: Number($("intervalCount").value || 1)
+      };
+      try {
+        if (editingId) {
+          await api(`/api/tasks/${encodeURIComponent(editingId)}`, { method: "PUT", body: JSON.stringify(body) });
+          showNotice("Reminder updated.");
+        } else {
+          await api("/api/tasks", { method: "POST", body: JSON.stringify(body) });
+          showNotice("Reminder scheduled.");
+        }
+        resetForm();
+        await loadTasks();
+      } catch (error) { showError(error.message); }
+    });
+
+    $("cancelEdit").addEventListener("click", resetForm);
+    $("notificationsButton").addEventListener("click", async () => {
+      if (!("Notification" in window)) {
+        showError("This browser does not support browser notifications.");
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      showNotice(permission === "granted" ? "Browser alerts enabled for this device." : "Browser alerts were not enabled.");
+    });
+
+    resetForm();
+    loadTasks();
+    loadEvents();
+    setInterval(loadEvents, 30000);
+  </script>
+</body>
+</html>
