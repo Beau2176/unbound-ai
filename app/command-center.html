@@ -52,7 +52,7 @@
       <div>
         <div class="eyebrow">UNBOUND AI · TOP</div>
         <h1>COMMAND CENTER</h1>
-        <p class="sub">Your access, usage, reminders, account security, and UNBOUND product controls in one place.</p>
+        <p class="sub">Your access, usage, agents, memory, reminders, account security, and UNBOUND product controls in one place.</p>
       </div>
       <div class="header-actions">
         <select id="days" aria-label="Usage period">
@@ -80,6 +80,8 @@
 
       <article class="card"><div class="label">Active tasks</div><div id="activeTasks" class="value">—</div><div id="nextTask" class="small">Next: —</div></article>
       <article class="card"><div class="label">Reminder events</div><div id="reminders" class="value">—</div><div class="small">Unacknowledged reminders</div></article>
+      <article class="card"><div class="label">Agent queue</div><div id="agentQueue" class="value">—</div><div id="agentSummary" class="small">— completed</div></article>
+      <article class="card"><div class="label">Memory</div><div id="memoryEnabled" class="value">—</div><div id="memorySummary" class="small">— total entries</div></article>
 
       <article class="wide card">
         <h2 class="section-title">Platform status</h2>
@@ -94,6 +96,9 @@
         <div class="links">
           <a class="product-link" href="/voice.html">VOICE</a>
           <a class="product-link" href="/tasks.html">TASKS</a>
+          <a class="product-link" href="/agents.html">AGENTS</a>
+          <a class="product-link" href="/memory.html">MEMORY</a>
+          <a class="product-link" href="/modes.html">MODES</a>
           <a class="product-link" href="/files.html">FILES</a>
           <a class="product-link" href="/images.html">IMAGE UNDERSTANDING</a>
           <a class="product-link" href="/image-tools.html">IMAGE STUDIO</a>
@@ -220,6 +225,11 @@
         $("activeTasks").textContent = nf.format(data.tasks?.active || 0);
         $("reminders").textContent = nf.format(data.tasks?.unreadEvents || 0);
         $("nextTask").textContent = `Next: ${formatDate(data.tasks?.nextRunAt)}`;
+        const agentActive = Number(data.agents?.queued || 0) + Number(data.agents?.running || 0);
+        $("agentQueue").textContent = nf.format(agentActive);
+        $("agentSummary").textContent = `${nf.format(data.agents?.completed || 0)} completed · ${nf.format(data.agents?.failed || 0)} failed`;
+        $("memoryEnabled").textContent = nf.format(data.memory?.enabled || 0);
+        $("memorySummary").textContent = `${nf.format(data.memory?.total || 0)} total entries`;
 
         const ai = data.platform?.ai || {};
         statusText($("aiStatus"), ai.configured, ai.configured ? `${ai.provider || "AI"} · ${ai.model || "configured"}` : "Not configured");
