@@ -18,12 +18,14 @@ assert(!presetSource.includes("/api/voice/natural-speech"), "active UI should no
 assert(presetSource.includes("speechSynthesis"), "Voice 2 browser speech should remain available");
 assert(presetSource.includes("cachedVoice"), "Voice 2 should cache the resolved browser voice to avoid repeated lookup work");
 assert(presetSource.includes("hasActiveSpeech"), "Voice 2 should only cancel speech when speech is actually active");
-assert(presetSource.includes("pointerenter") && presetSource.includes("pointerdown"), "Voice 2 should prime its voice list before preview interaction");
+assert(presetSource.includes("primeSpeechEngine"), "Voice 2 should prewarm the browser speech engine before playback");
+assert(presetSource.includes("warmup.volume = 0"), "Voice 2 engine warmup must remain inaudible");
+assert(presetSource.includes("preview.addEventListener('pointerdown'"), "Voice 2 preview should begin on pointerdown instead of waiting for click release");
 assert(presetSource.includes("Preview selected voice"), "voice preview control should be present");
 
 const integrated = integrateNativeShellServerSource('app.use("/api", createMaintenanceMiddleware());');
 assert(integrated.includes('app.get("/voice-presets.js"'), "voice preset script route should be mounted");
-assert(integrated.includes('/voice-presets.js?v=107'), "homepage should load the v107 voice preset enhancer");
+assert(integrated.includes('/voice-presets.js?v=108'), "homepage should load the v108 voice preset enhancer");
 assert(integrated.includes('injectVoiceListenControl'), "stable Voice / Listen control injection must remain in place");
 
-console.log("UNBOUND AI Voice 2 instant-start contract checks passed.");
+console.log("UNBOUND AI Voice 2 zero-delay contract checks passed.");
