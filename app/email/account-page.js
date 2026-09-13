@@ -1,12 +1,13 @@
 const fs = require("fs/promises");
 const path = require("path");
+const { injectModelRoutingUi } = require("../ai/model-routing-ui");
 
 const INDEX_PATH = path.join(__dirname, "..", "index.html");
 const ACCOUNT_UI_PATH = path.join(__dirname, "account-ui.js");
 const ACCOUNT_UI_SCRIPT = '<script src="/email-account-ui.js" defer></script>';
 
 function injectEmailAccountUi(html) {
-  const source = String(html || "");
+  const source = injectModelRoutingUi(String(html || ""));
   const marker = "</body>";
   const firstIndex = source.indexOf(marker);
   const lastIndex = source.lastIndexOf(marker);
