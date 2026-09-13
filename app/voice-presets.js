@@ -1,5 +1,5 @@
 (() => {
-  const STYLE_ID = 'unbound-voice-presets-v106';
+  const STYLE_ID = 'unbound-voice-presets-v107';
   const SELECT_ID = 'unboundVoicePreset';
   const STORAGE_KEY = 'unbound.voice.preset';
   const PRESET = {
@@ -11,6 +11,7 @@
   };
 
   let speaking = false;
+  let cachedVoice = null;
 
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -49,15 +50,32 @@
     return (english.length ? english : all).slice().sort((a, b) => voiceScore(b) - voiceScore(a));
   }
 
-  function resolveVoice() {
+  function refreshVoiceCache() {
     const voices = englishVoices();
-    if (!voices.length) return null;
+    if (!voices.length) {
+      cachedVoice = null;
+      return null;
+    }
     for (const preferred of PRESET.preferred) {
       const wanted = preferred.toLowerCase();
       const match = voices.find((voice) => String(voice.name || '').toLowerCase().includes(wanted));
-      if (match) return match;
+      if (match) {
+        cachedVoice = match;
+        return cachedVoice;
+      }
     }
-    return voices[0] || null;
+    cachedVoice = voices[0] || null;
+    return cachedVoice;
+  }
+
+  function resolveVoice() {
+    return cachedVoice || refreshVoiceCache();
+  }
+
+  function primeVoiceList() {
+    if (!('speechSynthesis' in window)) return;
+    try { window.speechSynthesis.getVoices(); } catch (_) {}
+    refreshVoiceCache();
   }
 
   function cleanText(value) {
@@ -91,8 +109,14 @@
   }
 
   function stopSpeaking() {
+    if (!('speechSynthesis' in window)) {
+      speaking = false;
+      return;
+    }
+    const synth = window.speechSynthesis;
+    const hasActiveSpeech = speaking || synth.speaking || synth.pending;
     speaking = false;
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    if (hasActiveSpeech) synth.cancel();
   }
 
   function speak(text, onDone) {
@@ -100,7 +124,12 @@
     const chunks = splitText(text, 560);
     if (!chunks.length) return false;
 
-    stopSpeaking();
+    const synth = window.speechSynthesis;
+    if (speaking || synth.speaking || synth.pending) stopSpeaking();
+    if (synth.paused) {
+      try { synth.resume(); } catch (_) {}
+    }
+
     speaking = true;
     const voice = resolveVoice();
     let index = 0;
@@ -121,10 +150,10 @@
       utterance.volume = 1;
       utterance.onend = () => {
         index += 1;
-        window.setTimeout(next, 35);
+        window.setTimeout(next, 15);
       };
       utterance.onerror = finish;
-      window.speechSynthesis.speak(utterance);
+      synth.speak(utterance);
     }
 
     next();
@@ -169,6 +198,7 @@
 
     injectStyles();
     try { window.localStorage.setItem(STORAGE_KEY, PRESET.id); } catch (_) {}
+    primeVoiceList();
 
     const actions = Array.from(menu.querySelectorAll('.voice-listen-action'));
     const listenAction = actions.find((item) => String(item.textContent || '').includes('Listen to last answer')) || null;
@@ -202,10 +232,13 @@
       menu.append(picker, preview);
     }
 
+    button.addEventListener('pointerenter', primeVoiceList, { passive: true });
+    button.addEventListener('pointerdown', primeVoiceList, { passive: true });
+
     preview.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      speak('Voice 2 — Clear. This is how UNBOUND AI will sound when it reads an answer aloud.');
+      speak('Voice 2 — Clear. This is UNBOUND AI.');
     });
 
     if (listenAction) {
@@ -220,7 +253,7 @@
     }
 
     function refreshTitle() {
-      const voice = resolveVoice();
+      const voice = refreshVoiceCache();
       select.title = voice ? 'Using ' + voice.name : 'Using browser default voice';
     }
     refreshTitle();
@@ -231,6 +264,7 @@
   }
 
   function boot() {
+    primeVoiceList();
     if (mount()) return;
     let attempts = 0;
     const timer = window.setInterval(() => {
