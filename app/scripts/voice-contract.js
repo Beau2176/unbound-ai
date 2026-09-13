@@ -74,9 +74,9 @@ async function main() {
 
   assert.strictEqual(OPENAI_TTS_MODEL, "gpt-4o-mini-tts");
   assert.strictEqual(OPENAI_SPEECH_URL, "https://api.openai.com/v1/audio/speech");
-  assert.strictEqual(CLOUD_VOICES.warm.voice, "coral");
+  assert.strictEqual(CLOUD_VOICES.warm.voice, "marin");
   assert.strictEqual(CLOUD_VOICES.deep.voice, "onyx");
-  assert.strictEqual(CLOUD_VOICES.bright.voice, "shimmer");
+  assert.strictEqual(CLOUD_VOICES.bright.voice, "coral");
   assert.strictEqual(CLOUD_VOICES.calm.voice, "cedar");
 
   const openAiStatus = publicOpenAiSpeechStatus({ OPENAI_API_KEY: "openai-secret" });
