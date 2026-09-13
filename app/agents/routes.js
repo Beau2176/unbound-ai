@@ -12,9 +12,16 @@ function validNumericId(value) {
   return /^\d+$/.test(String(value || "").trim());
 }
 
-function createAgentRouter({ getPool } = {}) {
+function passthrough(req, res, next) {
+  return next();
+}
+
+function createAgentRouter({ getPool, createRunRateLimit = passthrough } = {}) {
   if (typeof getPool !== "function") {
     throw new Error("Agents require a database pool provider.");
+  }
+  if (typeof createRunRateLimit !== "function") {
+    throw new Error("Agent creation rate limiter must be middleware.");
   }
   const router = express.Router();
 
@@ -41,8 +48,9 @@ function createAgentRouter({ getPool } = {}) {
     const runId = String(req.params.id || "").trim();
     if (!validNumericId(runId)) return res.status(400).json({ error: "Invalid Agent run ID." });
     try {
+      const pool = getPool();
       const [runResult, stepsResult] = await Promise.all([
-        getPool().query(
+        pool.query(
           `SELECT id, objective, research_enabled, max_steps, completed_steps,
                   status, cancel_requested, final_output, final_sources,
                   error_public, created_at, started_at, completed_at, updated_at
@@ -51,7 +59,7 @@ function createAgentRouter({ getPool } = {}) {
            LIMIT 1`,
           [runId, req.user.id]
         ),
-        getPool().query(
+        pool.query(
           `SELECT id, run_id, step_number, output, provider, model,
                   web_search_calls, sources, created_at
            FROM agent_steps
@@ -61,17 +69,14 @@ function createAgentRouter({ getPool } = {}) {
         )
       ]);
       if (!runResult.rows[0]) return res.status(404).json({ error: "Agent run not found." });
-      return res.json({
-        run: publicAgentRun(runResult.rows[0]),
-        steps: stepsResult.rows.map(publicAgentStep)
-      });
+      return res.json({ run: publicAgentRun(runResult.rows[0]), steps: stepsResult.rows.map(publicAgentStep) });
     } catch (error) {
       console.error("UNBOUND AI AGENT DETAIL ERROR:", error);
       return res.status(500).json({ error: "Could not load that Agent run." });
     }
   });
 
-  router.post("/runs", async (req, res) => {
+  router.post("/runs", createRunRateLimit, async (req, res) => {
     try {
       const input = normalizeAgentInput(req.body);
       const pool = getPool();
@@ -83,18 +88,14 @@ function createAgentRouter({ getPool } = {}) {
         [req.user.id]
       );
       if (Number(activeResult.rows[0]?.active || 0) >= MAX_ACTIVE_RUNS_PER_USER) {
-        return res.status(409).json({
-          error: `You can have up to ${MAX_ACTIVE_RUNS_PER_USER} queued or running Agent jobs at once.`
-        });
+        return res.status(409).json({ error: `You can have up to ${MAX_ACTIVE_RUNS_PER_USER} queued or running Agent jobs at once.` });
       }
 
       await pool.query(
         `DELETE FROM agent_runs
          WHERE id IN (
-           SELECT id
-           FROM agent_runs
-           WHERE user_id = $1
-             AND status IN ('completed', 'failed', 'cancelled')
+           SELECT id FROM agent_runs
+           WHERE user_id = $1 AND status IN ('completed', 'failed', 'cancelled')
            ORDER BY created_at DESC, id DESC
            OFFSET $2
          )`,
@@ -116,10 +117,7 @@ function createAgentRouter({ getPool } = {}) {
       return res.status(202).json({ run: publicAgentRun(result.rows[0]) });
     } catch (error) {
       if (String(error?.code || "").startsWith("AGENT_")) {
-        return res.status(Number(error.statusCode) || 400).json({
-          error: error.publicMessage || "The Agent run is invalid.",
-          code: error.code
-        });
+        return res.status(Number(error.statusCode) || 400).json({ error: error.publicMessage || "The Agent run is invalid.", code: error.code });
       }
       console.error("UNBOUND AI AGENT CREATE ERROR:", error);
       return res.status(500).json({ error: "Could not create that Agent run." });
@@ -136,17 +134,13 @@ function createAgentRouter({ getPool } = {}) {
              status = CASE WHEN status = 'queued' THEN 'cancelled' ELSE status END,
              completed_at = CASE WHEN status = 'queued' THEN NOW() ELSE completed_at END,
              updated_at = NOW()
-         WHERE id = $1
-           AND user_id = $2
-           AND status IN ('queued', 'running')
+         WHERE id = $1 AND user_id = $2 AND status IN ('queued', 'running')
          RETURNING id, objective, research_enabled, max_steps, completed_steps,
                    status, cancel_requested, final_output, final_sources,
                    error_public, created_at, started_at, completed_at, updated_at`,
         [runId, req.user.id]
       );
-      if (!result.rows[0]) {
-        return res.status(409).json({ error: "That Agent run is already finished or was not found." });
-      }
+      if (!result.rows[0]) return res.status(409).json({ error: "That Agent run is already finished or was not found." });
       return res.json({ run: publicAgentRun(result.rows[0]) });
     } catch (error) {
       console.error("UNBOUND AI AGENT CANCEL ERROR:", error);
@@ -160,15 +154,11 @@ function createAgentRouter({ getPool } = {}) {
     try {
       const result = await getPool().query(
         `DELETE FROM agent_runs
-         WHERE id = $1
-           AND user_id = $2
-           AND status IN ('completed', 'failed', 'cancelled')
+         WHERE id = $1 AND user_id = $2 AND status IN ('completed', 'failed', 'cancelled')
          RETURNING id`,
         [runId, req.user.id]
       );
-      if (!result.rows[0]) {
-        return res.status(409).json({ error: "Only finished Agent runs can be deleted." });
-      }
+      if (!result.rows[0]) return res.status(409).json({ error: "Only finished Agent runs can be deleted." });
       return res.json({ ok: true, id: runId });
     } catch (error) {
       console.error("UNBOUND AI AGENT DELETE ERROR:", error);
@@ -184,8 +174,4 @@ function sendAgentPage(req, res) {
   return res.sendFile(path.join(__dirname, "..", "agents.html"));
 }
 
-module.exports = {
-  validNumericId,
-  createAgentRouter,
-  sendAgentPage
-};
+module.exports = { validNumericId, passthrough, createAgentRouter, sendAgentPage };
