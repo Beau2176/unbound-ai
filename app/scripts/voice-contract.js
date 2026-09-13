@@ -7,6 +7,7 @@ const {
   publicHeyGenVoiceStatus,
   synthesizeSpeech
 } = require("../voice/heygen-tts");
+const { recordVoiceUsage } = require("../voice/routes");
 
 async function main() {
   const privateVoiceId = "private-test-voice-id";
@@ -63,6 +64,22 @@ async function main() {
   assert.strictEqual(body.input_type, "text");
   assert.strictEqual(body.speed, 1);
   assert.strictEqual(body.language, "en");
+
+  const queries = [];
+  const fakePool = {
+    query: async (sql, params) => {
+      queries.push({ sql, params });
+      return { rows: [] };
+    }
+  };
+  await recordVoiceUsage(() => fakePool, "42");
+  assert.strictEqual(queries.length, 1);
+  assert.ok(queries[0].sql.includes("INSERT INTO usage_events"));
+  assert.ok(queries[0].sql.includes("voice_speech"));
+  assert.deepStrictEqual(queries[0].params, ["42"]);
+  await recordVoiceUsage(() => null, "42");
+  await recordVoiceUsage(() => fakePool, null);
+  assert.strictEqual(queries.length, 1);
 
   await assert.rejects(
     () => synthesizeSpeech({
