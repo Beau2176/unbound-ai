@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UNBOUND AI Memory</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: Arial, Helvetica, sans-serif; color: #f5f8ff; background: radial-gradient(circle at top, #18375d 0, #07101d 36%, #020509 75%); }
+    .shell { width: min(1000px, calc(100% - 28px)); margin: auto; padding: 26px 0 56px; }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 20px; }
+    h1 { margin: 0 0 8px; font-size: clamp(34px, 7vw, 58px); }
+    .eyebrow { color: #84b9ff; font-size: .78rem; font-weight: 900; letter-spacing: .18em; }
+    .sub, .muted { color: #aebbd0; line-height: 1.5; }
+    a, button { font: inherit; }
+    .button { border: 1px solid rgba(143,189,255,.22); color: #fff; background: rgba(255,255,255,.07); border-radius: 999px; padding: 11px 16px; text-decoration: none; font-weight: 900; cursor: pointer; }
+    .primary { background: #eff6ff; color: #071326; }
+    .danger { background: rgba(153,27,27,.45); }
+    .grid { display: grid; grid-template-columns: .8fr 1.2fr; gap: 14px; align-items: start; }
+    .panel { border: 1px solid rgba(143,189,255,.18); border-radius: 20px; background: rgba(5,13,27,.9); padding: 19px; box-shadow: 0 18px 55px rgba(0,0,0,.25); }
+    h2 { margin: 0 0 14px; font-size: 1.08rem; }
+    label { display: block; color: #b7c8df; font-weight: 800; font-size: .84rem; margin: 12px 0 6px; }
+    textarea { width: 100%; min-height: 150px; resize: vertical; border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.06); color: #fff; border-radius: 12px; padding: 12px; font: inherit; }
+    .actions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 14px; }
+    .memory { padding: 15px 0; border-top: 1px solid rgba(255,255,255,.08); }
+    .memory:first-child { border-top: 0; padding-top: 0; }
+    .memory-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+    .memory-content { white-space: pre-wrap; line-height: 1.45; }
+    .meta { color: #95a8c2; font-size: .79rem; margin-top: 7px; }
+    .pill { flex: 0 0 auto; border-radius: 999px; padding: 5px 8px; font-size: .7rem; font-weight: 900; background: rgba(52,211,153,.12); color: #89efc4; }
+    .pill.off { background: rgba(148,163,184,.13); color: #bec9da; }
+    .mini { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); color: #fff; border-radius: 999px; padding: 7px 10px; font-size: .76rem; font-weight: 900; cursor: pointer; }
+    #error { display: none; border: 1px solid rgba(248,113,113,.3); background: rgba(127,29,29,.36); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+    #notice { display: none; border: 1px solid rgba(52,211,153,.25); background: rgba(6,78,59,.28); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <div class="eyebrow">UNBOUND AI · MEMORY</div>
+        <h1>MEMORY</h1>
+        <div class="sub">Save reusable context you want UNBOUND to remember. You control every entry.</div>
+      </div>
+      <div class="actions">
+        <a class="button" href="/command-center.html">COMMAND CENTER</a>
+        <a class="button" href="/">CHAT</a>
+      </div>
+    </header>
+
+    <div id="error"></div>
+    <div id="notice"></div>
+
+    <section class="grid">
+      <article class="panel">
+        <h2 id="formTitle">Add memory</h2>
+        <form id="memoryForm">
+          <label for="content">What should UNBOUND remember?</label>
+          <textarea id="content" maxlength="800" required placeholder="Example: I prefer concise answers unless I ask for a deep dive."></textarea>
+          <div class="muted"><span id="characterCount">0</span>/800 characters</div>
+          <div class="actions">
+            <button id="saveButton" class="button primary" type="submit">SAVE MEMORY</button>
+            <button id="cancelEdit" class="button" type="button" hidden>CANCEL EDIT</button>
+          </div>
+        </form>
+        <p class="muted">Only enabled entries are added to signed-in chat context. Saved memory is treated as user-provided context and never as a higher-priority system instruction.</p>
+      </article>
+
+      <article class="panel">
+        <h2>Saved memories</h2>
+        <div id="memories"><div class="muted">Loading memory…</div></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let memories = [];
+    let editingId = null;
+
+    function showError(message) {
+      const node = $("error");
+      node.textContent = message;
+      node.style.display = message ? "block" : "none";
+    }
+
+    function showNotice(message) {
+      const node = $("notice");
+      node.textContent = message;
+      node.style.display = message ? "block" : "none";
+      if (message) setTimeout(() => { node.style.display = "none"; }, 3500);
+    }
+
+    function formatDate(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+    }
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, {
+        ...options,
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        cache: "no-store"
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Memory request failed.");
+      return payload;
+    }
+
+    function updateCount() {
+      $("characterCount").textContent = String($("content").value.length);
+    }
+
+    function resetForm() {
+      editingId = null;
+      $("formTitle").textContent = "Add memory";
+      $("saveButton").textContent = "SAVE MEMORY";
+      $("cancelEdit").hidden = true;
+      $("content").value = "";
+      updateCount();
+    }
+
+    function editMemory(memory) {
+      editingId = memory.id;
+      $("formTitle").textContent = "Edit memory";
+      $("saveButton").textContent = "SAVE CHANGES";
+      $("cancelEdit").hidden = false;
+      $("content").value = memory.content;
+      updateCount();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function renderMemories() {
+      const container = $("memories");
+      container.replaceChildren();
+      if (!memories.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = "No saved memories yet.";
+        container.append(empty);
+        return;
+      }
+      for (const memory of memories) {
+        const item = document.createElement("div");
+        item.className = "memory";
+        const top = document.createElement("div");
+        top.className = "memory-top";
+        const copy = document.createElement("div");
+        const content = document.createElement("div");
+        content.className = "memory-content";
+        content.textContent = memory.content;
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = `Updated ${formatDate(memory.updatedAt)}`;
+        copy.append(content, meta);
+        const pill = document.createElement("span");
+        pill.className = memory.enabled ? "pill" : "pill off";
+        pill.textContent = memory.enabled ? "ENABLED" : "PAUSED";
+        top.append(copy, pill);
+
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        const edit = document.createElement("button");
+        edit.className = "mini";
+        edit.type = "button";
+        edit.textContent = "EDIT";
+        edit.addEventListener("click", () => editMemory(memory));
+        const toggle = document.createElement("button");
+        toggle.className = "mini";
+        toggle.type = "button";
+        toggle.textContent = memory.enabled ? "PAUSE" : "ENABLE";
+        toggle.addEventListener("click", () => toggleMemory(memory));
+        const remove = document.createElement("button");
+        remove.className = "mini danger";
+        remove.type = "button";
+        remove.textContent = "DELETE";
+        remove.addEventListener("click", () => deleteMemory(memory));
+        actions.append(edit, toggle, remove);
+        item.append(top, actions);
+        container.append(item);
+      }
+    }
+
+    async function loadMemories() {
+      try {
+        const data = await api("/api/memory");
+        memories = data.memories || [];
+        renderMemories();
+      } catch (error) {
+        showError(error.message);
+      }
+    }
+
+    async function toggleMemory(memory) {
+      try {
+        await api(`/api/memory/${encodeURIComponent(memory.id)}/toggle`, {
+          method: "POST",
+          body: JSON.stringify({ enabled: !memory.enabled })
+        });
+        await loadMemories();
+      } catch (error) { showError(error.message); }
+    }
+
+    async function deleteMemory(memory) {
+      if (!confirm("Delete this memory permanently?")) return;
+      try {
+        await api(`/api/memory/${encodeURIComponent(memory.id)}`, { method: "DELETE" });
+        if (editingId === memory.id) resetForm();
+        showNotice("Memory deleted.");
+        await loadMemories();
+      } catch (error) { showError(error.message); }
+    }
+
+    $("memoryForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showError("");
+      try {
+        const existing = editingId ? memories.find((item) => item.id === editingId) : null;
+        const body = JSON.stringify({
+          content: $("content").value,
+          enabled: existing ? existing.enabled : true
+        });
+        if (editingId) {
+          await api(`/api/memory/${encodeURIComponent(editingId)}`, { method: "PUT", body });
+          showNotice("Memory updated.");
+        } else {
+          await api("/api/memory", { method: "POST", body });
+          showNotice("Memory saved.");
+        }
+        resetForm();
+        await loadMemories();
+      } catch (error) { showError(error.message); }
+    });
+
+    $("content").addEventListener("input", updateCount);
+    $("cancelEdit").addEventListener("click", resetForm);
+    resetForm();
+    loadMemories();
+  </script>
+</body>
+</html>
