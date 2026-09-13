@@ -17,6 +17,8 @@ const IMAGES_NAV_LINK =
   '<a class="account-button advertiser-link" href="/images.html">IMAGES</a>';
 const IMAGE_STUDIO_NAV_LINK =
   '<a class="account-button advertiser-link" href="/image-tools.html">STUDIO</a>';
+const VOICE_NAV_LINK =
+  '<a class="account-button advertiser-link" href="/voice.html">VOICE</a>';
 
 function safeProviderError(error) {
   const code = String(error?.code || "");
@@ -188,7 +190,7 @@ function buildFileAwareIndexHtml(indexHtml) {
 
   const withProductNavigation = source.replace(
     INDEX_NAV_MARKER,
-    `${INDEX_NAV_MARKER}\n      ${FILES_NAV_LINK}\n      ${IMAGES_NAV_LINK}\n      ${IMAGE_STUDIO_NAV_LINK}`
+    `${INDEX_NAV_MARKER}\n      ${FILES_NAV_LINK}\n      ${IMAGES_NAV_LINK}\n      ${IMAGE_STUDIO_NAV_LINK}\n      ${VOICE_NAV_LINK}`
   );
   return injectEmailAccountUi(withProductNavigation);
 }
@@ -218,6 +220,7 @@ module.exports = {
   FILES_NAV_LINK,
   IMAGES_NAV_LINK,
   IMAGE_STUDIO_NAV_LINK,
+  VOICE_NAV_LINK,
   safeProviderError,
   createFileAnalysisRouter,
   sendFileAnalysisPage,
