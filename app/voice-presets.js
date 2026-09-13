@@ -194,6 +194,13 @@
     if (hasActiveSpeech) synth.cancel();
   }
 
+  function stopRealBrowserSpeech() {
+    if (!('speechSynthesis' in window)) return;
+    const synth = window.speechSynthesis;
+    const realSpeechActive = speaking || ((synth.speaking || synth.pending) && !priming);
+    if (realSpeechActive) stopBrowserSpeech();
+  }
+
   function stopCloudAudio() {
     if (activeAudio) {
       try {
@@ -326,13 +333,13 @@
     playbackSerial += 1;
     const token = playbackSerial;
     stopCloudAudio();
-    stopBrowserSpeech();
 
     if (preset.provider === 'browser') {
       setNote(note, NORMAL_NOTE);
       return speakBrowser(text, onDone);
     }
 
+    stopRealBrowserSpeech();
     setNote(note, 'Loading ' + preset.label.replace(/^Voice \d+ — /, '') + ' from OpenAI…');
     void speakOpenAi(text, preset, token, note, onDone);
     return true;
