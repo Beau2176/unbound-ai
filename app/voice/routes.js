@@ -6,7 +6,27 @@ const {
   safeHeyGenVoiceError
 } = require("./heygen-tts");
 
-function createVoiceRouter({ env = process.env } = {}) {
+async function recordVoiceUsage(getPool, userId) {
+  if (typeof getPool !== "function" || !userId) return;
+  const pool = getPool();
+  if (!pool) return;
+  await pool.query(
+    `INSERT INTO usage_events (
+       user_id,
+       provider,
+       model,
+       event_type,
+       input_tokens,
+       output_tokens,
+       total_tokens,
+       web_search_calls
+     )
+     VALUES ($1, 'heygen', 'starfish', 'voice_speech', 0, 0, 0, 0)`,
+    [userId]
+  );
+}
+
+function createVoiceRouter({ env = process.env, getPool = null } = {}) {
   const router = express.Router();
 
   router.get("/status", (req, res) => {
@@ -30,6 +50,15 @@ function createVoiceRouter({ env = process.env } = {}) {
         text: req.body?.text,
         env
       });
+
+      try {
+        await recordVoiceUsage(getPool, req.user?.id || null);
+      } catch (usageError) {
+        console.error(
+          "UNBOUND AI VOICE USAGE RECORD ERROR:",
+          usageError?.code || usageError?.message || "unknown"
+        );
+      }
 
       return res.status(201).json({
         ok: true,
@@ -68,6 +97,7 @@ function sendVoicePage(req, res) {
 }
 
 module.exports = {
+  recordVoiceUsage,
   createVoiceRouter,
   sendVoicePage
 };
