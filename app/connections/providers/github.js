@@ -134,6 +134,29 @@ async function readJsonResponse(response, errorCode) {
   return body && typeof body === "object" ? body : {};
 }
 
+function normalizeTokenPayload(payload = {}) {
+  const accessToken = safeText(payload.access_token, 2000);
+  if (!accessToken) {
+    const error = new Error("GitHub token response was invalid.");
+    error.code = "GITHUB_TOKEN_RESPONSE_INVALID";
+    throw error;
+  }
+  const expiresIn = Number(payload.expires_in);
+  const refreshExpiresIn = Number(payload.refresh_token_expires_in);
+  const now = Date.now();
+  return {
+    accessToken,
+    refreshToken: safeText(payload.refresh_token, 2000),
+    tokenType: safeText(payload.token_type, 80) || "bearer",
+    expiresAt: Number.isFinite(expiresIn) && expiresIn > 0
+      ? new Date(now + expiresIn * 1000).toISOString()
+      : null,
+    refreshTokenExpiresAt: Number.isFinite(refreshExpiresIn) && refreshExpiresIn > 0
+      ? new Date(now + refreshExpiresIn * 1000).toISOString()
+      : null
+  };
+}
+
 async function exchangeAuthorizationCode({ code, env = process.env, fetchImpl = fetch } = {}) {
   assertConfigured(env);
   const normalizedCode = safeText(code, 500);
@@ -164,27 +187,66 @@ async function exchangeAuthorizationCode({ code, env = process.env, fetchImpl = 
     { fetchImpl }
   );
   const payload = await readJsonResponse(response, "GITHUB_TOKEN_EXCHANGE_FAILED");
-  const accessToken = safeText(payload.access_token, 2000);
-  if (!accessToken) {
-    const error = new Error("GitHub token response was invalid.");
-    error.code = "GITHUB_TOKEN_RESPONSE_INVALID";
+  return normalizeTokenPayload(payload);
+}
+
+async function refreshUserToken({ refreshToken, env = process.env, fetchImpl = fetch } = {}) {
+  assertConfigured(env);
+  const token = safeText(refreshToken, 2000);
+  if (!token) {
+    const error = new Error("GitHub refresh token is missing.");
+    error.code = "GITHUB_REFRESH_TOKEN_MISSING";
     throw error;
   }
+  const config = getGitHubConfig(env);
+  const body = new URLSearchParams({
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    grant_type: "refresh_token",
+    refresh_token: token
+  });
+  const response = await fetchWithTimeout(
+    TOKEN_URL,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "UNBOUND-AI-Connected-Apps"
+      },
+      body: body.toString()
+    },
+    { fetchImpl }
+  );
+  const payload = await readJsonResponse(response, "GITHUB_TOKEN_REFRESH_FAILED");
+  return normalizeTokenPayload(payload);
+}
 
-  const expiresIn = Number(payload.expires_in);
-  const refreshExpiresIn = Number(payload.refresh_token_expires_in);
-  const now = Date.now();
-  return {
-    accessToken,
-    refreshToken: safeText(payload.refresh_token, 2000),
-    tokenType: safeText(payload.token_type, 80) || "bearer",
-    expiresAt: Number.isFinite(expiresIn) && expiresIn > 0
-      ? new Date(now + expiresIn * 1000).toISOString()
-      : null,
-    refreshTokenExpiresAt: Number.isFinite(refreshExpiresIn) && refreshExpiresIn > 0
-      ? new Date(now + refreshExpiresIn * 1000).toISOString()
-      : null
-  };
+async function revokeUserToken({ accessToken, env = process.env, fetchImpl = fetch } = {}) {
+  assertConfigured(env);
+  const token = safeText(accessToken, 2000);
+  if (!token) return { revoked: false, reason: "token-missing" };
+  const config = getGitHubConfig(env);
+  const response = await fetchWithTimeout(
+    `${API_ORIGIN}/applications/${encodeURIComponent(config.clientId)}/token`,
+    {
+      method: "DELETE",
+      headers: {
+        ...requestHeaders(),
+        Authorization: `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`, "utf8").toString("base64")}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ access_token: token })
+    },
+    { fetchImpl }
+  );
+  if (response.status === 204 || response.status === 404) {
+    return { revoked: response.status === 204, alreadyRevoked: response.status === 404 };
+  }
+  const error = new Error("GitHub token revocation failed.");
+  error.code = "GITHUB_TOKEN_REVOCATION_FAILED";
+  error.statusCode = response.status;
+  throw error;
 }
 
 async function getAuthenticatedUser({ accessToken, fetchImpl = fetch } = {}) {
@@ -299,6 +361,8 @@ module.exports = {
   publicGitHubStatus,
   buildAuthorizationUrl,
   exchangeAuthorizationCode,
+  refreshUserToken,
+  revokeUserToken,
   getAuthenticatedUser,
   listInstallations,
   listRepositoriesForInstallation,
