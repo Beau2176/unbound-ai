@@ -42,7 +42,7 @@ function integrateAdvertisingAnalyticsServerSource(serverSource) {
   );
 
   const returnUrlMarker = `function advertisingReturnUrl(req, result) {`;
-  const trackingHelper = `function advertisingTrackedUrl(req, orderId, fallbackUrl) {\n  let origin = String(process.env.PUBLIC_APP_ORIGIN || "").trim();\n  try {\n    if (origin) {\n      const parsed = new URL(origin);\n      origin = parsed.protocol === "https:" ? parsed.origin : "";\n    }\n  } catch (_) {\n    origin = "";\n  }\n\n  if (!origin && IS_PRODUCTION) {\n    const host = req.get("host");\n    if (host) origin = `https://${host}`;\n  }\n\n  if (!origin.startsWith("https://")) return fallbackUrl;\n  return `${origin}/api/advertising/click/${encodeURIComponent(String(orderId))}`;\n}\n\n${returnUrlMarker}`;
+  const trackingHelper = `function advertisingTrackedUrl(req, orderId, fallbackUrl) {\n  let origin = String(process.env.PUBLIC_APP_ORIGIN || "").trim();\n  try {\n    if (origin) {\n      const parsed = new URL(origin);\n      origin = parsed.protocol === "https:" ? parsed.origin : "";\n    }\n  } catch (_) {\n    origin = "";\n  }\n\n  if (!origin && IS_PRODUCTION) {\n    const host = req.get("host");\n    if (host) origin = "https://" + host;\n  }\n\n  if (!origin.startsWith("https://")) return fallbackUrl;\n  return origin + "/api/advertising/click/" + encodeURIComponent(String(orderId));\n}\n\n${returnUrlMarker}`;
   source = replaceExactlyOnce(
     source,
     returnUrlMarker,
