@@ -5,6 +5,10 @@ const { analyzeFile, getGatewayStatus } = require("../ai/gateway");
 const { injectEmailAccountUi } = require("../email/account-page");
 const { listAiStyles } = require("../preferences/ai-style");
 const {
+  scanBufferForMalware,
+  publicMalwareScanStatus
+} = require("../security/malware-scan");
+const {
   getFileAnalysisConfig,
   normalizeFileAnalysisRequest,
   publicFileAnalysisConfig
@@ -80,8 +84,20 @@ function safeProviderError(error) {
   const code = String(error?.code || "");
   if (code === "AI_PROVIDER_NOT_CONFIGURED") return { statusCode: 503, code, message: "File analysis is temporarily unavailable because the AI provider is not configured." };
   if (code === "AI_PROVIDER_FILE_ANALYSIS_UNSUPPORTED") return { statusCode: 503, code, message: "The configured AI provider does not support file analysis." };
+  if (code === "UPLOAD_MALWARE_DETECTED") return { statusCode: 400, code, message: "That upload was blocked because malware was detected." };
+  if (code === "UPLOAD_MALWARE_SCANNER_UNAVAILABLE") return { statusCode: 503, code, message: "Upload malware scanning is temporarily unavailable. Try again shortly." };
+  if (code === "UPLOAD_MALWARE_SCAN_INPUT_INVALID") return { statusCode: 400, code, message: "The upload could not be scanned safely." };
   if (code.startsWith("FILE_ANALYSIS_")) return { statusCode: Number(error?.statusCode) || 400, code, message: error?.publicMessage || "The uploaded file could not be analyzed." };
   return { statusCode: 502, code: "FILE_ANALYSIS_PROVIDER_FAILED", message: "The AI provider could not analyze that file. Try again shortly." };
+}
+
+function logMalwareScanResult(result, context) {
+  if (!result || result.state !== "unavailable") return;
+  console.warn(
+    `UNBOUND AI ${context} MALWARE SCAN DEGRADED:`,
+    result.internalReason || "scanner-unavailable",
+    result.sha256 ? `sha256=${result.sha256.slice(0, 16)}` : ""
+  );
 }
 
 function createFileAnalysisRouter({ recordUsageEvent = null, estimateProviderCostMicros = null, env = process.env } = {}) {
@@ -90,13 +106,25 @@ function createFileAnalysisRouter({ recordUsageEvent = null, estimateProviderCos
   router.use(express.json({ limit: config.jsonBodyLimit, type: "application/json" }));
   router.get("/status", (req, res) => {
     const ai = getGatewayStatus();
-    return res.json({ configured: Boolean(ai.configured && ai.fileAnalysis), provider: ai.provider || null, model: ai.model || null, limits: publicFileAnalysisConfig(env) });
+    return res.json({
+      configured: Boolean(ai.configured && ai.fileAnalysis),
+      provider: ai.provider || null,
+      model: ai.model || null,
+      limits: publicFileAnalysisConfig(env),
+      malwareScan: publicMalwareScanStatus(env)
+    });
   });
   router.post("/", async (req, res) => {
     try {
       const ai = getGatewayStatus();
       if (!ai.configured || !ai.fileAnalysis) return res.status(503).json({ error: "File analysis is temporarily unavailable.", code: ai.configured ? "AI_PROVIDER_FILE_ANALYSIS_UNSUPPORTED" : "AI_PROVIDER_NOT_CONFIGURED" });
       const input = normalizeFileAnalysisRequest(req.body, env);
+      const malwareScan = await scanBufferForMalware({
+        filename: input.filename,
+        buffer: Buffer.from(input.fileBase64, "base64"),
+        env
+      });
+      logMalwareScanResult(malwareScan, "FILE ANALYSIS");
       const result = await analyzeFile({ filename: input.filename, mimeType: input.mimeType, fileBase64: input.fileBase64, prompt: input.prompt, detail: input.detail || "low" });
       if (typeof recordUsageEvent === "function") {
         const estimatedCostMicros = typeof estimateProviderCostMicros === "function" ? estimateProviderCostMicros(result.provider, result.usage) : null;
@@ -106,10 +134,20 @@ function createFileAnalysisRouter({ recordUsageEvent = null, estimateProviderCos
           console.error("UNBOUND AI FILE ANALYSIS USAGE RECORD ERROR:", usageError?.code || usageError?.message || "unknown");
         }
       }
-      return res.json({ ok: true, analysis: result.reply || "", file: { name: input.filename, bytes: input.fileBytes, type: input.mimeType, pdfDetail: input.detail || null }, provider: result.provider, model: result.model, usage: result.usage ? { inputTokens: Number(result.usage.input_tokens || 0), outputTokens: Number(result.usage.output_tokens || 0), totalTokens: Number(result.usage.total_tokens || 0) } : null, privacy: { rawFileStoredByUnbound: false, providerResponseStorageRequested: false } });
+      return res.json({ ok: true, analysis: result.reply || "", file: { name: input.filename, bytes: input.fileBytes, type: input.mimeType, pdfDetail: input.detail || null }, provider: result.provider, model: result.model, usage: result.usage ? { inputTokens: Number(result.usage.input_tokens || 0), outputTokens: Number(result.usage.output_tokens || 0), totalTokens: Number(result.usage.total_tokens || 0) } : null, privacy: { rawFileStoredByUnbound: false, providerResponseStorageRequested: false }, security: { staticUploadInspection: true, malwareScan: { mode: malwareScan.mode, scanned: malwareScan.scanned, clean: malwareScan.clean, state: malwareScan.state, engine: malwareScan.engine } } });
     } catch (error) {
       const safe = safeProviderError(error);
       if (safe.code === "FILE_ANALYSIS_PROVIDER_FAILED") console.error("UNBOUND AI FILE ANALYSIS PROVIDER ERROR:", error?.code || error?.status || error?.name || "provider-error");
+      if (safe.code === "UPLOAD_MALWARE_DETECTED") {
+        console.warn(
+          "UNBOUND AI FILE ANALYSIS MALWARE BLOCK:",
+          error?.details?.signature || "detected",
+          error?.details?.sha256 ? `sha256=${error.details.sha256.slice(0, 16)}` : ""
+        );
+      }
+      if (safe.code === "UPLOAD_MALWARE_SCANNER_UNAVAILABLE") {
+        console.warn("UNBOUND AI FILE ANALYSIS REQUIRED MALWARE SCANNER UNAVAILABLE:", error?.details?.reason || "unavailable");
+      }
       return res.status(safe.statusCode).json({ error: safe.message, code: safe.code });
     }
   });
@@ -182,6 +220,7 @@ module.exports = {
   buildAiStyleOptions,
   buildAiStyleBrowserFunctions,
   safeProviderError,
+  logMalwareScanResult,
   createFileAnalysisRouter,
   sendFileAnalysisPage,
   buildFileAwareIndexHtml,
