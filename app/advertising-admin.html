@@ -17,7 +17,7 @@
     main { width:min(1180px,calc(100% - 28px)); margin:0 auto; padding:28px 0 60px; }
     .toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
     .toolbar p { margin:0; color:var(--muted); }
-    .controls { display:flex; gap:8px; }
+    .controls { display:flex; gap:8px; flex-wrap:wrap; }
     select,button { border:1px solid var(--line); border-radius:10px; background:#0a1627; color:white; padding:9px 11px; }
     button { cursor:pointer; font-weight:800; }
     button.primary { border-color:rgba(101,232,164,.4); background:rgba(33,122,76,.24); }
@@ -25,6 +25,11 @@
     button:disabled { cursor:not-allowed; opacity:.5; }
     .status { margin:10px 0 16px; color:var(--muted); font-size:12px; }
     .status.error { color:#ffc2c2; }
+    .metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:0 0 18px; }
+    .metric { border:1px solid var(--line); border-radius:14px; background:#08111e; padding:16px; }
+    .metric-label { color:var(--muted); font-size:10px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
+    .metric-value { margin-top:6px; font-size:28px; font-weight:950; }
+    .metric-note { margin-top:4px; color:var(--muted); font-size:10px; }
     .orders { display:grid; gap:12px; }
     .order { border:1px solid var(--line); border-radius:16px; background:var(--panel); padding:18px; }
     .order-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
@@ -38,8 +43,11 @@
     .creative h3 { margin:0 0 6px; }
     .creative p { margin:0 0 8px; color:var(--muted); line-height:1.55; }
     .creative a { color:#bfe4ff; word-break:break-all; }
+    .performance { display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; color:#cfeaff; font-size:11px; font-weight:800; }
+    .performance span { padding:6px 8px; border:1px solid rgba(88,179,255,.18); border-radius:9px; background:#081522; }
     .actions { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
     .empty { padding:26px; border:1px dashed var(--line); border-radius:14px; color:var(--muted); text-align:center; }
+    @media (max-width:700px) { .metrics { grid-template-columns:1fr; } .order-head { flex-direction:column; } .badges { justify-content:flex-start; } }
   </style>
 </head>
 <body>
@@ -49,8 +57,13 @@
   </header>
   <main>
     <div class="toolbar">
-      <p>Only paid and approved orders become public advertiser placements.</p>
+      <p>Only paid and approved orders become public advertiser placements. Performance reporting is aggregate-only.</p>
       <div class="controls">
+        <select id="windowDays" aria-label="Analytics window">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
         <select id="filter">
           <option value="all">All orders</option>
           <option value="pending">Pending review</option>
@@ -60,6 +73,13 @@
         <button id="refresh" type="button">REFRESH</button>
       </div>
     </div>
+
+    <section class="metrics" aria-label="Advertising performance summary">
+      <div class="metric"><div class="metric-label">Impressions</div><div id="metricImpressions" class="metric-value">—</div><div class="metric-note">Advertiser cards served</div></div>
+      <div class="metric"><div class="metric-label">Clicks</div><div id="metricClicks" class="metric-value">—</div><div class="metric-note">Tracked outbound visits</div></div>
+      <div class="metric"><div class="metric-label">Click-through rate</div><div id="metricCtr" class="metric-value">—</div><div class="metric-note">Clicks ÷ impressions</div></div>
+    </section>
+
     <div id="status" class="status" role="status" aria-live="polite"></div>
     <div id="orders" class="orders"><div class="empty">Loading advertiser orders…</div></div>
   </main>
@@ -67,10 +87,24 @@
     const ordersRoot = document.getElementById("orders");
     const statusRoot = document.getElementById("status");
     const filter = document.getElementById("filter");
+    const windowDays = document.getElementById("windowDays");
     const refresh = document.getElementById("refresh");
+    const metricImpressions = document.getElementById("metricImpressions");
+    const metricClicks = document.getElementById("metricClicks");
+    const metricCtr = document.getElementById("metricCtr");
+    let metricsByOrder = new Map();
 
     function money(cents, currency) {
       return new Intl.NumberFormat(undefined,{style:"currency",currency:currency||"USD"}).format(Number(cents||0)/100);
+    }
+
+    function wholeNumber(value) {
+      return new Intl.NumberFormat().format(Math.max(0,Number(value||0)));
+    }
+
+    function percent(value) {
+      const number = Number(value || 0);
+      return `${(Math.max(0, number) * 100).toFixed(2)}%`;
     }
 
     function badge(text, cls="") {
@@ -92,7 +126,7 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not review advertiser order.");
       statusRoot.textContent = action === "approve" ? "Advertiser approved and scheduled." : "Advertiser rejected.";
-      await loadOrders();
+      await refreshAll();
     }
 
     function renderOrders(orders) {
@@ -133,6 +167,17 @@
         link.textContent = order.websiteUrl;
         creative.append(headline,description,link);
 
+        const metric = metricsByOrder.get(String(order.id)) || { impressions:0, clicks:0, clickThroughRate:0 };
+        const performance = document.createElement("div");
+        performance.className = "performance";
+        const impressions = document.createElement("span");
+        impressions.textContent = `${wholeNumber(metric.impressions)} impressions`;
+        const clicks = document.createElement("span");
+        clicks.textContent = `${wholeNumber(metric.clicks)} clicks`;
+        const ctr = document.createElement("span");
+        ctr.textContent = `${percent(metric.clickThroughRate)} CTR`;
+        performance.append(impressions,clicks,ctr);
+
         const actions = document.createElement("div");
         actions.className = "actions";
         const approve = document.createElement("button");
@@ -149,7 +194,7 @@
         reject.addEventListener("click", () => reviewOrder(order.id,"reject").catch(showError));
         actions.append(approve,reject);
 
-        card.append(head,creative,actions);
+        card.append(head,creative,performance,actions);
         ordersRoot.appendChild(card);
       }
     }
@@ -157,6 +202,20 @@
     function showError(error) {
       statusRoot.className = "status error";
       statusRoot.textContent = error.message || "Advertising admin request failed.";
+    }
+
+    async function loadMetrics() {
+      const days = Number.parseInt(windowDays.value,10) || 30;
+      const response = await fetch(`/api/admin/advertising/metrics?days=${encodeURIComponent(days)}`, {
+        credentials:"same-origin",
+        headers:{"Accept":"application/json"}
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not load advertising metrics.");
+      metricsByOrder = new Map((Array.isArray(data.orders) ? data.orders : []).map((item) => [String(item.id),item]));
+      metricImpressions.textContent = wholeNumber(data.totals?.impressions);
+      metricClicks.textContent = wholeNumber(data.totals?.clicks);
+      metricCtr.textContent = percent(data.totals?.clickThroughRate);
     }
 
     async function loadOrders() {
@@ -170,12 +229,18 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not load advertiser orders.");
       renderOrders(Array.isArray(data.orders) ? data.orders : []);
-      statusRoot.textContent = `${data.orders?.length || 0} advertiser order(s).`;
+      statusRoot.textContent = `${data.orders?.length || 0} advertiser order(s). Analytics window: ${windowDays.value} days.`;
     }
 
-    refresh.addEventListener("click", () => loadOrders().catch(showError));
+    async function refreshAll() {
+      await loadMetrics();
+      await loadOrders();
+    }
+
+    refresh.addEventListener("click", () => refreshAll().catch(showError));
     filter.addEventListener("change", () => loadOrders().catch(showError));
-    loadOrders().catch(showError);
+    windowDays.addEventListener("change", () => refreshAll().catch(showError));
+    refreshAll().catch(showError);
   </script>
 </body>
 </html>
