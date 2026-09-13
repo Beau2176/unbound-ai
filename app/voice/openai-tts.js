@@ -2,6 +2,11 @@ const OPENAI_SPEECH_URL = "https://api.openai.com/v1/audio/speech";
 const OPENAI_TTS_MODEL = "gpt-4o-mini-tts";
 
 const CLOUD_VOICES = Object.freeze({
+  warm: {
+    voice: "marin",
+    label: "Voice 1 — Warm",
+    instructions: "Speak naturally and warmly, with relaxed pacing, subtle expression, and no announcer or robotic cadence."
+  },
   deep: {
     voice: "onyx",
     label: "Voice 3 — Deep",
