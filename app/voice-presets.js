@@ -1,12 +1,11 @@
 (() => {
-  const STYLE_ID = 'unbound-voice-presets-v105';
+  const STYLE_ID = 'unbound-voice-presets-v106';
   const SELECT_ID = 'unboundVoicePreset';
   const STORAGE_KEY = 'unbound.voice.preset';
   const DEFAULT_PRESET = 'clear';
   const CLOUD_ENDPOINT = '/api/voice/natural-speech';
 
   const PRESETS = [
-    { id: 'warm', label: 'Voice 1 — Warm', provider: 'cloud' },
     {
       id: 'clear',
       label: 'Voice 2 — Clear',
@@ -57,7 +56,9 @@
 
   function selectedPreset() {
     const id = readPresetId();
-    return PRESETS.find((preset) => preset.id === id) || PRESETS[1];
+    return PRESETS.find((preset) => preset.id === id)
+      || PRESETS.find((preset) => preset.id === DEFAULT_PRESET)
+      || PRESETS[0];
   }
 
   function voiceScore(voice) {
@@ -83,9 +84,9 @@
   }
 
   function resolveClearVoice() {
-    const preset = PRESETS[1];
+    const preset = PRESETS.find((item) => item.id === 'clear');
     const voices = englishVoices();
-    if (!voices.length) return null;
+    if (!preset || !voices.length) return null;
 
     for (const preferred of preset.preferred) {
       const wanted = preferred.toLowerCase();
@@ -352,7 +353,7 @@
 
     const note = document.createElement('div');
     note.className = 'unbound-voice-picker-note';
-    note.textContent = 'Voice 2 stays on your clear device voice. Voices 1, 3, 4, and 5 use distinct AI-generated natural cloud voices. Your choice is saved.';
+    note.textContent = 'Voice 2 stays on your clear device voice. Voices 3, 4, and 5 use distinct AI-generated natural cloud voices. Your choice is saved.';
 
     picker.append(label, select, note);
 
