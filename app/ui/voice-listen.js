@@ -1,5 +1,5 @@
-const VOICE_LISTEN_STYLE_ID = "unbound-voice-listen-v103";
-const VOICE_LISTEN_SCRIPT_ID = "unbound-voice-listen-v103";
+const VOICE_LISTEN_STYLE_ID = "unbound-voice-listen-v098";
+const VOICE_LISTEN_SCRIPT_ID = "unbound-voice-listen-v098";
 
 const VOICE_LISTEN_STYLES = `<style id="${VOICE_LISTEN_STYLE_ID}">
 .voice-listen-wrap {
@@ -25,8 +25,8 @@ const VOICE_LISTEN_STYLES = `<style id="${VOICE_LISTEN_STYLE_ID}">
   right: 0;
   bottom: calc(100% + 8px);
   z-index: 120;
-  min-width: 250px;
-  padding: 8px;
+  min-width: 190px;
+  padding: 7px;
   border: 1px solid rgba(107,193,255,.35);
   border-radius: 14px;
   background: rgba(3,8,16,.97);
@@ -46,46 +46,13 @@ const VOICE_LISTEN_STYLES = `<style id="${VOICE_LISTEN_STYLE_ID}">
   font-weight: 750;
 }
 .voice-listen-action:hover { background: rgba(66,165,255,.14); }
-.voice-picker {
-  margin: 5px 3px 7px;
-  padding: 9px;
-  border: 1px solid rgba(107,193,255,.22);
-  border-radius: 11px;
-  background: rgba(66,165,255,.06);
-}
-.voice-picker-label {
-  display: block;
-  margin-bottom: 6px;
-  color: #b9d9ef;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-.voice-picker-select {
-  width: 100%;
-  min-height: 38px;
-  padding: 7px 9px;
-  border: 1px solid rgba(107,193,255,.32);
-  border-radius: 9px;
-  background: #08111f;
-  color: #f7fbff;
-  font: inherit;
-  font-size: 13px;
-}
-.voice-picker-note {
-  margin: 6px 1px 0;
-  color: #8ea9bb;
-  font-size: 10px;
-  line-height: 1.35;
-}
 .voice-listen-button[data-listening="true"] {
   border-color: rgba(255,118,118,.75);
   box-shadow: 0 0 0 3px rgba(255,118,118,.12);
 }
 @media (max-width: 760px) {
   .voice-listen-button { min-height: 46px; padding: 0 10px; font-size: 12px; }
-  .voice-listen-menu { min-width: 230px; }
+  .voice-listen-menu { min-width: 176px; }
 }
 @media (max-width: 430px) {
   .voice-listen-button { width: 46px; padding: 0; font-size: 0; }
@@ -97,47 +64,6 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
 (() => {
   let audio = null;
   let recognition = null;
-  let speaking = false;
-
-  const VOICE_PRESETS = [
-    {
-      id: 'warm',
-      label: 'Voice 1 — Warm',
-      rate: 0.96,
-      pitch: 1.02,
-      preferred: ['Aria', 'Jenny', 'Samantha', 'Zira', 'Ava', 'Emma', 'Google US English']
-    },
-    {
-      id: 'clear',
-      label: 'Voice 2 — Clear',
-      rate: 0.98,
-      pitch: 1.00,
-      preferred: ['Sonia', 'Hazel', 'Susan', 'Serena', 'Libby', 'Google UK English Female']
-    },
-    {
-      id: 'deep',
-      label: 'Voice 3 — Deep',
-      rate: 0.93,
-      pitch: 0.88,
-      preferred: ['Guy', 'Ryan', 'Brian', 'Daniel', 'David', 'Mark', 'George']
-    },
-    {
-      id: 'bright',
-      label: 'Voice 4 — Bright',
-      rate: 1.00,
-      pitch: 1.08,
-      preferred: ['Michelle', 'Ana', 'Salli', 'Victoria', 'Karen', 'Tessa']
-    },
-    {
-      id: 'calm',
-      label: 'Voice 5 — Calm',
-      rate: 0.90,
-      pitch: 0.96,
-      preferred: ['Andrew', 'Christopher', 'Eric', 'James', 'Oliver', 'Alex']
-    }
-  ];
-
-  const VOICE_STORAGE_KEY = 'unbound.voice.preset';
 
   function getComposerTextarea() {
     return document.querySelector('#message, .composer textarea, textarea[name="message"], textarea');
@@ -188,168 +114,6 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
     return '';
   }
 
-  function getSelectedPresetId() {
-    try {
-      const saved = window.localStorage.getItem(VOICE_STORAGE_KEY);
-      if (VOICE_PRESETS.some((preset) => preset.id === saved)) return saved;
-    } catch (_) {}
-    return VOICE_PRESETS[0].id;
-  }
-
-  function getSelectedPreset() {
-    const id = getSelectedPresetId();
-    return VOICE_PRESETS.find((preset) => preset.id === id) || VOICE_PRESETS[0];
-  }
-
-  function saveSelectedPreset(id) {
-    if (!VOICE_PRESETS.some((preset) => preset.id === id)) return;
-    try { window.localStorage.setItem(VOICE_STORAGE_KEY, id); } catch (_) {}
-  }
-
-  function voiceQualityScore(voice) {
-    const name = String(voice?.name || '');
-    let score = 0;
-    if (/natural/i.test(name)) score += 120;
-    if (/neural/i.test(name)) score += 110;
-    if (/online/i.test(name)) score += 80;
-    if (/google/i.test(name)) score += 65;
-    if (/microsoft/i.test(name)) score += 45;
-    if (/english|en-us|en-gb/i.test(name + ' ' + String(voice?.lang || ''))) score += 20;
-    if (voice?.default) score += 8;
-    return score;
-  }
-
-  function availableEnglishVoices() {
-    if (!('speechSynthesis' in window)) return [];
-    const all = window.speechSynthesis.getVoices() || [];
-    const english = all.filter((voice) => /^en(?:-|$)/i.test(String(voice.lang || '')));
-    return (english.length ? english : all).slice().sort((a, b) => voiceQualityScore(b) - voiceQualityScore(a));
-  }
-
-  function resolveVoiceForPreset(preset) {
-    const voices = availableEnglishVoices();
-    if (!voices.length) return null;
-
-    for (const preferredName of preset.preferred) {
-      const match = voices.find((voice) => String(voice.name || '').toLowerCase().includes(preferredName.toLowerCase()));
-      if (match) return match;
-    }
-
-    const presetIndex = Math.max(0, VOICE_PRESETS.findIndex((item) => item.id === preset.id));
-    return voices[presetIndex % voices.length] || voices[0];
-  }
-
-  function cleanSpeechText(value) {
-    return String(value || '')
-      .replace(/```[\\s\\S]*?```/g, ' code example omitted ')
-      .replace(/`([^`]+)`/g, '$1')
-      .replace(/https?:\\/\\/\\S+/g, ' link ')
-      .replace(/[*_#>|]/g, ' ')
-      .replace(/\\s+/g, ' ')
-      .trim();
-  }
-
-  function splitSpeechText(text, maxLength = 240) {
-    const cleaned = cleanSpeechText(text);
-    if (!cleaned) return [];
-    const sentences = cleaned.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [cleaned];
-    const chunks = [];
-    let current = '';
-
-    for (const rawSentence of sentences) {
-      const sentence = rawSentence.trim();
-      if (!sentence) continue;
-      if ((current + ' ' + sentence).trim().length <= maxLength) {
-        current = (current + ' ' + sentence).trim();
-        continue;
-      }
-      if (current) chunks.push(current);
-      if (sentence.length <= maxLength) {
-        current = sentence;
-        continue;
-      }
-      const words = sentence.split(/\\s+/);
-      current = '';
-      for (const word of words) {
-        if ((current + ' ' + word).trim().length > maxLength && current) {
-          chunks.push(current);
-          current = word;
-        } else {
-          current = (current + ' ' + word).trim();
-        }
-      }
-    }
-    if (current) chunks.push(current);
-    return chunks;
-  }
-
-  function stopBrowserSpeech() {
-    if (!('speechSynthesis' in window)) return;
-    speaking = false;
-    window.speechSynthesis.cancel();
-  }
-
-  function speakWithSelectedBrowserVoice(text, onDone = null) {
-    if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance !== 'function') return false;
-    const chunks = splitSpeechText(text);
-    if (!chunks.length) return false;
-
-    stopBrowserSpeech();
-    speaking = true;
-    const preset = getSelectedPreset();
-    const voice = resolveVoiceForPreset(preset);
-    let index = 0;
-
-    const speakNext = () => {
-      if (!speaking) return;
-      if (index >= chunks.length) {
-        speaking = false;
-        if (typeof onDone === 'function') onDone();
-        return;
-      }
-
-      const utterance = new SpeechSynthesisUtterance(chunks[index]);
-      if (voice) utterance.voice = voice;
-      utterance.lang = voice?.lang || 'en-US';
-      utterance.rate = preset.rate;
-      utterance.pitch = preset.pitch;
-      utterance.volume = 1;
-      utterance.onend = () => {
-        index += 1;
-        window.setTimeout(speakNext, 45);
-      };
-      utterance.onerror = () => {
-        speaking = false;
-        if (typeof onDone === 'function') onDone();
-      };
-      window.speechSynthesis.speak(utterance);
-    };
-
-    speakNext();
-    return true;
-  }
-
-  async function tryHeyGenVoice(text) {
-    try {
-      const response = await fetch('/api/voice/speech', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ text })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.audioUrl) return false;
-      if (audio) {
-        try { audio.pause(); } catch (_) {}
-      }
-      audio = new Audio(payload.audioUrl);
-      await audio.play();
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
   async function listenToLastAnswer(button) {
     const text = getLastAssistantText();
     if (!text) {
@@ -357,25 +121,31 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
       return;
     }
 
-    button.disabled = true;
     try {
-      if (speakWithSelectedBrowserVoice(text, () => { button.disabled = false; })) {
-        button.title = getSelectedPreset().label + ' is reading the latest answer.';
-        return;
+      button.disabled = true;
+      const response = await fetch('/api/voice/speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ text })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.audioUrl) throw new Error(payload.error || 'Voice playback is unavailable.');
+      if (audio) {
+        try { audio.pause(); } catch (_) {}
       }
-
-      const played = await tryHeyGenVoice(text);
-      if (!played) button.title = 'Voice playback is unavailable on this browser.';
+      audio = new Audio(payload.audioUrl);
+      await audio.play();
+    } catch (error) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+      } else {
+        button.title = error.message || 'Voice playback is unavailable.';
+      }
     } finally {
-      if (!speaking) button.disabled = false;
+      button.disabled = false;
     }
-  }
-
-  function previewSelectedVoice(button) {
-    const preset = getSelectedPreset();
-    const sample = preset.label + '. This is how I will sound when UNBOUND AI reads an answer aloud.';
-    const started = speakWithSelectedBrowserVoice(sample);
-    button.title = started ? 'Previewing ' + preset.label : 'Browser voice preview is unavailable.';
   }
 
   function startVoiceInput(button) {
@@ -461,7 +231,7 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
     button.textContent = '🎙 Voice / Listen';
     button.setAttribute('aria-haspopup', 'menu');
     button.setAttribute('aria-expanded', 'false');
-    button.title = 'Use voice input, choose a voice, or listen to the latest UNBOUND AI answer';
+    button.title = 'Use voice input or listen to the latest UNBOUND AI answer';
 
     const menu = document.createElement('div');
     menu.className = 'voice-listen-menu';
@@ -473,42 +243,12 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
     voiceInput.className = 'voice-listen-action';
     voiceInput.textContent = '🎙 Voice input';
 
-    const picker = document.createElement('div');
-    picker.className = 'voice-picker';
-
-    const pickerLabel = document.createElement('label');
-    pickerLabel.className = 'voice-picker-label';
-    pickerLabel.setAttribute('for', 'unboundVoicePreset');
-    pickerLabel.textContent = 'Spoken answer voice';
-
-    const pickerSelect = document.createElement('select');
-    pickerSelect.id = 'unboundVoicePreset';
-    pickerSelect.className = 'voice-picker-select';
-    for (const preset of VOICE_PRESETS) {
-      const option = document.createElement('option');
-      option.value = preset.id;
-      option.textContent = preset.label;
-      pickerSelect.appendChild(option);
-    }
-    pickerSelect.value = getSelectedPresetId();
-
-    const pickerNote = document.createElement('div');
-    pickerNote.className = 'voice-picker-note';
-    pickerNote.textContent = 'Uses the most natural English voice available on this device. Your choice is saved.';
-
-    picker.append(pickerLabel, pickerSelect, pickerNote);
-
-    const preview = document.createElement('button');
-    preview.type = 'button';
-    preview.className = 'voice-listen-action';
-    preview.textContent = '▶ Preview selected voice';
-
     const listen = document.createElement('button');
     listen.type = 'button';
     listen.className = 'voice-listen-action';
     listen.textContent = '🔊 Listen to last answer';
 
-    menu.append(voiceInput, picker, preview, listen);
+    menu.append(voiceInput, listen);
     wrap.append(button, menu);
     send.parentNode.insertBefore(wrap, send);
 
@@ -522,32 +262,13 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
       button.setAttribute('aria-expanded', menu.hidden ? 'false' : 'true');
     });
     voiceInput.addEventListener('click', () => { closeMenu(); startVoiceInput(button); });
-    pickerSelect.addEventListener('change', () => {
-      saveSelectedPreset(pickerSelect.value);
-      stopBrowserSpeech();
-      previewSelectedVoice(button);
-    });
-    preview.addEventListener('click', () => { previewSelectedVoice(button); });
     listen.addEventListener('click', () => { closeMenu(); void listenToLastAnswer(button); });
     document.addEventListener('click', (event) => {
       if (!wrap.contains(event.target)) closeMenu();
     });
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        closeMenu();
-        stopBrowserSpeech();
-      }
+      if (event.key === 'Escape') closeMenu();
     });
-
-    if ('speechSynthesis' in window) {
-      const refresh = () => {
-        const preset = getSelectedPreset();
-        const resolved = resolveVoiceForPreset(preset);
-        pickerSelect.title = resolved ? 'Using ' + resolved.name : 'Using browser default voice';
-      };
-      refresh();
-      window.speechSynthesis.addEventListener?.('voiceschanged', refresh);
-    }
   }
 
   window.addEventListener('DOMContentLoaded', mount);
