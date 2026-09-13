@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v0.90";
+const INTEGRATION_VERSION = "v0.91";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const first = source.indexOf(marker);
@@ -24,8 +24,16 @@ function integrateLaunchDashboardServerSource(serverSource) {
     throw error;
   }
 
+  const launchReadinessImport = `const { buildLaunchReadiness } = require("./ops/launch-readiness");`;
+  source = replaceExactlyOnce(
+    source,
+    launchReadinessImport,
+    `${launchReadinessImport}\nconst { buildOwnerReadiness } = require("./ops/owner-readiness");`,
+    "owner-readiness-import"
+  );
+
   const adminRoute = `app.get("/admin.html", (req, res) => {\n  res.setHeader("Cache-Control", "no-cache");\n  return res.sendFile(path.join(__dirname, "admin.html"));\n});`;
-  const replacement = `app.get("/admin.html", requireDatabase, requireAdmin, (req, res) => {\n  const adminPath = path.join(__dirname, "admin.html");\n  const adminSource = require("fs").readFileSync(adminPath, "utf8");\n  const readinessLinkMarker = '<a class="link-btn" href="/advertising-admin">Advertising</a>';\n  if (!adminSource.includes(readinessLinkMarker)) {\n    console.error("UNBOUND AI ADMIN READINESS LINK MARKER MISSING");\n    return res.status(500).send("Admin dashboard integration is unavailable.");\n  }\n  const renderedAdmin = adminSource.replace(\n    readinessLinkMarker,\n    readinessLinkMarker + '\\n      <a class="link-btn" href="/launch-readiness.html">Readiness</a>'\n  );\n  res.setHeader("Cache-Control", "no-cache");\n  return res.type("html").send(renderedAdmin);\n});\n\napp.get("/launch-readiness.html", requireDatabase, requireAdmin, (req, res) => {\n  res.setHeader("Cache-Control", "no-cache");\n  return res.sendFile(path.join(__dirname, "launch-readiness.html"));\n});`;
+  const replacement = `app.get("/admin.html", requireDatabase, requireAdmin, (req, res) => {\n  const adminPath = path.join(__dirname, "admin.html");\n  const adminSource = require("fs").readFileSync(adminPath, "utf8");\n  const readinessLinkMarker = '<a class="link-btn" href="/advertising-admin">Advertising</a>';\n  if (!adminSource.includes(readinessLinkMarker)) {\n    console.error("UNBOUND AI ADMIN READINESS LINK MARKER MISSING");\n    return res.status(500).send("Admin dashboard integration is unavailable.");\n  }\n  const renderedAdmin = adminSource.replace(\n    readinessLinkMarker,\n    readinessLinkMarker + '\\n      <a class="link-btn" href="/launch-readiness.html">Readiness</a>'\n  );\n  res.setHeader("Cache-Control", "no-cache");\n  return res.type("html").send(renderedAdmin);\n});\n\napp.get("/launch-readiness.html", requireDatabase, requireAdmin, (req, res) => {\n  res.setHeader("Cache-Control", "no-cache");\n  return res.sendFile(path.join(__dirname, "launch-readiness.html"));\n});\n\napp.get("/api/admin/ops/owner-readiness", requireDatabase, requireAdmin, (req, res) => {\n  return sendStatusJson(res, 200, buildOwnerReadiness());\n});`;
 
   source = replaceExactlyOnce(
     source,

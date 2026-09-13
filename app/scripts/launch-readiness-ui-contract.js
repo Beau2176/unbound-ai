@@ -9,15 +9,23 @@ function main() {
 
   assert.ok(page.includes("Engineering Launch Readiness"));
   assert.ok(page.includes("ENGINEERING READY"));
+  assert.ok(page.includes("Owner / Business Readiness"));
+  assert.ok(page.includes("OWNER / BUSINESS READY"));
   assert.ok(page.includes("/api/admin/ops/launch-readiness"));
+  assert.ok(page.includes("/api/admin/ops/owner-readiness"));
   assert.ok(page.includes("Administrator access is required"));
   assert.ok(page.includes('id="progressBar"'));
   assert.ok(page.includes('id="readyCount"'));
   assert.ok(page.includes('id="blockerCount"'));
   assert.ok(page.includes('id="checks"'));
+  assert.ok(page.includes('id="ownerProgressBar"'));
+  assert.ok(page.includes('id="ownerReadyCount"'));
+  assert.ok(page.includes('id="ownerBlockerCount"'));
+  assert.ok(page.includes('id="ownerChecks"'));
   assert.ok(page.includes("Business banking approval"));
   assert.ok(page.includes("advertiser/network acceptance"));
   assert.ok(page.includes("legal counsel review"));
+  assert.ok(page.includes("explicit verification flag plus a valid review timestamp"));
   assert.ok(page.includes("textContent"));
 
   for (const forbidden of [
@@ -55,7 +63,7 @@ function main() {
   assert.strictEqual(mixed.blockers[0].key, "database_recovery");
   assert.strictEqual(mixed.blockers[0].detail, "Restore drill required.");
 
-  console.log("PASS launch-readiness UI contract: real admin launch gate, progress rendering, blocker semantics, and browser secret isolation are preserved.");
+  console.log("PASS launch-readiness UI contract: engineering and owner/business scores remain separate, admin-only APIs are used, blocker semantics stay truthful, and browser secret isolation is preserved.");
 }
 
 main();
