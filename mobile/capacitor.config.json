@@ -1,0 +1,19 @@
+{
+  "appId": "ai.unbound.app",
+  "appName": "UNBOUND AI",
+  "webDir": "www",
+  "server": {
+    "url": "https://unbound-ai-app.onrender.com",
+    "cleartext": false,
+    "allowNavigation": [
+      "unbound-ai-app.onrender.com"
+    ]
+  },
+  "android": {
+    "backgroundColor": "#000000"
+  },
+  "ios": {
+    "backgroundColor": "#000000",
+    "contentInset": "automatic"
+  }
+}
