@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UNBOUND AI Command Center</title>
+  <style>
+    :root { color-scheme: dark; --panel: rgba(6, 14, 29, .9); --line: rgba(136, 186, 255, .19); }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #f5f8ff;
+      background: radial-gradient(circle at 50% -10%, #173761 0, #07101f 35%, #02050a 72%);
+    }
+    a { color: inherit; }
+    .shell { width: min(1180px, calc(100% - 28px)); margin: 0 auto; padding: 24px 0 48px; }
+    header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 24px; }
+    h1 { font-size: clamp(32px, 6vw, 58px); line-height: .95; margin: 0 0 8px; letter-spacing: .025em; }
+    .eyebrow { color: #83b8ff; font-weight: 800; letter-spacing: .18em; font-size: .8rem; }
+    .sub { color: #aebcd1; margin: 0; max-width: 700px; line-height: 1.5; }
+    .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .button, select {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.07);
+      color: #fff;
+      border-radius: 999px;
+      padding: 11px 16px;
+      font: inherit;
+      font-weight: 800;
+      text-decoration: none;
+    }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+    .card {
+      grid-column: span 3;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 18px;
+      background: var(--panel);
+      box-shadow: 0 16px 46px rgba(0,0,0,.24);
+    }
+    .wide { grid-column: span 6; }
+    .full { grid-column: 1 / -1; }
+    .label { color: #90a3bf; font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; font-weight: 800; }
+    .value { font-size: clamp(25px, 4vw, 38px); font-weight: 900; margin-top: 7px; }
+    .small { color: #aebcd1; font-size: .91rem; margin-top: 7px; line-height: 1.4; }
+    .section-title { margin: 0 0 14px; font-size: 1.05rem; }
+    .capabilities { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+    .capability { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 13px; border-radius: 13px; background: rgba(255,255,255,.045); }
+    .capability strong { display: block; margin-bottom: 3px; }
+    .capability span { color: #9dacbf; font-size: .82rem; }
+    .badge { flex: 0 0 auto; border-radius: 999px; padding: 5px 9px; font-size: .72rem; font-weight: 900; }
+    .live { background: rgba(52, 211, 153, .14); color: #8af0c6; }
+    .locked { background: rgba(251, 191, 36, .12); color: #ffd66f; }
+    .soon { background: rgba(148, 163, 184, .13); color: #b8c4d7; }
+    .activity { width: 100%; border-collapse: collapse; }
+    .activity th, .activity td { text-align: left; padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,.08); font-size: .9rem; }
+    .activity th { color: #91a4c0; font-size: .74rem; text-transform: uppercase; letter-spacing: .08em; }
+    .status-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.07); }
+    .status-row:last-child { border-bottom: 0; }
+    .ok { color: #8af0c6; font-weight: 800; }
+    .warn { color: #ffd66f; font-weight: 800; }
+    .links { display: flex; flex-wrap: wrap; gap: 10px; }
+    .product-link { text-decoration: none; background: rgba(104, 159, 255, .10); border: 1px solid rgba(104,159,255,.2); padding: 11px 13px; border-radius: 12px; font-weight: 800; }
+    #error { display: none; padding: 14px 16px; border-radius: 13px; background: rgba(153, 27, 27, .34); border: 1px solid rgba(248,113,113,.3); margin-bottom: 16px; }
+    @media (max-width: 900px) { .card, .wide { grid-column: span 6; } }
+    @media (max-width: 620px) { .card, .wide, .full { grid-column: 1 / -1; } .capabilities { grid-template-columns: 1fr; } .activity { display: block; overflow-x: auto; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <div class="eyebrow">UNBOUND AI · TOP</div>
+        <h1>COMMAND CENTER</h1>
+        <p class="sub">Your access, usage, account security, and UNBOUND product controls in one place.</p>
+      </div>
+      <div class="header-actions">
+        <select id="days" aria-label="Usage period">
+          <option value="7">7 DAYS</option>
+          <option value="30" selected>30 DAYS</option>
+          <option value="90">90 DAYS</option>
+          <option value="365">1 YEAR</option>
+        </select>
+        <a class="button" href="/">BACK TO CHAT</a>
+      </div>
+    </header>
+
+    <div id="error"></div>
+
+    <section class="grid" aria-live="polite">
+      <article class="card"><div class="label">Plan</div><div id="plan" class="value">—</div><div id="planSource" class="small">Loading access…</div></article>
+      <article class="card"><div class="label">AI requests</div><div id="requests" class="value">—</div><div id="period" class="small">Last 30 days</div></article>
+      <article class="card"><div class="label">Tokens</div><div id="tokens" class="value">—</div><div class="small">Measured provider usage</div></article>
+      <article class="card"><div class="label">Research calls</div><div id="research" class="value">—</div><div class="small">Web-search tool calls</div></article>
+
+      <article class="card"><div class="label">Conversations</div><div id="conversations" class="value">—</div><div id="messages" class="small">— messages</div></article>
+      <article class="card"><div class="label">Active sessions</div><div id="sessions" class="value">—</div><div id="devices" class="small">— devices</div></article>
+      <article class="card"><div class="label">Security alerts</div><div id="alerts" class="value">—</div><div class="small">Unacknowledged alerts</div></article>
+      <article class="card"><div class="label">Estimated AI cost</div><div id="cost" class="value">—</div><div id="costNote" class="small">Only priced events are included</div></article>
+
+      <article class="wide card">
+        <h2 class="section-title">Platform status</h2>
+        <div class="status-row"><span>AI provider</span><span id="aiStatus">—</span></div>
+        <div class="status-row"><span>Billing gateway</span><span id="billingStatus">—</span></div>
+        <div class="status-row"><span>Age verification</span><span id="ageStatus">—</span></div>
+        <div class="status-row"><span>Maintenance</span><span id="maintenanceStatus">—</span></div>
+      </article>
+
+      <article class="wide card">
+        <h2 class="section-title">UNBOUND tools</h2>
+        <div class="links">
+          <a class="product-link" href="/voice.html">VOICE</a>
+          <a class="product-link" href="/files.html">FILES</a>
+          <a class="product-link" href="/images.html">IMAGE UNDERSTANDING</a>
+          <a class="product-link" href="/image-tools.html">IMAGE STUDIO</a>
+          <a class="product-link" href="/">CHAT</a>
+        </div>
+      </article>
+
+      <article class="full card">
+        <h2 class="section-title">Capability access</h2>
+        <div id="capabilities" class="capabilities"></div>
+      </article>
+
+      <article class="full card">
+        <h2 class="section-title">Usage by feature</h2>
+        <table class="activity">
+          <thead><tr><th>Feature</th><th>Provider / model</th><th>Requests</th><th>Tokens</th><th>Research calls</th><th>Est. cost</th></tr></thead>
+          <tbody id="activity"></tbody>
+        </table>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const nf = new Intl.NumberFormat();
+
+    function formatCost(micros) {
+      const value = Number(micros || 0) / 1000000;
+      return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(value);
+    }
+
+    function statusText(element, ready, text) {
+      element.textContent = text;
+      element.className = ready ? "ok" : "warn";
+    }
+
+    function renderCapabilities(items) {
+      const container = $("capabilities");
+      container.replaceChildren();
+      for (const item of Array.isArray(items) ? items : []) {
+        const row = document.createElement("div");
+        row.className = "capability";
+        const copy = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = item.label || item.key;
+        const description = document.createElement("span");
+        description.textContent = item.description || "";
+        copy.append(title, description);
+        const badge = document.createElement("div");
+        if (item.usable) {
+          badge.className = "badge live";
+          badge.textContent = "LIVE";
+        } else if (item.entitled && !item.available) {
+          badge.className = "badge soon";
+          badge.textContent = "COMING";
+        } else {
+          badge.className = "badge locked";
+          badge.textContent = "LOCKED";
+        }
+        row.append(copy, badge);
+        container.append(row);
+      }
+    }
+
+    function renderActivity(items) {
+      const body = $("activity");
+      body.replaceChildren();
+      const rows = Array.isArray(items) ? items : [];
+      if (!rows.length) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 6;
+        td.textContent = "No metered activity in this period yet.";
+        tr.append(td);
+        body.append(tr);
+        return;
+      }
+      for (const item of rows) {
+        const tr = document.createElement("tr");
+        const values = [
+          String(item.eventType || "activity").replaceAll("_", " "),
+          `${item.provider || "—"} / ${item.model || "—"}`,
+          nf.format(item.requests || 0),
+          nf.format(item.totalTokens || 0),
+          nf.format(item.webSearchCalls || 0),
+          formatCost(item.estimatedCostMicros || 0)
+        ];
+        for (const value of values) {
+          const td = document.createElement("td");
+          td.textContent = value;
+          tr.append(td);
+        }
+        body.append(tr);
+      }
+    }
+
+    async function loadOverview() {
+      const days = $("days").value;
+      $("error").style.display = "none";
+      try {
+        const response = await fetch(`/api/command-center/overview?days=${encodeURIComponent(days)}`, { cache: "no-store" });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Command Center could not load.");
+
+        $("plan").textContent = data.access?.plan?.displayName || "—";
+        $("planSource").textContent = `Access source: ${data.access?.plan?.source || "unknown"}`;
+        $("requests").textContent = nf.format(data.usage?.totals?.requests || 0);
+        $("period").textContent = `Last ${data.days} days`;
+        $("tokens").textContent = nf.format(data.usage?.totals?.totalTokens || 0);
+        $("research").textContent = nf.format(data.usage?.totals?.webSearchCalls || 0);
+        $("conversations").textContent = nf.format(data.conversations?.count || 0);
+        $("messages").textContent = `${nf.format(data.conversations?.messages || 0)} messages`;
+        $("sessions").textContent = nf.format(data.security?.activeSessions || 0);
+        $("devices").textContent = `${nf.format(data.security?.activeDevices || 0)} active devices`;
+        $("alerts").textContent = nf.format(data.security?.unreadAlerts || 0);
+        $("cost").textContent = formatCost(data.usage?.totals?.estimatedCostMicros || 0);
+        $("costNote").textContent = `${nf.format(data.usage?.totals?.pricedEvents || 0)} priced events included`;
+
+        const ai = data.platform?.ai || {};
+        statusText($("aiStatus"), ai.configured, ai.configured ? `${ai.provider || "AI"} · ${ai.model || "configured"}` : "Not configured");
+        const billing = data.platform?.billing || {};
+        statusText($("billingStatus"), billing.configured, billing.configured ? (billing.provider || "Configured") : "Not configured");
+        const age = data.platform?.ageVerification || {};
+        statusText($("ageStatus"), age.configured, age.configured ? (age.provider || "Configured") : "Not configured");
+        const maintenance = data.platform?.maintenance || {};
+        statusText($("maintenanceStatus"), !maintenance.active, maintenance.active ? `Active · ${maintenance.mode}` : "Off");
+
+        renderCapabilities(data.access?.capabilities || []);
+        renderActivity(data.usage?.activity || []);
+      } catch (error) {
+        const node = $("error");
+        node.textContent = error?.message || "Command Center could not load.";
+        node.style.display = "block";
+      }
+    }
+
+    $("days").addEventListener("change", loadOverview);
+    loadOverview();
+  </script>
+</body>
+</html>
