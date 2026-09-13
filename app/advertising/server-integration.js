@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v0.78";
+const INTEGRATION_VERSION = "v0.81";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const first = source.indexOf(marker);
