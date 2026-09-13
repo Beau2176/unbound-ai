@@ -29,14 +29,15 @@ function buildIntegratedSource() {
 }
 
 function main() {
-  assert.strictEqual(INTEGRATION_VERSION, "v0.70");
+  assert.strictEqual(INTEGRATION_VERSION, "v0.72");
   const integrated = buildIntegratedSource();
 
   assert.strictEqual(count(integrated, 'require("./voice/routes")'), 1);
   assert.strictEqual(count(integrated, 'app.get("/voice.html", sendVoicePage);'), 1);
   assert.strictEqual(count(integrated, 'policy: RATE_LIMIT_POLICY.voiceSessions'), 1);
   assert.strictEqual(count(integrated, 'requireCapability("voice")'), 1);
-  assert.strictEqual(count(integrated, 'createVoiceRouter()'), 1);
+  assert.strictEqual(count(integrated, 'createVoiceRouter({'), 1);
+  assert.strictEqual(count(integrated, 'getPool: () => pool'), 1);
 
   const mount = integrated.indexOf('app.use(\n  "/api/voice"');
   assert.ok(mount >= 0);
@@ -44,14 +45,21 @@ function main() {
   const signedIn = integrated.indexOf("requireSignedIn", mount);
   const rateLimit = integrated.indexOf("voiceSessionRateLimit", mount);
   const capability = integrated.indexOf('requireCapability("voice")', mount);
-  const router = integrated.indexOf("createVoiceRouter()", mount);
+  const router = integrated.indexOf("createVoiceRouter({", mount);
+  const getPool = integrated.indexOf("getPool: () => pool", router);
   assert.ok(database > mount);
   assert.ok(signedIn > database);
   assert.ok(rateLimit > signedIn);
   assert.ok(capability > rateLimit);
   assert.ok(router > capability);
+  assert.ok(getPool > router);
 
   new vm.Script(`(function(require,module,exports,__dirname,__filename){\n${integrated}\n})`);
+
+  const routes = fs.readFileSync(path.join(__dirname, "..", "voice", "routes.js"), "utf8");
+  assert.ok(routes.includes("voice_speech"));
+  assert.ok(routes.includes("INSERT INTO usage_events"));
+  assert.ok(routes.includes("req.user?.id"));
 
   const page = fs.readFileSync(path.join(__dirname, "..", "voice.html"), "utf8");
   assert.ok(page.includes("/api/voice/speech"));
