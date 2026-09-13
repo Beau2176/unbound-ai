@@ -14,7 +14,8 @@ const {
   buildAiStyleOptions,
   buildAiStyleBrowserFunctions,
   buildFileAwareIndexHtml,
-  LEGACY_STYLE_FUNCTIONS
+  LEGACY_STYLE_FUNCTIONS,
+  MODES_NAV_LINK
 } = require("../files/routes");
 
 function main() {
@@ -59,18 +60,38 @@ function main() {
   assert.ok(selectMatch[0].includes('value="programmer"'));
   assert.ok(selectMatch[0].includes('value="medical_info"'));
   assert.ok(rendered.includes("UNBOUND_AI_STYLE_IDS"));
+  assert.ok(rendered.includes(MODES_NAV_LINK));
   assert.ok(!rendered.includes(LEGACY_STYLE_FUNCTIONS));
+
+  const page = fs.readFileSync(path.join(__dirname, "..", "modes.html"), "utf8");
+  assert.ok(page.includes("MODE LIBRARY"));
+  assert.ok(page.includes("100 USER MODES"));
+  assert.ok(page.includes("/api/account/ai-preferences"));
+  assert.ok(page.includes('id="search"'));
+  assert.ok(page.includes("USE THIS MODE"));
+  assert.ok(page.includes("styles = Array.isArray(data.styles)"));
+  assert.ok(page.includes("preferences?.aiStyle"));
 
   const scriptPattern = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
   let match;
-  let checked = 0;
+  let renderedScripts = 0;
   while ((match = scriptPattern.exec(rendered))) {
     const code = String(match[1] || "").trim();
     if (!code) continue;
-    new vm.Script(code, { filename: `rendered-index.html#inline-script-${checked + 1}` });
-    checked += 1;
+    new vm.Script(code, { filename: `rendered-index.html#inline-script-${renderedScripts + 1}` });
+    renderedScripts += 1;
   }
-  assert.ok(checked >= 1);
+  assert.ok(renderedScripts >= 1);
+
+  scriptPattern.lastIndex = 0;
+  let modePageScripts = 0;
+  while ((match = scriptPattern.exec(page))) {
+    const code = String(match[1] || "").trim();
+    if (!code) continue;
+    new vm.Script(code, { filename: `modes.html#inline-script-${modePageScripts + 1}` });
+    modePageScripts += 1;
+  }
+  assert.ok(modePageScripts >= 1);
 
   console.log("UNBOUND AI 100-mode library contract checks passed.");
 }
