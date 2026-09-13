@@ -68,6 +68,11 @@ function getRateLimitPolicy(env = process.env) {
       limit: positiveIntEnv(env, "RATE_LIMIT_IMAGE_TOOLS_PER_HOUR", 20, { max: 500 }),
       windowSeconds: 60 * 60
     }),
+    voiceSessions: Object.freeze({
+      scope: "voice_account",
+      limit: positiveIntEnv(env, "RATE_LIMIT_VOICE_SPEECH_PER_HOUR", 120, { max: 5000 }),
+      windowSeconds: 60 * 60
+    }),
     securityActions: Object.freeze({
       scope: "security_action",
       limit: positiveIntEnv(env, "RATE_LIMIT_SECURITY_ACTIONS_PER_HOUR", 30, { max: 1000 }),
