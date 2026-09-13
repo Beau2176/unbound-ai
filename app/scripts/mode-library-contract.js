@@ -31,7 +31,7 @@ function main() {
   assert.strictEqual(normalizeAiStyle("TRAVEL_PLANNER"), "travel_planner");
   assert.strictEqual(normalizeAiStyle("not-a-real-mode"), "balanced");
   assert.strictEqual(getAiStyleDefinition("programmer").label, "Programmer");
-  assert.ok(getAiStylePrompt("security_defender").includes("Security Defender"));
+  assert.ok(getAiStylePrompt("security_defender").includes("SECURITY DEFENDER"));
   assert.ok(getAiStylePrompt("security_defender").includes("safety boundaries"));
 
   const listed = listAiStyles();
