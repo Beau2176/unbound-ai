@@ -10,11 +10,13 @@ function integrateNativeShellServerSource(source) {
     input.includes('injectVoiceListenControl')
   ) return input;
 
-  const marker = 'app.use("/api", createMaintenanceMiddleware());';
-  const index = input.indexOf(marker);
+  const middlewareMarker = 'app.use("/api", createMaintenanceMiddleware());';
+  const legacyIndexMarker = 'app.get("/index.html", (req, res) => {';
+  let index = input.indexOf(middlewareMarker);
+  if (index === -1) index = input.indexOf(legacyIndexMarker);
   if (index === -1) {
-    const error = new Error("UNBOUND AI native shell middleware anchor is missing.");
-    error.code = "NATIVE_SHELL_MIDDLEWARE_ANCHOR_MISSING";
+    const error = new Error("UNBOUND AI native shell integration anchor is missing.");
+    error.code = "NATIVE_SHELL_INDEX_MARKER_INVALID";
     throw error;
   }
 
