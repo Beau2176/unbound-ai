@@ -18,6 +18,7 @@ const VOICE_NAV_LINK = '<a class="account-button advertiser-link" href="/voice.h
 const TASKS_NAV_LINK = '<a class="account-button advertiser-link" href="/tasks.html">TASKS</a>';
 const AGENTS_NAV_LINK = '<a class="account-button advertiser-link" href="/agents.html">AGENTS</a>';
 const MEMORY_NAV_LINK = '<a class="account-button advertiser-link" href="/memory.html">MEMORY</a>';
+const MODES_NAV_LINK = '<a class="account-button advertiser-link" href="/modes.html">MODES</a>';
 const COMMAND_CENTER_NAV_LINK = '<a class="account-button advertiser-link" href="/command-center.html">CENTER</a>';
 
 const LEGACY_STYLE_OPTIONS = `              <option value="balanced">BALANCED</option>
@@ -130,7 +131,7 @@ function buildFileAwareIndexHtml(indexHtml) {
   source = replaceExactlyOnce(
     source,
     INDEX_NAV_MARKER,
-    `${INDEX_NAV_MARKER}\n      ${FILES_NAV_LINK}\n      ${IMAGES_NAV_LINK}\n      ${IMAGE_STUDIO_NAV_LINK}\n      ${VOICE_NAV_LINK}\n      ${TASKS_NAV_LINK}\n      ${AGENTS_NAV_LINK}\n      ${MEMORY_NAV_LINK}\n      ${COMMAND_CENTER_NAV_LINK}`,
+    `${INDEX_NAV_MARKER}\n      ${FILES_NAV_LINK}\n      ${IMAGES_NAV_LINK}\n      ${IMAGE_STUDIO_NAV_LINK}\n      ${VOICE_NAV_LINK}\n      ${TASKS_NAV_LINK}\n      ${AGENTS_NAV_LINK}\n      ${MEMORY_NAV_LINK}\n      ${MODES_NAV_LINK}\n      ${COMMAND_CENTER_NAV_LINK}`,
     "product-navigation"
   );
   source = replaceExactlyOnce(
@@ -173,6 +174,7 @@ module.exports = {
   TASKS_NAV_LINK,
   AGENTS_NAV_LINK,
   MEMORY_NAV_LINK,
+  MODES_NAV_LINK,
   COMMAND_CENTER_NAV_LINK,
   LEGACY_STYLE_OPTIONS,
   LEGACY_STYLE_FUNCTIONS,
