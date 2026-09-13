@@ -4,7 +4,10 @@
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Recognition) return;
 
+  const MAX_NO_SPEECH_RETRIES = 3;
   let recognition = null;
+  let noSpeechRetries = 0;
+  let retryTimer = null;
 
   function getMessageBox() {
     return document.getElementById('message');
@@ -41,7 +44,14 @@
     node.style.color = kind === 'error' ? '#ffd4d4' : kind === 'success' ? '#9cf2c5' : '#b9d9ef';
   }
 
+  function clearRetryTimer() {
+    if (!retryTimer) return;
+    window.clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+
   function resetButton(message, kind = 'info') {
+    clearRetryTimer();
     const button = getVoiceButton();
     if (button) {
       button.dataset.listening = 'false';
@@ -94,32 +104,39 @@
     }
   }
 
-  async function startDesktopRecognition() {
+  async function startDesktopRecognition({ skipPreflight = false, retry = false } = {}) {
     const textarea = getMessageBox();
     const button = getVoiceButton();
     if (!textarea || !button) return;
+
+    if (!retry) {
+      noSpeechRetries = 0;
+      clearRetryTimer();
+    }
 
     if (recognition) {
       try { recognition.stop(); } catch (_) {}
       return;
     }
 
-    button.textContent = 'Checking mic…';
-    button.title = 'Checking desktop microphone permission';
+    if (!skipPreflight) {
+      button.textContent = 'Checking mic…';
+      button.title = 'Checking desktop microphone permission';
 
-    try {
-      await microphonePreflight();
-    } catch (error) {
-      const name = String(error?.name || '');
-      const message = name === 'NotAllowedError' || name === 'SecurityError'
-        ? 'Microphone access is blocked for UNBOUND AI. Allow the microphone for this site in Chrome, then try again.'
-        : name === 'NotFoundError' || name === 'DevicesNotFoundError'
-          ? 'Chrome cannot find a microphone on this computer.'
-          : name === 'NotReadableError' || name === 'TrackStartError'
-            ? 'The microphone is busy or unavailable to Chrome. Close other apps using it and try again.'
-            : (error?.message || 'Desktop microphone check failed.');
-      resetButton(message, 'error');
-      return;
+      try {
+        await microphonePreflight();
+      } catch (error) {
+        const name = String(error?.name || '');
+        const message = name === 'NotAllowedError' || name === 'SecurityError'
+          ? 'Microphone access is blocked for UNBOUND AI. Allow the microphone for this site in Chrome, then try again.'
+          : name === 'NotFoundError' || name === 'DevicesNotFoundError'
+            ? 'Chrome cannot find a microphone on this computer.'
+            : name === 'NotReadableError' || name === 'TrackStartError'
+              ? 'The microphone is busy or unavailable to Chrome. Close other apps using it and try again.'
+              : (error?.message || 'Desktop microphone check failed.');
+        resetButton(message, 'error');
+        return;
+      }
     }
 
     const original = textarea.value.trim();
@@ -127,6 +144,7 @@
     let started = false;
     let speechDetected = false;
     let failed = false;
+    let retryNoSpeech = false;
 
     recognition = new Recognition();
     recognition.lang = navigator.language || 'en-US';
@@ -134,20 +152,25 @@
     recognition.continuous = false;
     recognition.maxAlternatives = 1;
 
-    button.textContent = 'Starting speech…';
+    button.textContent = retry ? '● Still listening…' : 'Starting speech…';
     button.title = 'Microphone permission is good. Starting Chrome speech recognition.';
-    setStatus('Microphone is connected. Starting speech recognition…');
+    setStatus(retry
+      ? `Still listening… speak now. Retry ${noSpeechRetries} of ${MAX_NO_SPEECH_RETRIES}.`
+      : 'Microphone is connected. Starting speech recognition…');
 
     recognition.onstart = () => {
       started = true;
       button.dataset.listening = 'true';
-      button.textContent = '● Listening…';
+      button.textContent = retry ? '● Still listening…' : '● Listening…';
       button.title = 'Microphone is active';
-      setStatus('Listening… speak normally into the connected microphone.');
+      setStatus(retry
+        ? `Still listening… speak normally into the microphone. Retry ${noSpeechRetries} of ${MAX_NO_SPEECH_RETRIES}.`
+        : 'Listening… speak normally into the connected microphone.');
     };
 
     recognition.onspeechstart = () => {
       speechDetected = true;
+      noSpeechRetries = 0;
       button.textContent = '● Hearing you…';
       setStatus('Voice detected. Converting speech to text…');
     };
@@ -178,13 +201,18 @@
     };
 
     recognition.onerror = (event) => {
-      failed = true;
       const code = event && event.error ? event.error : 'unknown';
+      if (code === 'no-speech') {
+        retryNoSpeech = true;
+        setStatus('The microphone is open but no speech was detected yet. UNBOUND AI will keep listening…');
+        return;
+      }
+
+      failed = true;
       const messages = {
         'not-allowed': 'Chrome blocked microphone or speech-recognition permission for this site.',
         'service-not-allowed': 'Chrome speech recognition service is blocked on this computer.',
         'audio-capture': 'Chrome lost access to the microphone after permission was granted.',
-        'no-speech': 'The microphone opened, but Chrome detected no speech.',
         'network': 'Chrome could not reach its speech-recognition service. The microphone itself is working.'
       };
       resetButton(messages[code] || ('Voice input error: ' + code), 'error');
@@ -193,7 +221,28 @@
     recognition.onend = () => {
       recognition = null;
       const finalText = textarea.value.trim();
+
+      if (retryNoSpeech && !transcript && !failed) {
+        if (noSpeechRetries < MAX_NO_SPEECH_RETRIES) {
+          noSpeechRetries += 1;
+          button.dataset.listening = 'true';
+          button.textContent = '● Still listening…';
+          setStatus(`I did not hear speech yet. Keeping the microphone open and trying again… ${noSpeechRetries}/${MAX_NO_SPEECH_RETRIES}`);
+          retryTimer = window.setTimeout(() => {
+            retryTimer = null;
+            void startDesktopRecognition({ skipPreflight: true, retry: true });
+          }, 350);
+          return;
+        }
+
+        noSpeechRetries = 0;
+        resetButton('The microphone is open, but Chrome still is not detecting your voice. Check the Windows input microphone, make sure it is not muted, and raise its input volume.', 'error');
+        textarea.focus();
+        return;
+      }
+
       if (!failed && started && transcript && finalText) {
+        noSpeechRetries = 0;
         resetButton('Voice question recognized. Sending it to UNBOUND AI…', 'success');
         window.setTimeout(() => {
           if (!submitMessage()) {
@@ -205,6 +254,7 @@
       }
 
       if (!failed) {
+        noSpeechRetries = 0;
         if (started && speechDetected) {
           resetButton('Chrome detected your voice but returned no transcript. This points to Chrome speech recognition, not the microphone.', 'error');
         } else if (started) {
@@ -220,6 +270,7 @@
       recognition.start();
     } catch (error) {
       recognition = null;
+      noSpeechRetries = 0;
       resetButton(error?.message || 'Could not start Chrome speech recognition.', 'error');
     }
   }
