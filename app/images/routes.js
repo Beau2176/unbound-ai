@@ -2,6 +2,10 @@ const express = require("express");
 const path = require("path");
 const { analyzeImage, getImageGatewayStatus } = require("./gateway");
 const {
+  scanBufferForMalware,
+  publicMalwareScanStatus
+} = require("../security/malware-scan");
+const {
   getImageUnderstandingConfig,
   normalizeImageUnderstandingRequest,
   publicImageUnderstandingConfig
@@ -23,6 +27,15 @@ function safeImageError(error) {
       message: "The configured AI provider does not support image understanding."
     };
   }
+  if (code === "UPLOAD_MALWARE_DETECTED") {
+    return { statusCode: 400, code, message: "That upload was blocked because malware was detected." };
+  }
+  if (code === "UPLOAD_MALWARE_SCANNER_UNAVAILABLE") {
+    return { statusCode: 503, code, message: "Upload malware scanning is temporarily unavailable. Try again shortly." };
+  }
+  if (code === "UPLOAD_MALWARE_SCAN_INPUT_INVALID") {
+    return { statusCode: 400, code, message: "The upload could not be scanned safely." };
+  }
   if (code.startsWith("IMAGE_UNDERSTANDING_")) {
     return {
       statusCode: Number(error?.statusCode) || 400,
@@ -35,6 +48,15 @@ function safeImageError(error) {
     code: "IMAGE_UNDERSTANDING_PROVIDER_FAILED",
     message: "The AI provider could not analyze that image. Try again shortly."
   };
+}
+
+function logImageMalwareScan(result) {
+  if (!result || result.state !== "unavailable") return;
+  console.warn(
+    "UNBOUND AI IMAGE UNDERSTANDING MALWARE SCAN DEGRADED:",
+    result.internalReason || "scanner-unavailable",
+    result.sha256 ? `sha256=${result.sha256.slice(0, 16)}` : ""
+  );
 }
 
 function createImageUnderstandingRouter({
@@ -53,7 +75,8 @@ function createImageUnderstandingRouter({
       configured: Boolean(ai.configured && ai.imageUnderstanding),
       provider: ai.provider || null,
       model: ai.model || null,
-      limits: publicImageUnderstandingConfig(env)
+      limits: publicImageUnderstandingConfig(env),
+      malwareScan: publicMalwareScanStatus(env)
     });
   });
 
@@ -68,6 +91,12 @@ function createImageUnderstandingRouter({
       }
 
       const input = normalizeImageUnderstandingRequest(req.body, env);
+      const malwareScan = await scanBufferForMalware({
+        filename: input.filename,
+        buffer: Buffer.from(input.imageBase64, "base64"),
+        env
+      });
+      logImageMalwareScan(malwareScan);
       const result = await analyzeImage({
         mimeType: input.mimeType,
         imageBase64: input.imageBase64,
@@ -121,6 +150,16 @@ function createImageUnderstandingRouter({
         privacy: {
           rawImageStoredByUnbound: false,
           providerResponseStorageRequested: false
+        },
+        security: {
+          staticUploadInspection: true,
+          malwareScan: {
+            mode: malwareScan.mode,
+            scanned: malwareScan.scanned,
+            clean: malwareScan.clean,
+            state: malwareScan.state,
+            engine: malwareScan.engine
+          }
         }
       });
     } catch (error) {
@@ -129,6 +168,19 @@ function createImageUnderstandingRouter({
         console.error(
           "UNBOUND AI IMAGE UNDERSTANDING PROVIDER ERROR:",
           error?.code || error?.status || error?.name || "provider-error"
+        );
+      }
+      if (safe.code === "UPLOAD_MALWARE_DETECTED") {
+        console.warn(
+          "UNBOUND AI IMAGE UNDERSTANDING MALWARE BLOCK:",
+          error?.details?.signature || "detected",
+          error?.details?.sha256 ? `sha256=${error.details.sha256.slice(0, 16)}` : ""
+        );
+      }
+      if (safe.code === "UPLOAD_MALWARE_SCANNER_UNAVAILABLE") {
+        console.warn(
+          "UNBOUND AI IMAGE UNDERSTANDING REQUIRED MALWARE SCANNER UNAVAILABLE:",
+          error?.details?.reason || "unavailable"
         );
       }
       return res.status(safe.statusCode).json({ error: safe.message, code: safe.code });
@@ -161,6 +213,7 @@ function sendImageUnderstandingPage(req, res) {
 
 module.exports = {
   safeImageError,
+  logImageMalwareScan,
   createImageUnderstandingRouter,
   sendImageUnderstandingPage
 };
