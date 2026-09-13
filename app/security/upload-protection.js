@@ -8,6 +8,19 @@ const EXECUTABLE_MAGIC = Object.freeze([
   { name: "Mach-O executable", bytes: Buffer.from([0xca, 0xfe, 0xba, 0xbe]) }
 ]);
 
+const DANGEROUS_EXTENSIONS = Object.freeze(new Set([
+  ".exe", ".dll", ".com", ".scr", ".msi", ".msp", ".cpl", ".sys",
+  ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".jse",
+  ".wsf", ".wsh", ".hta", ".reg", ".lnk", ".scf", ".jar", ".app",
+  ".dmg", ".pkg", ".sh", ".bash", ".zsh", ".fish", ".py", ".pl",
+  ".rb", ".php"
+]));
+
+const ARCHIVE_ACTIVE_MARKERS = Object.freeze([
+  ".exe", ".dll", ".com", ".scr", ".msi", ".bat", ".cmd", ".ps1",
+  ".vbs", ".vbe", ".js", ".jse", ".wsf", ".hta", ".lnk", ".jar"
+]);
+
 function uploadSecurityError(code, message) {
   const error = new Error(message);
   error.code = code;
@@ -72,10 +85,64 @@ function looksLikeWebp(buffer) {
     buffer.subarray(8, 12).toString("ascii") === "WEBP";
 }
 
+function lowerLatinSample(buffer, maxBytes = 2 * 1024 * 1024) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length) return "";
+  return buffer.subarray(0, Math.min(buffer.length, maxBytes)).toString("latin1").toLowerCase();
+}
+
 function containsOfficeMacroMarker(buffer) {
-  if (!Buffer.isBuffer(buffer) || buffer.length === 0) return false;
-  const sample = buffer.toString("latin1").toLowerCase();
-  return sample.includes("vbaproject.bin") || sample.includes("_vba_project");
+  const sample = lowerLatinSample(buffer);
+  return sample.includes("vbaproject.bin") ||
+    sample.includes("_vba_project") ||
+    sample.includes("macros/vba");
+}
+
+function containsArchiveActivePayload(buffer) {
+  if (!looksLikeZip(buffer)) return false;
+  const sample = lowerLatinSample(buffer);
+  return ARCHIVE_ACTIVE_MARKERS.some((extension) => {
+    const escaped = extension.replace(".", "\\.");
+    return new RegExp(`${escaped}(?:[\\x00\\s\\/\\\\]|$)`, "i").test(sample);
+  });
+}
+
+function containsPdfActiveContent(buffer) {
+  if (!looksLikePdf(buffer)) return false;
+  const sample = lowerLatinSample(buffer);
+  return [
+    "/javascript",
+    "/js ",
+    "/js<",
+    "/launch",
+    "/embeddedfile",
+    "/openaction",
+    "/richmedia"
+  ].some((marker) => sample.includes(marker));
+}
+
+function containsRtfActiveContent(buffer) {
+  if (!looksLikeRtf(buffer)) return false;
+  const sample = lowerLatinSample(buffer);
+  return sample.includes("\\object") ||
+    sample.includes("\\objdata") ||
+    sample.includes("\\objemb") ||
+    sample.includes("\\objlink");
+}
+
+function containsHtmlActiveContent(buffer) {
+  const sample = lowerLatinSample(buffer, 512 * 1024);
+  return /<\s*(?:script|iframe|object|embed|applet)\b/i.test(sample) ||
+    /\bon(?:load|error|click|mouseover|focus|submit)\s*=/i.test(sample) ||
+    /\bjavascript\s*:/i.test(sample);
+}
+
+function filenameHasDangerousExtension(filename) {
+  const lower = String(filename || "").trim().toLowerCase();
+  if (!lower) return false;
+  const basename = path.basename(lower);
+  const parts = basename.split(".");
+  if (parts.length < 2) return false;
+  return parts.slice(1).some((part) => DANGEROUS_EXTENSIONS.has(`.${part}`));
 }
 
 function validateImageMagic(buffer, extension) {
@@ -100,6 +167,10 @@ function inspectUpload({ filename, buffer, kind = "file" } = {}) {
   }
 
   const extension = path.extname(String(filename || "")).toLowerCase();
+  if (filenameHasDangerousExtension(filename)) {
+    return { safe: false, reason: "dangerous_filename_extension" };
+  }
+
   const executable = hasExecutableMagic(buffer);
   if (executable) {
     return { safe: false, reason: "executable_signature", detail: executable.name };
@@ -117,8 +188,25 @@ function inspectUpload({ filename, buffer, kind = "file" } = {}) {
     return { safe: false, reason: "document_signature_mismatch" };
   }
 
-  if ([".docx", ".xlsx", ".pptx", ".odt"].includes(extension) && containsOfficeMacroMarker(buffer)) {
-    return { safe: false, reason: "office_macro_content" };
+  if ([".docx", ".xlsx", ".pptx", ".odt"].includes(extension)) {
+    if (containsOfficeMacroMarker(buffer)) {
+      return { safe: false, reason: "office_macro_content" };
+    }
+    if (containsArchiveActivePayload(buffer)) {
+      return { safe: false, reason: "archive_active_content" };
+    }
+  }
+
+  if (extension === ".pdf" && containsPdfActiveContent(buffer)) {
+    return { safe: false, reason: "pdf_active_content" };
+  }
+
+  if (extension === ".rtf" && containsRtfActiveContent(buffer)) {
+    return { safe: false, reason: "rtf_active_content" };
+  }
+
+  if (extension === ".html" && containsHtmlActiveContent(buffer)) {
+    return { safe: false, reason: "html_active_content" };
   }
 
   if ([".txt", ".md", ".json", ".html", ".xml", ".csv", ".tsv"].includes(extension)) {
@@ -136,11 +224,16 @@ function assertUploadSafe(input) {
   if (result.safe) return result;
 
   const messages = {
+    dangerous_filename_extension: "That filename contains a program or script extension and was blocked.",
     executable_signature: "That upload appears to contain executable program data and was blocked.",
     script_signature: "That upload appears to contain an executable script and was blocked.",
     image_signature_mismatch: "The uploaded image does not match its file type and was blocked.",
     document_signature_mismatch: "The uploaded document does not match its file type and was blocked.",
     office_macro_content: "Macro-enabled office content is not accepted for analysis.",
+    archive_active_content: "That office/archive upload appears to contain executable or script content and was blocked.",
+    pdf_active_content: "PDFs containing active, embedded, or launch content are not accepted for analysis.",
+    rtf_active_content: "RTF files containing embedded or linked objects are not accepted for analysis.",
+    html_active_content: "HTML containing active script or embedded content is not accepted for analysis.",
     binary_content_in_text_file: "That text file contains unexpected binary data and was blocked.",
     empty_or_invalid_buffer: "The uploaded data could not be safely inspected."
   };
@@ -152,10 +245,17 @@ function assertUploadSafe(input) {
 }
 
 module.exports = {
+  DANGEROUS_EXTENSIONS,
+  ARCHIVE_ACTIVE_MARKERS,
   inspectUpload,
   assertUploadSafe,
   uploadSecurityError,
   validateImageMagic,
   validateDocumentMagic,
-  containsOfficeMacroMarker
+  containsOfficeMacroMarker,
+  containsArchiveActivePayload,
+  containsPdfActiveContent,
+  containsRtfActiveContent,
+  containsHtmlActiveContent,
+  filenameHasDangerousExtension
 };
