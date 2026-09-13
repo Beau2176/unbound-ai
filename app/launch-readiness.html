@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#050913" />
   <title>Launch Readiness | UNBOUND AI</title>
   <style>
-    :root { color-scheme:dark; --bg:#050913; --panel:rgba(7,14,27,.92); --line:rgba(107,193,255,.25); --text:#f6fbff; --muted:#aab8c9; --blue:#6bc1ff; --gold:#ffad43; --green:#65e8a4; --red:#ff8d8d; }
+    :root { color-scheme:dark; --panel:rgba(7,14,27,.92); --line:rgba(107,193,255,.25); --text:#f6fbff; --muted:#aab8c9; --blue:#6bc1ff; --gold:#ffad43; --green:#65e8a4; --red:#ff8d8d; }
     * { box-sizing:border-box; }
     body { margin:0; min-height:100vh; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--text); background:linear-gradient(180deg,rgba(2,6,14,.28),rgba(2,6,14,.92)),url("/unbound-cosmic.png") center/cover fixed no-repeat; }
     main { width:min(980px,calc(100% - 28px)); margin:0 auto; padding:32px 0 64px; }
@@ -15,7 +15,10 @@
     .nav { display:flex; flex-wrap:wrap; gap:8px; }
     .nav a { color:var(--blue); text-decoration:none; padding:9px 12px; border:1px solid var(--line); border-radius:10px; background:rgba(9,20,38,.72); font-weight:800; }
     .panel { border:1px solid var(--line); border-radius:18px; padding:20px; background:var(--panel); box-shadow:0 20px 60px rgba(0,0,0,.42); backdrop-filter:blur(16px); }
-    h1 { margin:0 0 8px; font-size:clamp(26px,5vw,40px); }
+    .panel + .panel { margin-top:18px; }
+    h1,h2 { margin:0 0 8px; }
+    h1 { font-size:clamp(26px,5vw,40px); }
+    h2 { font-size:clamp(22px,4vw,32px); }
     p { color:var(--muted); line-height:1.55; }
     .summary { display:grid; grid-template-columns:minmax(180px,.9fr) minmax(220px,2fr); gap:16px; margin:20px 0; }
     .score { min-height:165px; display:grid; place-items:center; text-align:center; border:1px solid rgba(255,255,255,.09); border-radius:16px; background:rgba(255,255,255,.025); }
@@ -54,45 +57,60 @@
 
     <section class="panel">
       <h1>Engineering Launch Readiness</h1>
-      <p>This page reads UNBOUND's real server-side commercial launch gate. It does not hard-code green statuses and it never displays provider secrets.</p>
-
+      <p>This section reads UNBOUND's real server-side commercial engineering gate. It does not hard-code green statuses and it never displays provider secrets.</p>
       <div class="summary">
-        <div id="scoreCard" class="score blocked">
-          <div><strong id="score">—</strong><span>ENGINEERING READY</span></div>
-        </div>
+        <div id="scoreCard" class="score blocked"><div><strong id="score">—</strong><span>ENGINEERING READY</span></div></div>
         <div class="progress-wrap">
           <div class="progress" aria-label="Engineering launch readiness progress"><div id="progressBar"></div></div>
-          <div class="stats">
-            <div><strong id="readyCount">—</strong> passed</div>
-            <div><strong id="blockerCount">—</strong> blocked</div>
-            <div>Status: <strong id="overallStatus">CHECKING</strong></div>
-          </div>
-          <div id="checkedAt" class="muted" style="font-size:11px">Loading launch gate…</div>
-          <div><button id="refreshButton" type="button">REFRESH</button></div>
+          <div class="stats"><div><strong id="readyCount">—</strong> passed</div><div><strong id="blockerCount">—</strong> blocked</div><div>Status: <strong id="overallStatus">CHECKING</strong></div></div>
+          <div id="checkedAt" class="muted" style="font-size:11px">Loading engineering gate…</div>
+          <div><button id="refreshButton" type="button">REFRESH BOTH</button></div>
         </div>
       </div>
-
       <div id="errorBox" class="error" hidden></div>
       <div id="checks" class="checks"></div>
-
-      <div class="notice">
-        This percentage covers the encoded engineering/operational launch gate only. Business banking approval, advertiser/network acceptance, legal counsel review, and other owner/business decisions are tracked separately and are not counted as engineering-ready merely because code exists.
-      </div>
+      <div class="notice">This percentage covers the encoded engineering/operational launch gate only. Business banking approval, advertiser/network acceptance, legal counsel review, and other owner/business decisions are not counted as engineering-ready merely because code exists.</div>
       <div id="disclaimer" class="notice" hidden></div>
+    </section>
+
+    <section class="panel">
+      <h2>Owner / Business Readiness</h2>
+      <p>This section tracks external commercial approvals separately. Every check defaults blocked and requires an explicit verification flag plus a valid review timestamp.</p>
+      <div class="summary">
+        <div id="ownerScoreCard" class="score blocked"><div><strong id="ownerScore">—</strong><span>OWNER / BUSINESS READY</span></div></div>
+        <div class="progress-wrap">
+          <div class="progress" aria-label="Owner business readiness progress"><div id="ownerProgressBar"></div></div>
+          <div class="stats"><div><strong id="ownerReadyCount">—</strong> verified</div><div><strong id="ownerBlockerCount">—</strong> blocked</div><div>Status: <strong id="ownerOverallStatus">CHECKING</strong></div></div>
+          <div id="ownerCheckedAt" class="muted" style="font-size:11px">Loading owner/business gate…</div>
+        </div>
+      </div>
+      <div id="ownerErrorBox" class="error" hidden></div>
+      <div id="ownerChecks" class="checks"></div>
+      <div id="ownerDisclaimer" class="notice" hidden></div>
     </section>
   </main>
 
   <script>
-    const scoreCard = document.getElementById("scoreCard");
-    const scoreEl = document.getElementById("score");
-    const progressBar = document.getElementById("progressBar");
-    const readyCountEl = document.getElementById("readyCount");
-    const blockerCountEl = document.getElementById("blockerCount");
-    const overallStatusEl = document.getElementById("overallStatus");
-    const checkedAtEl = document.getElementById("checkedAt");
-    const checksEl = document.getElementById("checks");
-    const errorBox = document.getElementById("errorBox");
-    const disclaimerEl = document.getElementById("disclaimer");
+    function refs(prefix = "") {
+      const p = prefix ? `${prefix}` : "";
+      return {
+        scoreCard: document.getElementById(`${p}ScoreCard`),
+        score: document.getElementById(`${p}Score`),
+        progressBar: document.getElementById(`${p}ProgressBar`),
+        readyCount: document.getElementById(`${p}ReadyCount`),
+        blockerCount: document.getElementById(`${p}BlockerCount`),
+        overallStatus: document.getElementById(`${p}OverallStatus`),
+        checkedAt: document.getElementById(`${p}CheckedAt`),
+        checks: document.getElementById(`${p}Checks`),
+        errorBox: document.getElementById(`${p}ErrorBox`),
+        disclaimer: document.getElementById(`${p}Disclaimer`)
+      };
+    }
+
+    const engineering = {
+      scoreCard: document.getElementById("scoreCard"), score: document.getElementById("score"), progressBar: document.getElementById("progressBar"), readyCount: document.getElementById("readyCount"), blockerCount: document.getElementById("blockerCount"), overallStatus: document.getElementById("overallStatus"), checkedAt: document.getElementById("checkedAt"), checks: document.getElementById("checks"), errorBox: document.getElementById("errorBox"), disclaimer: document.getElementById("disclaimer")
+    };
+    const owner = refs("owner");
     const refreshButton = document.getElementById("refreshButton");
 
     function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
@@ -101,72 +119,58 @@
       const ready = item?.ready === true;
       const row = document.createElement("div");
       row.className = `check ${ready ? "ready" : "blocked"}`;
-
-      const icon = document.createElement("div");
-      icon.className = "icon";
-      icon.textContent = ready ? "✓" : "!";
-
+      const icon = document.createElement("div"); icon.className = "icon"; icon.textContent = ready ? "✓" : "!";
       const body = document.createElement("div");
-      const label = document.createElement("div");
-      label.className = "label";
-      label.textContent = item?.label || item?.key || "Launch check";
-      const detail = document.createElement("div");
-      detail.className = "detail";
-      detail.textContent = item?.detail || (ready ? "Ready." : "Not ready.");
+      const label = document.createElement("div"); label.className = "label"; label.textContent = item?.label || item?.key || "Readiness check";
+      const detail = document.createElement("div"); detail.className = "detail"; detail.textContent = item?.detail || (ready ? "Ready." : "Not ready.");
       body.append(label, detail);
-
-      const pill = document.createElement("div");
-      pill.className = "pill";
-      pill.textContent = ready ? "PASS" : "BLOCKER";
-
+      const pill = document.createElement("div"); pill.className = "pill"; pill.textContent = ready ? "PASS" : "BLOCKER";
       row.append(icon, body, pill);
       return row;
     }
 
+    function renderPayload(target, payload, { readyField = "ready", percentField = null } = {}) {
+      const checks = Array.isArray(payload.checks) ? payload.checks : [];
+      const readyCount = checks.filter((item) => item?.ready === true).length;
+      const blockedCount = checks.length - readyCount;
+      const percent = percentField && Number.isFinite(Number(payload[percentField])) ? Number(payload[percentField]) : checks.length ? Math.round((readyCount / checks.length) * 100) : 0;
+      const isReady = payload[readyField] === true;
+      target.score.textContent = `${percent}%`;
+      target.scoreCard.className = `score ${isReady ? "ready" : "blocked"}`;
+      target.progressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+      target.readyCount.textContent = String(readyCount);
+      target.blockerCount.textContent = String(blockedCount);
+      target.overallStatus.textContent = isReady ? "READY" : "BLOCKED";
+      target.checkedAt.textContent = payload.checkedAt ? `Checked ${new Date(payload.checkedAt).toLocaleString()}` : "Checked just now";
+      clear(target.checks);
+      for (const item of checks) target.checks.appendChild(renderCheck(item));
+      if (!checks.length) {
+        const empty = document.createElement("div"); empty.className = "muted"; empty.textContent = "No readiness checks were returned by the server."; target.checks.appendChild(empty);
+      }
+      if (payload.disclaimer) { target.disclaimer.textContent = payload.disclaimer; target.disclaimer.hidden = false; }
+      else target.disclaimer.hidden = true;
+    }
+
+    async function fetchGate(url, target, options) {
+      target.errorBox.hidden = true;
+      const response = await fetch(url, { credentials:"same-origin", headers:{ Accept:"application/json" } });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) throw new Error("Administrator access is required to view launch readiness.");
+        throw new Error(payload.error || "Could not load readiness status.");
+      }
+      renderPayload(target, payload, options);
+    }
+
     async function loadReadiness() {
       refreshButton.disabled = true;
-      errorBox.hidden = true;
-      try {
-        const response = await fetch("/api/admin/ops/launch-readiness", { credentials:"same-origin", headers:{ Accept:"application/json" } });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          if (response.status === 401 || response.status === 403) throw new Error("Administrator access is required to view the launch-readiness dashboard.");
-          throw new Error(payload.error || "Could not load launch readiness.");
-        }
-
-        const checks = Array.isArray(payload.checks) ? payload.checks : [];
-        const readyCount = checks.filter((item) => item?.ready === true).length;
-        const blockedCount = checks.length - readyCount;
-        const percent = checks.length ? Math.round((readyCount / checks.length) * 100) : 0;
-        const launchReady = payload.launchReady === true;
-
-        scoreEl.textContent = `${percent}%`;
-        scoreCard.className = `score ${launchReady ? "ready" : "blocked"}`;
-        progressBar.style.width = `${percent}%`;
-        readyCountEl.textContent = String(readyCount);
-        blockerCountEl.textContent = String(blockedCount);
-        overallStatusEl.textContent = launchReady ? "READY" : "BLOCKED";
-        checkedAtEl.textContent = payload.checkedAt ? `Checked ${new Date(payload.checkedAt).toLocaleString()}` : "Checked just now";
-
-        clear(checksEl);
-        for (const item of checks) checksEl.appendChild(renderCheck(item));
-        if (!checks.length) {
-          const empty = document.createElement("div");
-          empty.className = "muted";
-          empty.textContent = "No launch checks were returned by the server.";
-          checksEl.appendChild(empty);
-        }
-
-        if (payload.disclaimer) {
-          disclaimerEl.textContent = payload.disclaimer;
-          disclaimerEl.hidden = false;
-        } else disclaimerEl.hidden = true;
-      } catch (error) {
-        errorBox.textContent = error.message || "Could not load launch readiness.";
-        errorBox.hidden = false;
-      } finally {
-        refreshButton.disabled = false;
-      }
+      const results = await Promise.allSettled([
+        fetchGate("/api/admin/ops/launch-readiness", engineering, { readyField:"launchReady" }),
+        fetchGate("/api/admin/ops/owner-readiness", owner, { readyField:"ready", percentField:"completionPercent" })
+      ]);
+      if (results[0].status === "rejected") { engineering.errorBox.textContent = results[0].reason?.message || "Could not load engineering readiness."; engineering.errorBox.hidden = false; }
+      if (results[1].status === "rejected") { owner.errorBox.textContent = results[1].reason?.message || "Could not load owner/business readiness."; owner.errorBox.hidden = false; }
+      refreshButton.disabled = false;
     }
 
     refreshButton.addEventListener("click", loadReadiness);
