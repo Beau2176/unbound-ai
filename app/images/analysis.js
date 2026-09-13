@@ -1,4 +1,5 @@
 const path = require("path");
+const { assertUploadSafe } = require("../security/upload-protection");
 
 const DEFAULT_MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_PROMPT_CHARS = 4000;
@@ -97,25 +98,25 @@ function decodeStrictBase64(value, maxImageBytes) {
       "The uploaded image data is invalid."
     );
   }
-  const bytes = Buffer.from(base64, "base64");
-  if (!bytes.length || bytes.length > maxImageBytes) {
+  const buffer = Buffer.from(base64, "base64");
+  if (!buffer.length || buffer.length > maxImageBytes) {
     throw imageUnderstandingError(
-      bytes.length > maxImageBytes
+      buffer.length > maxImageBytes
         ? "IMAGE_UNDERSTANDING_IMAGE_TOO_LARGE"
         : "IMAGE_UNDERSTANDING_IMAGE_EMPTY",
-      bytes.length > maxImageBytes
+      buffer.length > maxImageBytes
         ? `Images must be ${Math.floor(maxImageBytes / (1024 * 1024))} MB or smaller.`
         : "Choose a non-empty image to analyze.",
-      bytes.length > maxImageBytes ? 413 : 400
+      buffer.length > maxImageBytes ? 413 : 400
     );
   }
-  if (bytes.toString("base64") !== base64) {
+  if (buffer.toString("base64") !== base64) {
     throw imageUnderstandingError(
       "IMAGE_UNDERSTANDING_DATA_INVALID",
       "The uploaded image data is invalid."
     );
   }
-  return { base64, bytes: bytes.length };
+  return { base64, bytes: buffer.length, buffer };
 }
 
 function normalizeImageUnderstandingRequest(body, env = process.env) {
@@ -135,6 +136,14 @@ function normalizeImageUnderstandingRequest(body, env = process.env) {
     );
   }
   const decoded = decodeStrictBase64(body?.imageBase64, config.maxImageBytes);
+  try {
+    assertUploadSafe({ filename, buffer: decoded.buffer, kind: "image" });
+  } catch (error) {
+    throw imageUnderstandingError(
+      "IMAGE_UNDERSTANDING_SECURITY_REJECTED",
+      error?.publicMessage || "That upload was blocked by UNBOUND AI upload protection."
+    );
+  }
   return {
     filename,
     extension: imageType.extension,
@@ -154,7 +163,8 @@ function publicImageUnderstandingConfig(env = process.env) {
     acceptedExtensions: config.acceptedExtensions,
     defaultDetail: "auto",
     rawImagesStoredByUnbound: false,
-    providerResponseStorageRequested: false
+    providerResponseStorageRequested: false,
+    uploadProtection: true
   };
 }
 
