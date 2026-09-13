@@ -1,3 +1,8 @@
+const {
+  PROVIDER_ID: SEGPAY_PROVIDER_ID,
+  segpayAdvertisingAdapter
+} = require("./providers/segpay");
+
 const adapters = new Map();
 const PAYMENT_STATUSES = Object.freeze(["pending", "paid", "failed", "canceled", "refunded"]);
 
@@ -20,6 +25,8 @@ function getAdvertisingPaymentAdapter(name) {
   const provider = normalizeProvider(name);
   return provider ? adapters.get(provider) || null : null;
 }
+
+registerAdvertisingPaymentAdapter(SEGPAY_PROVIDER_ID, segpayAdvertisingAdapter);
 
 function getAdvertisingPaymentStatus(env = process.env) {
   const provider = normalizeProvider(env.ADVERTISING_PAYMENT_PROVIDER || env.BILLING_PROVIDER);
@@ -175,6 +182,7 @@ async function startAdvertisingCheckout({
 
 async function processAdvertisingWebhook({
   rawBody,
+  query = null,
   headers = {},
   requestId = null,
   env = process.env
@@ -187,12 +195,14 @@ async function processAdvertisingWebhook({
       503
     );
   }
-  if (!Buffer.isBuffer(rawBody) || rawBody.length === 0) {
+  const hasRawBody = Buffer.isBuffer(rawBody) && rawBody.length > 0;
+  const hasQuery = Boolean(query && typeof query === "object" && Object.keys(query).length > 0);
+  if (!hasRawBody && !hasQuery) {
     throw gatewayError("ADVERTISING_WEBHOOK_BODY_INVALID", "Advertising webhook body is invalid.", 400);
   }
 
   const adapter = getAdvertisingPaymentAdapter(gateway.provider);
-  const verified = await adapter.verifyWebhook({ rawBody, headers, requestId, env });
+  const verified = await adapter.verifyWebhook({ rawBody, query, headers, requestId, env });
   if (!verified) {
     throw gatewayError(
       "ADVERTISING_WEBHOOK_SIGNATURE_INVALID",
@@ -201,7 +211,7 @@ async function processAdvertisingWebhook({
     );
   }
 
-  const parsed = await adapter.parseWebhook({ rawBody, headers, requestId, env });
+  const parsed = await adapter.parseWebhook({ rawBody, query, headers, requestId, env });
   const providerEventId = cleanOpaque(parsed?.eventId || parsed?.providerEventId, 300);
   const subject = cleanOpaque(parsed?.subject, 200);
   const eventType = cleanOpaque(parsed?.eventType || "payment.updated", 200);
