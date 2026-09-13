@@ -4,9 +4,9 @@ function integrateNativeShellServerSource(source) {
 
   const marker = 'app.get("/index.html", (req, res) => {';
   const index = input.indexOf(marker);
-  if (index === -1 || index !== input.lastIndexOf(marker)) {
-    const error = new Error("UNBOUND AI native shell index route marker is missing or ambiguous.");
-    error.code = "NATIVE_SHELL_INDEX_MARKER_INVALID";
+  if (index === -1) {
+    const error = new Error("UNBOUND AI native shell index route marker is missing.");
+    error.code = "NATIVE_SHELL_INDEX_MARKER_MISSING";
     throw error;
   }
 
