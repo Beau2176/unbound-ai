@@ -47,6 +47,9 @@ const {
   integrateLaunchDashboardServerSource
 } = require("./ops/launch-dashboard-server-integration");
 const {
+  integrateNativeShellServerSource
+} = require("./ui/native-shell-server-integration");
+const {
   registerBuiltInAgeVerificationProviders
 } = require("./age/providers/register");
 
@@ -72,6 +75,7 @@ function compileIntegratedServer({
   integratedSource = integrateModelRoutingServerSource(integratedSource);
   integratedSource = integrateConnectedAppsServerSource(integratedSource);
   integratedSource = integrateLaunchDashboardServerSource(integratedSource);
+  integratedSource = integrateNativeShellServerSource(integratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
   runtimeModule.filename = serverPath;
