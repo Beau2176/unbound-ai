@@ -24,7 +24,7 @@ const CAPABILITY_CATALOG = Object.freeze({
   memory: Object.freeze({ label: "User-controlled Memory", description: "Explicit saved context that the user can review, pause, edit, or delete and that is used only in signed-in chat when enabled.", implemented: true, minimumPlan: "top" }),
   agents: Object.freeze({ label: "Bounded Agents", description: "Queued multi-step Agent runs for analysis, drafting, planning, and optional source-backed web research. External actions remain disabled until separately connected and authorized.", implemented: true, minimumPlan: "top" }),
   monitoring: Object.freeze({ label: "Scheduled tasks & reminders", description: "Database-backed one-time and recurring reminders with in-app and browser alerts while Task Center is open.", implemented: true, minimumPlan: "top" }),
-  multi_model: Object.freeze({ label: "Multi-model routing", description: "Route work across multiple supported model providers.", implemented: false, minimumPlan: "top" }),
+  multi_model: Object.freeze({ label: "Multi-model routing", description: "Route TOP chat through server-configured Fast, Deep, and Research model profiles without accepting arbitrary browser-supplied model IDs.", implemented: true, minimumPlan: "top" }),
   connected_apps: Object.freeze({ label: "Connected apps", description: "Permission-based connections to external services.", implemented: false, minimumPlan: "top" }),
   command_center: Object.freeze({ label: "UNBOUND Command Center", description: "Central view of account access, usage, costs, security, platform status, and product controls.", implemented: true, minimumPlan: "top" })
 });
