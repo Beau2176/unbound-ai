@@ -1,5 +1,5 @@
-const VOICE_LISTEN_STYLE_ID = "unbound-voice-listen-v096";
-const VOICE_LISTEN_SCRIPT_ID = "unbound-voice-listen-v096";
+const VOICE_LISTEN_STYLE_ID = "unbound-voice-listen-v097";
+const VOICE_LISTEN_SCRIPT_ID = "unbound-voice-listen-v097";
 
 const VOICE_LISTEN_STYLES = `<style id="${VOICE_LISTEN_STYLE_ID}">
 .voice-listen-wrap {
@@ -66,7 +66,27 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
   let recognition = null;
 
   function getComposerTextarea() {
-    return document.querySelector('.composer textarea, textarea[name="message"], textarea');
+    return document.querySelector('#message, .composer textarea, textarea[name="message"], textarea');
+  }
+
+  function submitComposer(textarea) {
+    if (!textarea) return false;
+    const form = textarea.closest('form') || document.getElementById('chatForm');
+    if (!form) return false;
+
+    if (typeof form.requestSubmit === 'function') {
+      form.requestSubmit();
+      return true;
+    }
+
+    const submitButton = form.querySelector('button[type="submit"], .send, #sendButton');
+    if (submitButton && !submitButton.disabled) {
+      submitButton.click();
+      return true;
+    }
+
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    return true;
   }
 
   function getLastAssistantText() {
@@ -137,9 +157,6 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
 
     if (recognition) {
       try { recognition.stop(); } catch (_) {}
-      recognition = null;
-      button.dataset.listening = 'false';
-      button.textContent = '🎙 Voice / Listen';
       return;
     }
 
@@ -147,33 +164,57 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
     recognition.lang = navigator.language || 'en-US';
     recognition.interimResults = true;
     recognition.continuous = false;
-    const original = textarea.value;
+
+    const original = textarea.value.trim();
+    let latestTranscript = '';
+    let recognizedSpeech = false;
+    let recognitionFailed = false;
+
     button.dataset.listening = 'true';
     button.textContent = '● Listening…';
 
     recognition.onresult = (event) => {
       let transcript = '';
-      for (let i = event.resultIndex; i < event.results.length; i += 1) transcript += event.results[i][0].transcript;
-      textarea.value = (original ? original + ' ' : '') + transcript.trim();
+      for (let i = 0; i < event.results.length; i += 1) {
+        transcript += event.results[i][0].transcript;
+      }
+      latestTranscript = transcript.trim();
+      recognizedSpeech = Boolean(latestTranscript);
+      textarea.value = [original, latestTranscript].filter(Boolean).join(' ').trim();
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
     };
+
+    recognition.onerror = (event) => {
+      recognitionFailed = true;
+      recognition = null;
+      button.dataset.listening = 'false';
+      button.textContent = '🎙 Voice / Listen';
+      button.title = event?.error ? 'Voice input error: ' + event.error : 'Voice input failed.';
+    };
+
     recognition.onend = () => {
       recognition = null;
       button.dataset.listening = 'false';
       button.textContent = '🎙 Voice / Listen';
+
+      const finalValue = textarea.value.trim();
+      if (!recognitionFailed && recognizedSpeech && finalValue) {
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        setTimeout(() => {
+          submitComposer(textarea);
+        }, 80);
+        return;
+      }
+
       textarea.focus();
     };
-    recognition.onerror = () => {
-      recognition = null;
-      button.dataset.listening = 'false';
-      button.textContent = '🎙 Voice / Listen';
-    };
+
     recognition.start();
   }
 
   function mount() {
     if (document.getElementById('unboundVoiceListenButton')) return;
-    const send = document.querySelector('.send, button[type="submit"]');
+    const send = document.querySelector('#sendButton, .send, button[type="submit"]');
     if (!send || !send.parentNode) return;
 
     const wrap = document.createElement('div');
