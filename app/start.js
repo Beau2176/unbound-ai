@@ -29,6 +29,9 @@ const {
   integrateMemoryServerSource
 } = require("./memory/server-integration");
 const {
+  integrateAdvertisingAnalyticsServerSource
+} = require("./advertising/server-integration");
+const {
   registerBuiltInAgeVerificationProviders
 } = require("./age/providers/register");
 
@@ -48,6 +51,7 @@ function compileIntegratedServer({
   integratedSource = integrateScheduledTasksServerSource(integratedSource);
   integratedSource = integrateAgentServerSource(integratedSource);
   integratedSource = integrateMemoryServerSource(integratedSource);
+  integratedSource = integrateAdvertisingAnalyticsServerSource(integratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
   runtimeModule.filename = serverPath;
