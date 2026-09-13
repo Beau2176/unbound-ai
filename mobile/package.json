@@ -1,20 +1,27 @@
 {
   "name": "unbound-ai-mobile",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Native mobile shell for UNBOUND AI",
+  "description": "Native Android and iOS shell for UNBOUND AI",
   "scripts": {
     "sync": "npx cap sync",
     "android": "npx cap open android",
     "ios": "npx cap open ios",
     "add:android": "npx cap add android",
-    "add:ios": "npx cap add ios"
+    "add:ios": "npx cap add ios",
+    "assets": "node scripts/verify-brand-assets.mjs && npx capacitor-assets generate --android --ios",
+    "prepare:native": "npm run assets && npm run sync"
   },
   "dependencies": {
-    "@capacitor/core": "^7.4.3"
+    "@capacitor/app": "^7.0.2",
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/preferences": "^7.0.2",
+    "@capacitor/splash-screen": "^7.0.3",
+    "@capacitor/status-bar": "^7.0.3"
   },
   "devDependencies": {
     "@capacitor/android": "^7.4.3",
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^7.4.3",
     "@capacitor/ios": "^7.4.3"
   }
