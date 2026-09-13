@@ -2,6 +2,7 @@ const fs = require("fs/promises");
 const path = require("path");
 const { injectModelRoutingUi } = require("../ai/model-routing-ui");
 const { injectConnectedAppsUi } = require("../connections/ui");
+const { injectMobileLayoutStyles } = require("../ui/mobile-layout");
 
 const INDEX_PATH = path.join(__dirname, "..", "index.html");
 const ACCOUNT_UI_PATH = path.join(__dirname, "account-ui.js");
@@ -28,7 +29,8 @@ function injectEmailAccountUi(html) {
   const modelAwareSource = rawSource.includes('id="modelProfileSelect"')
     ? rawSource
     : injectModelRoutingUi(rawSource);
-  const source = injectConnectedAppsUi(modelAwareSource);
+  const connectedSource = injectConnectedAppsUi(modelAwareSource);
+  const source = injectMobileLayoutStyles(connectedSource);
   const bodyIndex = source.indexOf(marker);
   return source.slice(0, bodyIndex) + `  ${ACCOUNT_UI_SCRIPT}\n` + source.slice(bodyIndex);
 }
