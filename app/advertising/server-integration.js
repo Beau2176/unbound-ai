@@ -41,6 +41,15 @@ function integrateAdvertisingAnalyticsServerSource(serverSource) {
     "advertising-analytics-schema"
   );
 
+  const returnUrlMarker = `function advertisingReturnUrl(req, result) {`;
+  const trackingHelper = `function advertisingTrackedUrl(req, orderId, fallbackUrl) {\n  let origin = String(process.env.PUBLIC_APP_ORIGIN || "").trim();\n  try {\n    if (origin) {\n      const parsed = new URL(origin);\n      origin = parsed.protocol === "https:" ? parsed.origin : "";\n    }\n  } catch (_) {\n    origin = "";\n  }\n\n  if (!origin && IS_PRODUCTION) {\n    const host = req.get("host");\n    if (host) origin = `https://${host}`;\n  }\n\n  if (!origin.startsWith("https://")) return fallbackUrl;\n  return `${origin}/api/advertising/click/${encodeURIComponent(String(orderId))}`;\n}\n\n${returnUrlMarker}`;
+  source = replaceExactlyOnce(
+    source,
+    returnUrlMarker,
+    trackingHelper,
+    "advertising-tracked-url-helper"
+  );
+
   source = replaceExactlyOnce(
     source,
     "`SELECT business_name, website_url, headline, description, featured, ends_at",
@@ -57,16 +66,16 @@ function integrateAdvertisingAnalyticsServerSource(serverSource) {
     "advertising-catalog-impressions"
   );
 
-  const catalogMapMarker = `      ads: result.rows.map((row) => ({\n        businessName: row.business_name,`;
+  const websiteMarker = `        websiteUrl: row.website_url,`;
   source = replaceExactlyOnce(
     source,
-    catalogMapMarker,
-    `      ads: result.rows.map((row) => ({\n        id: String(row.id),\n        businessName: row.business_name,`,
-    "advertising-catalog-public-id"
+    websiteMarker,
+    `        websiteUrl: advertisingTrackedUrl(req, row.id, row.website_url),`,
+    "advertising-catalog-tracked-url"
   );
 
   const ordersRouteMarker = `});\n\napp.post("/api/advertising/orders", requireDatabase, registerRateLimit, async (req, res) => {`;
-  const clickRoute = `});\n\napp.post("/api/advertising/metrics/click", requireDatabase, async (req, res) => {\n  const orderId = Number.parseInt(String(req.body?.orderId || ""), 10);\n  if (!Number.isSafeInteger(orderId) || orderId <= 0) {\n    return res.status(400).json({ error: "Advertising metric request is invalid." });\n  }\n\n  try {\n    const recorded = await recordAdvertisingClick(pool, orderId);\n    if (!recorded) {\n      return res.status(404).json({ error: "Active advertiser placement was not found." });\n    }\n    return res.status(204).end();\n  } catch (error) {\n    console.error("UNBOUND AI ADVERTISING CLICK METRICS ERROR:", error);\n    return res.status(500).json({ error: "Could not record advertising metric." });\n  }\n});\n\napp.post("/api/advertising/orders", requireDatabase, registerRateLimit, async (req, res) => {`;
+  const clickRoute = `});\n\napp.get("/api/advertising/click/:id", requireDatabase, async (req, res) => {\n  const orderId = Number.parseInt(String(req.params.id || ""), 10);\n  if (!Number.isSafeInteger(orderId) || orderId <= 0) {\n    return res.status(404).send("Advertiser placement not found.");\n  }\n\n  try {\n    const targetResult = await pool.query(\n      \`SELECT website_url\n       FROM advertising_orders\n       WHERE id = $1\n         AND payment_status = 'paid'\n         AND review_status = 'approved'\n         AND starts_at IS NOT NULL\n         AND ends_at IS NOT NULL\n         AND starts_at <= NOW()\n         AND ends_at > NOW()\n       LIMIT 1\`,\n      [orderId]\n    );\n    const targetUrl = targetResult.rows[0]?.website_url;\n    if (!targetUrl) return res.status(404).send("Advertiser placement not found.");\n\n    let parsed;\n    try {\n      parsed = new URL(targetUrl);\n    } catch (_) {\n      return res.status(404).send("Advertiser placement not found.");\n    }\n    if (parsed.protocol !== "https:") {\n      return res.status(404).send("Advertiser placement not found.");\n    }\n\n    await recordAdvertisingClick(pool, orderId).catch((error) => {\n      console.warn("UNBOUND AI ADVERTISING CLICK METRICS WARNING:", error?.message || error);\n    });\n    res.setHeader("Cache-Control", "no-store");\n    return res.redirect(302, parsed.toString());\n  } catch (error) {\n    console.error("UNBOUND AI ADVERTISING CLICK REDIRECT ERROR:", error);\n    return res.status(500).send("Could not open advertiser placement.");\n  }\n});\n\napp.post("/api/advertising/orders", requireDatabase, registerRateLimit, async (req, res) => {`;
   source = replaceExactlyOnce(
     source,
     ordersRouteMarker,
