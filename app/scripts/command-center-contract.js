@@ -82,6 +82,12 @@ function main() {
   assert.ok(routes.includes("active_tasks"));
   assert.ok(routes.includes("unread_events"));
   assert.ok(routes.includes("nextRunAt"));
+  assert.ok(routes.includes("FROM agent_runs"));
+  assert.ok(routes.includes("queued_runs"));
+  assert.ok(routes.includes("running_runs"));
+  assert.ok(routes.includes("completed_runs"));
+  assert.ok(routes.includes("FROM user_memories"));
+  assert.ok(routes.includes("enabled_memories"));
 
   const page = fs.readFileSync(path.join(__dirname, "..", "command-center.html"), "utf8");
   assert.ok(page.includes("COMMAND CENTER"));
@@ -90,8 +96,15 @@ function main() {
   assert.ok(page.includes("Usage by feature"));
   assert.ok(page.includes("/voice.html"));
   assert.ok(page.includes("/tasks.html"));
+  assert.ok(page.includes("/agents.html"));
+  assert.ok(page.includes("/memory.html"));
+  assert.ok(page.includes("/modes.html"));
   assert.ok(page.includes("Active tasks"));
   assert.ok(page.includes("Reminder events"));
+  assert.ok(page.includes("Agent queue"));
+  assert.ok(page.includes("Memory"));
+  assert.ok(page.includes('id="agentQueue"'));
+  assert.ok(page.includes('id="memoryEnabled"'));
   assert.ok(page.includes("/image-tools.html"));
 
   const scriptPattern = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
