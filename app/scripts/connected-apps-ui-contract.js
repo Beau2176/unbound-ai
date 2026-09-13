@@ -29,7 +29,23 @@ function main() {
     (error) => error?.code === "CONNECTED_APPS_UI_MARKER_INVALID"
   );
 
-  console.log("PASS connected-apps UI contract: navigation is composed exactly once with model/account UI.");
+  const page = fs.readFileSync(path.join(appRoot, "connected-apps.html"), "utf8");
+  assert.ok(page.includes("GitHub setup diagnostics"));
+  assert.ok(page.includes('id="githubChecklist"'));
+  assert.ok(page.includes('id="callbackUrl"'));
+  assert.ok(page.includes('id="copyCallbackButton"'));
+  assert.ok(page.includes('id="nextAction"'));
+  assert.ok(page.includes("tokenEncryptionConfigured"));
+  assert.ok(page.includes("appRegistrationVerified"));
+  assert.ok(page.includes("readOnlyPermissionsVerified"));
+  assert.ok(page.includes("/api/connections/github/callback"));
+  assert.ok(page.includes("Never paste the Client Secret into chat."));
+  assert.ok(!page.includes("GITHUB_APP_CLIENT_SECRET"));
+  assert.ok(!page.includes("CONNECTED_APPS_TOKEN_KEY"));
+  assert.ok(!page.includes("access_token"));
+  assert.ok(!page.includes("refresh_token"));
+
+  console.log("PASS connected-apps UI contract: navigation and setup diagnostics are composed safely without browser secrets.");
 }
 
 main();
