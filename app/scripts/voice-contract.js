@@ -74,10 +74,14 @@ async function main() {
 
   assert.strictEqual(OPENAI_TTS_MODEL, "gpt-4o-mini-tts");
   assert.strictEqual(OPENAI_SPEECH_URL, "https://api.openai.com/v1/audio/speech");
-  assert.strictEqual(CLOUD_VOICES.warm.voice, "marin");
-  assert.strictEqual(CLOUD_VOICES.deep.voice, "onyx");
-  assert.strictEqual(CLOUD_VOICES.bright.voice, "coral");
-  assert.strictEqual(CLOUD_VOICES.calm.voice, "cedar");
+  assert.strictEqual(CLOUD_VOICES.marin.voice, "marin");
+  assert.strictEqual(CLOUD_VOICES.cedar.voice, "cedar");
+  assert.strictEqual(CLOUD_VOICES.coral.voice, "coral");
+  assert.strictEqual(CLOUD_VOICES.nova.voice, "nova");
+  assert.strictEqual(CLOUD_VOICES.marin.label, "Voice 1 — Marin");
+  assert.strictEqual(CLOUD_VOICES.cedar.label, "Voice 3 — Cedar");
+  assert.strictEqual(CLOUD_VOICES.coral.label, "Voice 4 — Coral");
+  assert.strictEqual(CLOUD_VOICES.nova.label, "Voice 5 — Nova");
 
   const openAiStatus = publicOpenAiSpeechStatus({ OPENAI_API_KEY: "openai-secret" });
   assert.strictEqual(openAiStatus.configured, true);
@@ -98,20 +102,20 @@ async function main() {
 
   const openAiResult = await synthesizeOpenAiSpeech({
     text: "This voice should sound natural and distinct.",
-    preset: "deep",
+    preset: "cedar",
     env: { OPENAI_API_KEY: "openai-secret" },
     fetchImpl: openAiFetch
   });
 
   assert.strictEqual(openAiResult.provider, "openai");
   assert.strictEqual(openAiResult.model, OPENAI_TTS_MODEL);
-  assert.strictEqual(openAiResult.voice, "onyx");
-  assert.strictEqual(openAiResult.preset, "deep");
+  assert.strictEqual(openAiResult.voice, "cedar");
+  assert.strictEqual(openAiResult.preset, "cedar");
   assert.strictEqual(openAiRequest.url, OPENAI_SPEECH_URL);
   assert.strictEqual(openAiRequest.options.headers.Authorization, "Bearer openai-secret");
   const openAiBody = JSON.parse(openAiRequest.options.body);
   assert.strictEqual(openAiBody.model, OPENAI_TTS_MODEL);
-  assert.strictEqual(openAiBody.voice, "onyx");
+  assert.strictEqual(openAiBody.voice, "cedar");
   assert.strictEqual(openAiBody.response_format, "mp3");
   assert.ok(openAiBody.instructions.includes("natural"));
   assert.ok(!JSON.stringify(openAiResult).includes("openai-secret"));
@@ -152,14 +156,14 @@ async function main() {
   await assert.rejects(
     () => synthesizeOpenAiSpeech({
       text: "Hello",
-      preset: "warm",
+      preset: "marin",
       env: {},
       fetchImpl: openAiFetch
     }),
     (error) => error && error.code === "OPENAI_SPEECH_NOT_CONFIGURED"
   );
 
-  console.log("UNBOUND AI HeyGen and natural OpenAI voice checks passed.");
+  console.log("UNBOUND AI HeyGen and named OpenAI voice checks passed.");
 }
 
 main().catch((error) => {
