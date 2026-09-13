@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UNBOUND AI Agents</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: Arial, Helvetica, sans-serif; color: #f6f8fc; background: radial-gradient(circle at top, #1b365f 0, #08111f 37%, #02050a 75%); }
+    .shell { width: min(1120px, calc(100% - 28px)); margin: auto; padding: 26px 0 54px; }
+    header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+    h1 { margin: 0 0 8px; font-size: clamp(36px, 7vw, 60px); line-height: .95; }
+    .eyebrow { color: #88bbff; font-size: .78rem; font-weight: 900; letter-spacing: .18em; }
+    .sub, .muted { color: #aebbd0; line-height: 1.5; }
+    .actions { display: flex; gap: 9px; flex-wrap: wrap; }
+    .button { border: 1px solid rgba(143,189,255,.22); background: rgba(255,255,255,.07); color: #fff; border-radius: 999px; padding: 11px 16px; font: inherit; font-weight: 900; text-decoration: none; cursor: pointer; }
+    .primary { background: #edf5ff; color: #081327; }
+    .danger { background: rgba(127,29,29,.45); }
+    .grid { display: grid; grid-template-columns: .9fr 1.4fr; gap: 14px; align-items: start; }
+    .panel { border: 1px solid rgba(143,189,255,.18); border-radius: 20px; background: rgba(5,13,27,.91); padding: 19px; box-shadow: 0 18px 55px rgba(0,0,0,.24); }
+    h2 { margin: 0 0 14px; font-size: 1.05rem; }
+    label { display: block; color: #bdcbe0; font-size: .83rem; font-weight: 900; margin: 12px 0 6px; }
+    textarea, select { width: 100%; border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.06); color: #fff; border-radius: 12px; padding: 12px; font: inherit; }
+    textarea { min-height: 170px; resize: vertical; }
+    .checkbox { display: flex; gap: 9px; align-items: flex-start; margin-top: 14px; color: #c9d5e6; }
+    .checkbox input { margin-top: 3px; }
+    .run { padding: 15px 0; border-top: 1px solid rgba(255,255,255,.08); }
+    .run:first-child { border-top: 0; padding-top: 0; }
+    .run-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+    .run strong { display: block; margin-bottom: 6px; }
+    .meta { color: #96a9c2; font-size: .82rem; line-height: 1.45; }
+    .pill { flex: 0 0 auto; border-radius: 999px; padding: 5px 9px; font-size: .7rem; font-weight: 900; background: rgba(148,163,184,.14); color: #c6d0df; }
+    .pill.completed { background: rgba(52,211,153,.14); color: #8cf1c7; }
+    .pill.running { background: rgba(59,130,246,.16); color: #9cc7ff; }
+    .pill.failed { background: rgba(239,68,68,.14); color: #ff9d9d; }
+    .pill.cancelled { background: rgba(251,191,36,.12); color: #ffd56f; }
+    .mini { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); color: #fff; border-radius: 999px; padding: 7px 10px; font-size: .75rem; font-weight: 900; cursor: pointer; }
+    .detail { grid-column: 1 / -1; }
+    .step { border-top: 1px solid rgba(255,255,255,.08); padding: 16px 0; }
+    .step:first-child { border-top: 0; }
+    .step-output, #finalOutput { white-space: pre-wrap; line-height: 1.55; color: #e6edf7; }
+    .sources a { display: block; color: #9ec9ff; margin-top: 6px; word-break: break-word; }
+    #error { display: none; border: 1px solid rgba(248,113,113,.3); background: rgba(127,29,29,.36); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+    #notice { display: none; border: 1px solid rgba(52,211,153,.25); background: rgba(6,78,59,.28); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+    @media (max-width: 780px) { .grid { grid-template-columns: 1fr; } .detail { grid-column: auto; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <div class="eyebrow">UNBOUND AI · TOP</div>
+        <h1>AGENTS</h1>
+        <div class="sub">Run bounded multi-step AI jobs for analysis, planning, drafting, and source-backed research.</div>
+      </div>
+      <div class="actions">
+        <a class="button" href="/command-center.html">COMMAND CENTER</a>
+        <a class="button" href="/">CHAT</a>
+      </div>
+    </header>
+
+    <div id="error"></div>
+    <div id="notice"></div>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>New Agent run</h2>
+        <form id="agentForm">
+          <label for="objective">Objective</label>
+          <textarea id="objective" maxlength="4000" required placeholder="Research this topic, compare the strongest options, and produce a final recommendation with sources."></textarea>
+          <label for="maxSteps">Work passes</label>
+          <select id="maxSteps">
+            <option value="1">1 PASS</option>
+            <option value="2">2 PASSES</option>
+            <option value="3" selected>3 PASSES</option>
+            <option value="4">4 PASSES</option>
+          </select>
+          <label class="checkbox"><input id="research" type="checkbox" /> <span>Use live web research on each pass. This can increase provider usage and cost.</span></label>
+          <div class="actions" style="margin-top:15px">
+            <button class="button primary" type="submit">START AGENT</button>
+          </div>
+        </form>
+        <p class="muted">This Agent tier can think, research, and produce deliverables. It cannot yet send messages, make purchases, move money, click through external sites, or take other outside-app actions.</p>
+      </article>
+
+      <article class="panel">
+        <h2>Runs</h2>
+        <div id="runs"><div class="muted">Loading Agent runs…</div></div>
+      </article>
+
+      <article id="detail" class="panel detail" hidden>
+        <div class="run-top">
+          <div>
+            <h2 id="detailTitle">Agent result</h2>
+            <div id="detailMeta" class="meta"></div>
+          </div>
+          <button id="closeDetail" class="mini" type="button">CLOSE</button>
+        </div>
+        <h2 style="margin-top:18px">Final output</h2>
+        <div id="finalOutput" class="muted">No output yet.</div>
+        <div id="finalSources" class="sources"></div>
+        <h2 style="margin-top:22px">Passes</h2>
+        <div id="steps"></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let runs = [];
+    let selectedRunId = null;
+    let refreshTimer = null;
+
+    function showError(message) {
+      const node = $("error");
+      node.textContent = message;
+      node.style.display = message ? "block" : "none";
+    }
+
+    function showNotice(message) {
+      const node = $("notice");
+      node.textContent = message;
+      node.style.display = message ? "block" : "none";
+      if (message) setTimeout(() => { node.style.display = "none"; }, 3500);
+    }
+
+    function formatDate(value) {
+      if (!value) return "—";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+    }
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, {
+        ...options,
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        cache: "no-store"
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Agent request failed.");
+      return payload;
+    }
+
+    function runStatusText(run) {
+      if (run.status === "running") return `Pass ${Math.min(run.completedSteps + 1, run.maxSteps)} of ${run.maxSteps}`;
+      if (run.status === "queued") return "Waiting for worker";
+      if (run.status === "completed") return `${run.completedSteps} passes complete`;
+      if (run.status === "cancelled") return `Cancelled after ${run.completedSteps} passes`;
+      return run.error || "Run failed";
+    }
+
+    function renderRuns() {
+      const container = $("runs");
+      container.replaceChildren();
+      if (!runs.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = "No Agent runs yet.";
+        container.append(empty);
+        return;
+      }
+      for (const run of runs) {
+        const item = document.createElement("div");
+        item.className = "run";
+        const top = document.createElement("div");
+        top.className = "run-top";
+        const copy = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = run.objective.length > 150 ? `${run.objective.slice(0, 147)}…` : run.objective;
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = `${runStatusText(run)} · ${run.research ? "Research on" : "Research off"} · ${formatDate(run.createdAt)}`;
+        copy.append(title, meta);
+        const pill = document.createElement("span");
+        pill.className = `pill ${run.status}`;
+        pill.textContent = String(run.status || "unknown").toUpperCase();
+        top.append(copy, pill);
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        const view = document.createElement("button");
+        view.className = "mini";
+        view.type = "button";
+        view.textContent = "VIEW";
+        view.addEventListener("click", () => viewRun(run.id));
+        actions.append(view);
+        if (["queued", "running"].includes(run.status)) {
+          const cancel = document.createElement("button");
+          cancel.className = "mini danger";
+          cancel.type = "button";
+          cancel.textContent = "CANCEL";
+          cancel.addEventListener("click", () => cancelRun(run.id));
+          actions.append(cancel);
+        } else {
+          const remove = document.createElement("button");
+          remove.className = "mini danger";
+          remove.type = "button";
+          remove.textContent = "DELETE";
+          remove.addEventListener("click", () => deleteRun(run.id));
+          actions.append(remove);
+        }
+        item.append(top, actions);
+        container.append(item);
+      }
+    }
+
+    function renderSources(container, sources) {
+      container.replaceChildren();
+      const list = Array.isArray(sources) ? sources : [];
+      if (!list.length) return;
+      const heading = document.createElement("div");
+      heading.className = "meta";
+      heading.style.marginTop = "14px";
+      heading.textContent = "Sources";
+      container.append(heading);
+      for (const source of list) {
+        if (!source?.url) continue;
+        const link = document.createElement("a");
+        link.href = source.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = source.title || source.url;
+        container.append(link);
+      }
+    }
+
+    async function loadRuns() {
+      try {
+        const data = await api("/api/agents/runs");
+        runs = data.runs || [];
+        renderRuns();
+        if (selectedRunId) await viewRun(selectedRunId, false);
+      } catch (error) {
+        showError(error.message);
+      }
+    }
+
+    async function viewRun(id, scroll = true) {
+      try {
+        const data = await api(`/api/agents/runs/${encodeURIComponent(id)}`);
+        selectedRunId = String(id);
+        const run = data.run;
+        $("detail").hidden = false;
+        $("detailTitle").textContent = run.objective;
+        $("detailMeta").textContent = `${String(run.status).toUpperCase()} · ${run.completedSteps}/${run.maxSteps} passes · ${run.research ? "Research on" : "Research off"}`;
+        $("finalOutput").textContent = run.finalOutput || run.error || "No output yet.";
+        renderSources($("finalSources"), run.finalSources);
+        const steps = $("steps");
+        steps.replaceChildren();
+        for (const step of data.steps || []) {
+          const item = document.createElement("div");
+          item.className = "step";
+          const title = document.createElement("strong");
+          title.textContent = `Pass ${step.stepNumber}`;
+          const meta = document.createElement("div");
+          meta.className = "meta";
+          meta.textContent = `${step.provider || "AI"} · ${step.model || "model"} · ${step.webSearchCalls} research calls`;
+          const output = document.createElement("div");
+          output.className = "step-output";
+          output.textContent = step.output || "";
+          const sources = document.createElement("div");
+          sources.className = "sources";
+          renderSources(sources, step.sources);
+          item.append(title, meta, output, sources);
+          steps.append(item);
+        }
+        if (scroll) $("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        showError(error.message);
+      }
+    }
+
+    async function cancelRun(id) {
+      try {
+        await api(`/api/agents/runs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" });
+        showNotice("Cancellation requested.");
+        await loadRuns();
+      } catch (error) { showError(error.message); }
+    }
+
+    async function deleteRun(id) {
+      if (!confirm("Delete this finished Agent run?")) return;
+      try {
+        await api(`/api/agents/runs/${encodeURIComponent(id)}`, { method: "DELETE" });
+        if (selectedRunId === String(id)) {
+          selectedRunId = null;
+          $("detail").hidden = true;
+        }
+        await loadRuns();
+      } catch (error) { showError(error.message); }
+    }
+
+    $("agentForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showError("");
+      try {
+        const data = await api("/api/agents/runs", {
+          method: "POST",
+          body: JSON.stringify({
+            objective: $("objective").value,
+            research: $("research").checked,
+            maxSteps: Number($("maxSteps").value || 3)
+          })
+        });
+        $("objective").value = "";
+        showNotice("Agent run queued.");
+        await loadRuns();
+        await viewRun(data.run.id);
+      } catch (error) { showError(error.message); }
+    });
+
+    $("closeDetail").addEventListener("click", () => {
+      selectedRunId = null;
+      $("detail").hidden = true;
+    });
+
+    loadRuns();
+    refreshTimer = setInterval(loadRuns, 3000);
+    window.addEventListener("beforeunload", () => clearInterval(refreshTimer));
+  </script>
+</body>
+</html>
