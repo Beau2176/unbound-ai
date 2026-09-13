@@ -16,11 +16,14 @@ assert(!presetSource.includes("Voice 4 — Bright"), "cloud voice 4 should stay 
 assert(!presetSource.includes("Voice 5 — Calm"), "cloud voice 5 should stay hidden while cloud speech is rate-limited");
 assert(!presetSource.includes("/api/voice/natural-speech"), "active UI should not depend on the rate-limited cloud speech route");
 assert(presetSource.includes("speechSynthesis"), "Voice 2 browser speech should remain available");
+assert(presetSource.includes("cachedVoice"), "Voice 2 should cache the resolved browser voice to avoid repeated lookup work");
+assert(presetSource.includes("hasActiveSpeech"), "Voice 2 should only cancel speech when speech is actually active");
+assert(presetSource.includes("pointerenter") && presetSource.includes("pointerdown"), "Voice 2 should prime its voice list before preview interaction");
 assert(presetSource.includes("Preview selected voice"), "voice preview control should be present");
 
 const integrated = integrateNativeShellServerSource('app.use("/api", createMaintenanceMiddleware());');
 assert(integrated.includes('app.get("/voice-presets.js"'), "voice preset script route should be mounted");
-assert(integrated.includes('/voice-presets.js?v=106'), "homepage should load the v106 voice preset enhancer");
+assert(integrated.includes('/voice-presets.js?v=107'), "homepage should load the v107 voice preset enhancer");
 assert(integrated.includes('injectVoiceListenControl'), "stable Voice / Listen control injection must remain in place");
 
-console.log("UNBOUND AI Voice 2 recovery contract checks passed.");
+console.log("UNBOUND AI Voice 2 instant-start contract checks passed.");
