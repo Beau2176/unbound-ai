@@ -61,67 +61,87 @@ function createCommandCenterRouter({
     const days = clampDays(req.query.days);
 
     try {
-      const [access, usageResult, usageTypesResult, conversationResult, securityResult] =
-        await Promise.all([
-          buildAccountAccess(req.user),
-          pool.query(
-            `SELECT
-               COUNT(*)::bigint AS requests,
-               COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
-               COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens,
-               COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
-               COALESCE(SUM(web_search_calls), 0)::bigint AS web_search_calls,
-               COUNT(estimated_cost_micros)::bigint AS priced_events,
-               COALESCE(SUM(estimated_cost_micros), 0)::bigint AS estimated_cost_micros
-             FROM usage_events
-             WHERE user_id = $1
-               AND created_at >= NOW() - ($2::text || ' days')::interval`,
-            [req.user.id, days]
-          ),
-          pool.query(
-            `SELECT
-               event_type,
-               provider,
-               model,
-               COUNT(*)::bigint AS requests,
-               COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
-               COALESCE(SUM(web_search_calls), 0)::bigint AS web_search_calls,
-               COALESCE(SUM(estimated_cost_micros), 0)::bigint AS estimated_cost_micros
-             FROM usage_events
-             WHERE user_id = $1
-               AND created_at >= NOW() - ($2::text || ' days')::interval
-             GROUP BY event_type, provider, model
-             ORDER BY requests DESC, total_tokens DESC
-             LIMIT 25`,
-            [req.user.id, days]
-          ),
-          pool.query(
-            `SELECT
-               COUNT(DISTINCT c.id)::bigint AS conversations,
-               COUNT(m.id)::bigint AS messages,
-               MAX(c.updated_at) AS last_conversation_at
-             FROM conversations c
-             LEFT JOIN conversation_messages m ON m.conversation_id = c.id
-             WHERE c.user_id = $1`,
-            [req.user.id]
-          ),
-          pool.query(
-            `SELECT
-               (SELECT COUNT(*) FROM user_sessions
-                WHERE user_id = $1 AND expires_at > NOW())::bigint AS active_sessions,
-               (SELECT COUNT(*) FROM account_devices
-                WHERE user_id = $1 AND revoked_at IS NULL)::bigint AS active_devices,
-               (SELECT COUNT(*) FROM account_security_alerts
-                WHERE user_id = $1 AND acknowledged_at IS NULL)::bigint AS unread_alerts,
-               (SELECT MAX(created_at) FROM account_security_events
-                WHERE user_id = $1) AS last_security_event_at`,
-            [req.user.id]
-          )
-        ]);
+      const [
+        access,
+        usageResult,
+        usageTypesResult,
+        conversationResult,
+        securityResult,
+        taskResult
+      ] = await Promise.all([
+        buildAccountAccess(req.user),
+        pool.query(
+          `SELECT
+             COUNT(*)::bigint AS requests,
+             COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
+             COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens,
+             COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+             COALESCE(SUM(web_search_calls), 0)::bigint AS web_search_calls,
+             COUNT(estimated_cost_micros)::bigint AS priced_events,
+             COALESCE(SUM(estimated_cost_micros), 0)::bigint AS estimated_cost_micros
+           FROM usage_events
+           WHERE user_id = $1
+             AND created_at >= NOW() - ($2::text || ' days')::interval`,
+          [req.user.id, days]
+        ),
+        pool.query(
+          `SELECT
+             event_type,
+             provider,
+             model,
+             COUNT(*)::bigint AS requests,
+             COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens,
+             COALESCE(SUM(web_search_calls), 0)::bigint AS web_search_calls,
+             COALESCE(SUM(estimated_cost_micros), 0)::bigint AS estimated_cost_micros
+           FROM usage_events
+           WHERE user_id = $1
+             AND created_at >= NOW() - ($2::text || ' days')::interval
+           GROUP BY event_type, provider, model
+           ORDER BY requests DESC, total_tokens DESC
+           LIMIT 25`,
+          [req.user.id, days]
+        ),
+        pool.query(
+          `SELECT
+             COUNT(DISTINCT c.id)::bigint AS conversations,
+             COUNT(m.id)::bigint AS messages,
+             MAX(c.updated_at) AS last_conversation_at
+           FROM conversations c
+           LEFT JOIN conversation_messages m ON m.conversation_id = c.id
+           WHERE c.user_id = $1`,
+          [req.user.id]
+        ),
+        pool.query(
+          `SELECT
+             (SELECT COUNT(*) FROM user_sessions
+              WHERE user_id = $1 AND expires_at > NOW())::bigint AS active_sessions,
+             (SELECT COUNT(*) FROM account_devices
+              WHERE user_id = $1 AND revoked_at IS NULL)::bigint AS active_devices,
+             (SELECT COUNT(*) FROM account_security_alerts
+              WHERE user_id = $1 AND acknowledged_at IS NULL)::bigint AS unread_alerts,
+             (SELECT MAX(created_at) FROM account_security_events
+              WHERE user_id = $1) AS last_security_event_at`,
+          [req.user.id]
+        ),
+        pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE enabled = TRUE)::bigint AS active_tasks,
+             MIN(next_run_at) FILTER (
+               WHERE enabled = TRUE AND next_run_at IS NOT NULL
+             ) AS next_run_at,
+             (SELECT COUNT(*)
+              FROM scheduled_task_events
+              WHERE user_id = $1 AND acknowledged_at IS NULL)::bigint AS unread_events
+           FROM scheduled_tasks
+           WHERE user_id = $1`,
+          [req.user.id]
+        )
+      ]);
 
       const usage = usageResult.rows[0] || {};
       const conversations = conversationResult.rows[0] || {};
       const security = securityResult.rows[0] || {};
+      const tasks = taskResult.rows[0] || {};
       const ai = typeof getGatewayStatus === "function" ? getGatewayStatus() : {};
       const billing =
         typeof getBillingGatewayStatus === "function" ? getBillingGatewayStatus() : {};
@@ -170,6 +190,11 @@ function createCommandCenterRouter({
           activeDevices: Number(security.active_devices || 0),
           unreadAlerts: Number(security.unread_alerts || 0),
           lastSecurityEventAt: security.last_security_event_at || null
+        },
+        tasks: {
+          active: Number(tasks.active_tasks || 0),
+          unreadEvents: Number(tasks.unread_events || 0),
+          nextRunAt: tasks.next_run_at || null
         },
         platform: {
           ai: publicAiStatus(ai),
