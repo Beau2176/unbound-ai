@@ -2,25 +2,25 @@ const OPENAI_SPEECH_URL = "https://api.openai.com/v1/audio/speech";
 const OPENAI_TTS_MODEL = "gpt-4o-mini-tts";
 
 const CLOUD_VOICES = Object.freeze({
-  warm: {
+  marin: {
     voice: "marin",
-    label: "Voice 1 — Warm",
-    instructions: "Speak naturally and warmly, with relaxed pacing, subtle expression, and no announcer or robotic cadence."
+    label: "Voice 1 — Marin",
+    instructions: "Speak naturally and warmly with relaxed pacing, subtle expression, and a conversational human cadence. Avoid sounding theatrical, robotic, or like an announcer."
   },
-  deep: {
-    voice: "onyx",
-    label: "Voice 3 — Deep",
-    instructions: "Speak in a natural lower register with calm confidence. Keep the delivery conversational, smooth, and distinctly human, not theatrical."
-  },
-  bright: {
-    voice: "coral",
-    label: "Voice 4 — Bright",
-    instructions: "Speak clearly with an upbeat, friendly, natural tone. Keep the energy light and conversational without sounding synthetic or exaggerated."
-  },
-  calm: {
+  cedar: {
     voice: "cedar",
-    label: "Voice 5 — Calm",
-    instructions: "Speak calmly and naturally with an easy pace, soft confidence, and gentle expression. Avoid monotone or robotic rhythm."
+    label: "Voice 3 — Cedar",
+    instructions: "Speak naturally with calm confidence, clear articulation, and an easy conversational pace. Keep the delivery smooth and human without exaggerated performance."
+  },
+  coral: {
+    voice: "coral",
+    label: "Voice 4 — Coral",
+    instructions: "Speak clearly with a friendly, upbeat, natural tone. Keep the energy light and conversational without sounding synthetic or exaggerated."
+  },
+  nova: {
+    voice: "nova",
+    label: "Voice 5 — Nova",
+    instructions: "Speak naturally with a polished, expressive, conversational tone. Keep the pacing comfortable and the delivery distinctly human, not robotic or overly dramatic."
   }
 });
 
