@@ -66,11 +66,12 @@ function integrateAdvertisingAnalyticsServerSource(serverSource) {
     "advertising-catalog-impressions"
   );
 
-  const websiteMarker = `        websiteUrl: row.website_url,`;
+  const publicAdMarker = `      ads: result.rows.map((row) => ({\n        businessName: row.business_name,\n        websiteUrl: row.website_url,`;
+  const publicAdReplacement = `      ads: result.rows.map((row) => ({\n        businessName: row.business_name,\n        websiteUrl: advertisingTrackedUrl(req, row.id, row.website_url),`;
   source = replaceExactlyOnce(
     source,
-    websiteMarker,
-    `        websiteUrl: advertisingTrackedUrl(req, row.id, row.website_url),`,
+    publicAdMarker,
+    publicAdReplacement,
     "advertising-catalog-tracked-url"
   );
 
