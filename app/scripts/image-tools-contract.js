@@ -51,7 +51,8 @@ function main() {
 
   expectCode(() => normalizeGenerateRequest({ prompt: "" }), "IMAGE_TOOL_PROMPT_REQUIRED");
 
-  const imageBase64 = Buffer.from("UNBOUND EDIT TEST", "utf8").toString("base64");
+  // A real 1x1 PNG; plain text must be rejected by upload protection.
+  const imageBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
   const edited = normalizeEditRequest({
     filename: "source.png",
     imageBase64,

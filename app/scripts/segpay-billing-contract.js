@@ -247,6 +247,20 @@ async function main() {
     "2024-07-28T15:38:43.000Z"
   );
 
+  const originalTimezone = process.env.TZ;
+  try {
+    for (const timezone of ["UTC", "Asia/Tokyo", "America/Denver"]) {
+      process.env.TZ = timezone;
+      assert.strictEqual(
+        parseSegpayTimestamp("7/28/2024 3:38:43 PM (GMT STANDARD TIME)"),
+        "2024-07-28T15:38:43.000Z"
+      );
+      assert.strictEqual(parseSegpayTimestamp("2024-07-28T15:38:43Z"), "2024-07-28T15:38:43.000Z");
+    }
+  } finally {
+    if (originalTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTimezone;
+  }
   console.log("Segpay billing adapter contract passed.");
 }
 

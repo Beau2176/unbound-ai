@@ -32,7 +32,8 @@ function count(text, needle) {
 }
 
 function main() {
-  const imageBase64 = Buffer.from("UNBOUND IMAGE TEST", "utf8").toString("base64");
+  // A real 1x1 PNG; plain text must be rejected by upload protection.
+  const imageBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
   const normalized = normalizeImageUnderstandingRequest({
     filename: "screenshot.png",
     imageBase64,
