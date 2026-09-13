@@ -1,4 +1,5 @@
 const path = require("path");
+const { assertUploadSafe } = require("../security/upload-protection");
 
 const DEFAULT_MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_PROMPT_CHARS = 4000;
@@ -113,27 +114,27 @@ function decodeStrictBase64(value, maxFileBytes) {
     );
   }
 
-  const bytes = Buffer.from(base64, "base64");
-  if (!bytes.length || bytes.length > maxFileBytes) {
+  const buffer = Buffer.from(base64, "base64");
+  if (!buffer.length || buffer.length > maxFileBytes) {
     throw fileAnalysisError(
-      bytes.length > maxFileBytes
+      buffer.length > maxFileBytes
         ? "FILE_ANALYSIS_FILE_TOO_LARGE"
         : "FILE_ANALYSIS_FILE_EMPTY",
-      bytes.length > maxFileBytes
+      buffer.length > maxFileBytes
         ? `Files must be ${Math.floor(maxFileBytes / (1024 * 1024))} MB or smaller.`
         : "Choose a non-empty file to analyze.",
-      bytes.length > maxFileBytes ? 413 : 400
+      buffer.length > maxFileBytes ? 413 : 400
     );
   }
 
-  if (bytes.toString("base64") !== base64) {
+  if (buffer.toString("base64") !== base64) {
     throw fileAnalysisError(
       "FILE_ANALYSIS_DATA_INVALID",
       "The uploaded file data is invalid."
     );
   }
 
-  return { base64, bytes: bytes.length };
+  return { base64, bytes: buffer.length, buffer };
 }
 
 function normalizeFileAnalysisRequest(body, env = process.env) {
@@ -155,6 +156,15 @@ function normalizeFileAnalysisRequest(body, env = process.env) {
   }
 
   const decoded = decodeStrictBase64(body?.fileBase64, config.maxFileBytes);
+  try {
+    assertUploadSafe({ filename, buffer: decoded.buffer, kind: "file" });
+  } catch (error) {
+    throw fileAnalysisError(
+      "FILE_ANALYSIS_SECURITY_REJECTED",
+      error?.publicMessage || "That upload was blocked by UNBOUND AI upload protection."
+    );
+  }
+
   const prompt = cleanPrompt(body?.prompt);
   const detail = fileType.extension === ".pdf" ? cleanPdfDetail(body?.detail) : null;
 
@@ -177,7 +187,8 @@ function publicFileAnalysisConfig(env = process.env) {
     acceptedExtensions: config.acceptedExtensions,
     defaultPdfDetail: "low",
     rawFilesStoredByUnbound: false,
-    providerResponseStorageRequested: false
+    providerResponseStorageRequested: false,
+    uploadProtection: true
   };
 }
 
