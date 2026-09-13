@@ -35,6 +35,19 @@
     .repo-name { font-weight:800; overflow-wrap:anywhere; }
     .repo-meta { color:var(--muted); font-size:11px; text-align:right; }
     .empty { color:var(--muted); font-size:13px; padding:12px 0; }
+    .diagnostics { margin-top:18px; padding:16px; border:1px solid rgba(107,193,255,.16); border-radius:12px; background:rgba(5,17,32,.55); }
+    .diagnostics h3 { margin:0 0 10px; font-size:15px; }
+    .checklist { display:grid; gap:8px; }
+    .check { display:flex; gap:10px; align-items:flex-start; padding:9px 10px; border:1px solid rgba(255,255,255,.07); border-radius:9px; background:rgba(255,255,255,.018); }
+    .check-icon { width:22px; flex:0 0 22px; font-weight:950; text-align:center; }
+    .check.ok .check-icon { color:var(--green); }
+    .check.pending .check-icon { color:var(--gold); }
+    .check strong { display:block; font-size:12px; }
+    .check small { display:block; margin-top:2px; color:var(--muted); line-height:1.4; }
+    .callback { margin-top:12px; padding:10px; border:1px solid rgba(255,255,255,.08); border-radius:9px; background:rgba(0,0,0,.18); }
+    .callback-label { color:var(--muted); font-size:10px; font-weight:900; letter-spacing:.08em; }
+    .callback-value { margin-top:5px; font:600 11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; color:#dcefff; }
+    .next-action { margin-top:12px; color:#ffe0af; font-size:12px; line-height:1.45; }
   </style>
 </head>
 <body>
@@ -63,9 +76,22 @@
         </div>
         <div id="githubStatus" class="status" role="status" aria-live="polite"></div>
         <div id="repoList" class="repo-list"></div>
+
+        <section class="diagnostics" aria-labelledby="diagnosticsTitle">
+          <h3 id="diagnosticsTitle">GitHub setup diagnostics</h3>
+          <div id="githubChecklist" class="checklist"></div>
+          <div class="callback">
+            <div class="callback-label">EXACT CALLBACK URL</div>
+            <div id="callbackUrl" class="callback-value"></div>
+            <div class="actions">
+              <button id="copyCallbackButton" type="button">COPY CALLBACK URL</button>
+            </div>
+          </div>
+          <div id="nextAction" class="next-action">Checking the next required setup action…</div>
+        </section>
       </article>
 
-      <div class="notice">GitHub App registration and production credentials must be configured by the UNBOUND owner before Connect becomes active. UNBOUND does not ask you to paste a GitHub password or personal access token.</div>
+      <div class="notice">GitHub App registration and production credentials must be configured by the UNBOUND owner before Connect becomes active. UNBOUND does not ask you to paste a GitHub password, personal access token, Client Secret, or encryption key into this page.</div>
     </section>
   </main>
   <script>
@@ -76,9 +102,53 @@
     const disconnectButton = document.getElementById("disconnectButton");
     const statusEl = document.getElementById("githubStatus");
     const repoList = document.getElementById("repoList");
+    const checklist = document.getElementById("githubChecklist");
+    const callbackUrlEl = document.getElementById("callbackUrl");
+    const copyCallbackButton = document.getElementById("copyCallbackButton");
+    const nextActionEl = document.getElementById("nextAction");
+    const exactCallbackUrl = `${location.origin}/api/connections/github/callback`;
     let currentStatus = null;
 
+    callbackUrlEl.textContent = exactCallbackUrl;
+
     function setStatus(message) { statusEl.textContent = message || ""; }
+
+    function diagnosticRow(ok, title, detail) {
+      const row = document.createElement("div");
+      row.className = `check ${ok ? "ok" : "pending"}`;
+      const icon = document.createElement("div");
+      icon.className = "check-icon";
+      icon.textContent = ok ? "✓" : "!";
+      const body = document.createElement("div");
+      const strong = document.createElement("strong");
+      strong.textContent = title;
+      const small = document.createElement("small");
+      small.textContent = detail;
+      body.append(strong, small);
+      row.append(icon, body);
+      return row;
+    }
+
+    function renderDiagnostics(github = {}) {
+      checklist.innerHTML = "";
+      const encryptionReady = Boolean(github.tokenEncryptionConfigured);
+      const registrationReady = Boolean(github.appRegistrationVerified);
+      const permissionReady = Boolean(github.readOnlyPermissionsVerified);
+      const fullyReady = Boolean(github.configured);
+
+      checklist.append(
+        diagnosticRow(encryptionReady, "Server-side credential encryption", encryptionReady ? "Connected Apps encryption is configured." : "Deployment encryption key is still missing."),
+        diagnosticRow(registrationReady, "GitHub App registration verified", registrationReady ? "The owner has verified the GitHub App registration." : "Create the GitHub App, confirm the exact homepage/callback settings, then mark registration verified in deployment settings."),
+        diagnosticRow(permissionReady, "Read-only permissions verified", permissionReady ? "The owner has verified the approved read-only permission set." : "Verify Contents = Read-only and keep repository/account write permissions disabled."),
+        diagnosticRow(fullyReady, "Client credentials and callback ready", fullyReady ? "Client ID, Client Secret, exact callback, verification flags, and encryption are all ready." : "UNBOUND remains fail-closed until every required provider setting is present and verified.")
+      );
+
+      if (fullyReady) nextActionEl.textContent = "Next action: Connect GitHub and authorize only the repositories you want UNBOUND to read.";
+      else if (!registrationReady) nextActionEl.textContent = "Next action: finish creating the UNBOUND GitHub App using the exact callback URL shown above.";
+      else if (!permissionReady) nextActionEl.textContent = "Next action: verify the GitHub App permission set is read-only, then enable the read-only verification flag in Render.";
+      else nextActionEl.textContent = "Next action: add the GitHub App Client ID and Client Secret directly to Render, then reload this page. Never paste the Client Secret into chat.";
+    }
+
     function renderRepositories(repositories) {
       repoList.innerHTML = "";
       if (!repositories.length) {
@@ -116,10 +186,20 @@
         connectButton.disabled = !configured;
         reposButton.hidden = !connected;
         disconnectButton.hidden = !connected;
+        renderDiagnostics(payload.github || {});
       } catch (error) {
-        badge.textContent = "UNAVAILABLE"; badge.className = "badge off"; identity.textContent = "Could not load Connected Apps status."; setStatus(error.message);
+        badge.textContent = "UNAVAILABLE"; badge.className = "badge off"; identity.textContent = "Could not load Connected Apps status."; setStatus(error.message); renderDiagnostics({});
       }
     }
+
+    copyCallbackButton.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(exactCallbackUrl);
+        setStatus("Callback URL copied.");
+      } catch (_) {
+        setStatus("Could not copy automatically. Press and hold the callback URL to copy it.");
+      }
+    });
 
     connectButton.addEventListener("click", async () => {
       connectButton.disabled = true; setStatus("Starting secure GitHub authorization…");
