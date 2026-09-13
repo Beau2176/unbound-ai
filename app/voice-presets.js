@@ -1,7 +1,8 @@
 (() => {
-  const STYLE_ID = 'unbound-voice-presets-v107';
+  const STYLE_ID = 'unbound-voice-presets-v108';
   const SELECT_ID = 'unboundVoicePreset';
   const STORAGE_KEY = 'unbound.voice.preset';
+  const PREVIEW_TEXT = 'Voice 2 — Clear. This is UNBOUND AI.';
   const PRESET = {
     id: 'clear',
     label: 'Voice 2 — Clear',
@@ -12,6 +13,9 @@
 
   let speaking = false;
   let cachedVoice = null;
+  let priming = false;
+  let enginePrimed = false;
+  let previewStartedOnPointerDown = false;
 
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -78,6 +82,43 @@
     refreshVoiceCache();
   }
 
+  function primeSpeechEngine() {
+    if (
+      enginePrimed ||
+      priming ||
+      speaking ||
+      !('speechSynthesis' in window) ||
+      typeof window.SpeechSynthesisUtterance !== 'function'
+    ) return;
+
+    const synth = window.speechSynthesis;
+    if (synth.speaking || synth.pending) return;
+
+    primeVoiceList();
+    const voice = resolveVoice();
+    const warmup = new window.SpeechSynthesisUtterance('.');
+    if (voice) warmup.voice = voice;
+    warmup.lang = (voice && voice.lang) || 'en-US';
+    warmup.rate = 10;
+    warmup.pitch = PRESET.pitch;
+    warmup.volume = 0;
+
+    const finishPrime = () => {
+      priming = false;
+      enginePrimed = true;
+    };
+    warmup.onstart = () => { enginePrimed = true; };
+    warmup.onend = finishPrime;
+    warmup.onerror = () => { priming = false; };
+
+    priming = true;
+    try {
+      synth.speak(warmup);
+    } catch (_) {
+      priming = false;
+    }
+  }
+
   function cleanText(value) {
     return String(value || '')
       .replace(/https?:\/\/\S+/g, ' link ')
@@ -111,11 +152,13 @@
   function stopSpeaking() {
     if (!('speechSynthesis' in window)) {
       speaking = false;
+      priming = false;
       return;
     }
     const synth = window.speechSynthesis;
     const hasActiveSpeech = speaking || synth.speaking || synth.pending;
     speaking = false;
+    priming = false;
     if (hasActiveSpeech) synth.cancel();
   }
 
@@ -125,7 +168,8 @@
     if (!chunks.length) return false;
 
     const synth = window.speechSynthesis;
-    if (speaking || synth.speaking || synth.pending) stopSpeaking();
+    const realSpeechActive = speaking || ((synth.speaking || synth.pending) && !priming);
+    if (realSpeechActive) stopSpeaking();
     if (synth.paused) {
       try { synth.resume(); } catch (_) {}
     }
@@ -148,9 +192,13 @@
       utterance.rate = PRESET.rate;
       utterance.pitch = PRESET.pitch;
       utterance.volume = 1;
+      utterance.onstart = () => {
+        enginePrimed = true;
+        priming = false;
+      };
       utterance.onend = () => {
         index += 1;
-        window.setTimeout(next, 15);
+        window.setTimeout(next, 5);
       };
       utterance.onerror = finish;
       synth.speak(utterance);
@@ -232,13 +280,24 @@
       menu.append(picker, preview);
     }
 
-    button.addEventListener('pointerenter', primeVoiceList, { passive: true });
-    button.addEventListener('pointerdown', primeVoiceList, { passive: true });
+    button.addEventListener('pointerenter', primeSpeechEngine, { passive: true });
+    button.addEventListener('pointerdown', primeSpeechEngine, { passive: true });
+    button.addEventListener('focus', primeSpeechEngine, { passive: true });
+
+    preview.addEventListener('pointerdown', (event) => {
+      if (typeof event.button === 'number' && event.button !== 0) return;
+      previewStartedOnPointerDown = true;
+      speak(PREVIEW_TEXT);
+    });
 
     preview.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      speak('Voice 2 — Clear. This is UNBOUND AI.');
+      if (previewStartedOnPointerDown) {
+        previewStartedOnPointerDown = false;
+        return;
+      }
+      speak(PREVIEW_TEXT);
     });
 
     if (listenAction) {
@@ -254,12 +313,16 @@
 
     function refreshTitle() {
       const voice = refreshVoiceCache();
+      enginePrimed = false;
       select.title = voice ? 'Using ' + voice.name : 'Using browser default voice';
+      window.setTimeout(primeSpeechEngine, 0);
     }
     refreshTitle();
     if ('speechSynthesis' in window && typeof window.speechSynthesis.addEventListener === 'function') {
       window.speechSynthesis.addEventListener('voiceschanged', refreshTitle);
     }
+
+    window.setTimeout(primeSpeechEngine, 0);
     return true;
   }
 
