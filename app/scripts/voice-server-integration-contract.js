@@ -54,11 +54,12 @@ function main() {
   new vm.Script(`(function(require,module,exports,__dirname,__filename){\n${integrated}\n})`);
 
   const page = fs.readFileSync(path.join(__dirname, "..", "voice.html"), "utf8");
-  assert.ok(page.includes("/api/voice/session"));
-  assert.ok(page.includes("navigator.mediaDevices.getUserMedia"));
-  assert.ok(page.includes("RTCPeerConnection"));
+  assert.ok(page.includes("/api/voice/speech"));
+  assert.ok(page.includes("/api/chat"));
+  assert.ok(page.includes("window.SpeechRecognition || window.webkitSpeechRecognition"));
+  assert.ok(page.includes("Boyd Voice V3"));
   assert.ok(page.includes("START VOICE"));
-  assert.ok(page.includes("API key stays on the UNBOUND AI server"));
+  assert.ok(page.includes("HeyGen API key stays on the server"));
 
   const scriptPattern = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
   let match;
