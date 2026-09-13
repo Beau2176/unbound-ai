@@ -67,7 +67,9 @@ function createCommandCenterRouter({
         usageTypesResult,
         conversationResult,
         securityResult,
-        taskResult
+        taskResult,
+        agentResult,
+        memoryResult
       ] = await Promise.all([
         buildAccountAccess(req.user),
         pool.query(
@@ -135,6 +137,26 @@ function createCommandCenterRouter({
            FROM scheduled_tasks
            WHERE user_id = $1`,
           [req.user.id]
+        ),
+        pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE status = 'queued')::bigint AS queued_runs,
+             COUNT(*) FILTER (WHERE status = 'running')::bigint AS running_runs,
+             COUNT(*) FILTER (WHERE status = 'completed')::bigint AS completed_runs,
+             COUNT(*) FILTER (WHERE status = 'failed')::bigint AS failed_runs,
+             MAX(updated_at) AS last_agent_activity_at
+           FROM agent_runs
+           WHERE user_id = $1`,
+          [req.user.id]
+        ),
+        pool.query(
+          `SELECT
+             COUNT(*)::bigint AS total_memories,
+             COUNT(*) FILTER (WHERE enabled = TRUE)::bigint AS enabled_memories,
+             MAX(updated_at) AS last_memory_update_at
+           FROM user_memories
+           WHERE user_id = $1`,
+          [req.user.id]
         )
       ]);
 
@@ -142,6 +164,8 @@ function createCommandCenterRouter({
       const conversations = conversationResult.rows[0] || {};
       const security = securityResult.rows[0] || {};
       const tasks = taskResult.rows[0] || {};
+      const agents = agentResult.rows[0] || {};
+      const memory = memoryResult.rows[0] || {};
       const ai = typeof getGatewayStatus === "function" ? getGatewayStatus() : {};
       const billing =
         typeof getBillingGatewayStatus === "function" ? getBillingGatewayStatus() : {};
@@ -195,6 +219,18 @@ function createCommandCenterRouter({
           active: Number(tasks.active_tasks || 0),
           unreadEvents: Number(tasks.unread_events || 0),
           nextRunAt: tasks.next_run_at || null
+        },
+        agents: {
+          queued: Number(agents.queued_runs || 0),
+          running: Number(agents.running_runs || 0),
+          completed: Number(agents.completed_runs || 0),
+          failed: Number(agents.failed_runs || 0),
+          lastActivityAt: agents.last_agent_activity_at || null
+        },
+        memory: {
+          total: Number(memory.total_memories || 0),
+          enabled: Number(memory.enabled_memories || 0),
+          lastUpdatedAt: memory.last_memory_update_at || null
         },
         platform: {
           ai: publicAiStatus(ai),
