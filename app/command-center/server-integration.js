@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v0.71";
+const INTEGRATION_VERSION = "v0.72";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const first = source.indexOf(marker);
@@ -40,7 +40,7 @@ function integrateCommandCenterServerSource(serverSource) {
     "command-center-page-route"
   );
 
-  const voiceMount = `app.use(\n  "/api/voice",\n  requireDatabase,\n  requireSignedIn,\n  voiceSessionRateLimit,\n  requireCapability("voice"),\n  createVoiceRouter()\n);`;
+  const voiceMount = `app.use(\n  "/api/voice",\n  requireDatabase,\n  requireSignedIn,\n  voiceSessionRateLimit,\n  requireCapability("voice"),\n  createVoiceRouter({\n    getPool: () => pool\n  })\n);`;
   source = replaceExactlyOnce(
     source,
     voiceMount,
