@@ -30,8 +30,8 @@ function compileIntegratedServer({
   const emailIntegratedSource = integrateEmailVerificationServerSource(source);
   const billingIntegratedSource = integrateBillingServerSource(emailIntegratedSource);
   const fileIntegratedSource = integrateFileAnalysisServerSource(billingIntegratedSource);
-  const imageIntegratedSource = integrateImageUnderstandingServerSource(fileIntegratedSource);
-  const integratedSource = integrateVoiceServerSource(imageIntegratedSource);
+  let integratedSource = integrateImageUnderstandingServerSource(fileIntegratedSource);
+  integratedSource = integrateVoiceServerSource(integratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
   runtimeModule.filename = serverPath;
