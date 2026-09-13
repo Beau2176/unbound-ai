@@ -18,6 +18,7 @@ function createVoiceRouter({ env = process.env } = {}) {
       },
       privacy: {
         apiKeyExposedToBrowser: false,
+        privateVoiceIdExposedToBrowser: false,
         audioStoredByUnbound: false
       }
     });
@@ -35,11 +36,11 @@ function createVoiceRouter({ env = process.env } = {}) {
         audioUrl: result.audioUrl,
         durationSeconds: result.durationSeconds,
         provider: result.provider,
-        voiceId: result.voiceId,
         voiceName: result.voiceName,
         speed: result.speed,
         privacy: {
           apiKeyExposedToBrowser: false,
+          privateVoiceIdExposedToBrowser: false,
           audioStoredByUnbound: false
         }
       });
