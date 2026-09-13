@@ -9,11 +9,29 @@
       "unbound-ai-app.onrender.com"
     ]
   },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1800,
+      "launchAutoHide": true,
+      "backgroundColor": "#000000",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true
+    },
+    "StatusBar": {
+      "backgroundColor": "#000000",
+      "overlaysWebView": false
+    }
+  },
   "android": {
-    "backgroundColor": "#000000"
+    "backgroundColor": "#000000",
+    "allowMixedContent": false,
+    "captureInput": true
   },
   "ios": {
     "backgroundColor": "#000000",
-    "contentInset": "automatic"
+    "contentInset": "automatic",
+    "preferredContentMode": "mobile"
   }
 }
