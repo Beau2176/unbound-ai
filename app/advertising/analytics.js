@@ -26,8 +26,8 @@ async function recordAdvertisingImpressions(pool, orderIds = []) {
     `INSERT INTO advertising_metrics_daily (
        order_id, event_date, impressions, clicks, updated_at
      )
-     SELECT id, CURRENT_DATE, 1, 0, NOW()
-     FROM unnest($1::bigint[]) AS id
+     SELECT ids.id, CURRENT_DATE, 1, 0, NOW()
+     FROM unnest($1::bigint[]) AS ids(id)
      ON CONFLICT (order_id, event_date)
      DO UPDATE SET
        impressions = advertising_metrics_daily.impressions + 1,
@@ -87,6 +87,7 @@ async function loadAdvertisingMetrics(pool, { days = 30 } = {}) {
        ao.review_status,
        ao.starts_at,
        ao.ends_at,
+       ao.created_at,
        COALESCE(SUM(m.impressions), 0)::bigint AS impressions,
        COALESCE(SUM(m.clicks), 0)::bigint AS clicks
      FROM advertising_orders ao
@@ -102,7 +103,8 @@ async function loadAdvertisingMetrics(pool, { days = 30 } = {}) {
        ao.payment_status,
        ao.review_status,
        ao.starts_at,
-       ao.ends_at
+       ao.ends_at,
+       ao.created_at
      ORDER BY COALESCE(SUM(m.impressions), 0) DESC, ao.created_at DESC
      LIMIT 500`,
     [windowDays]
