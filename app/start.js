@@ -41,6 +41,9 @@ const {
   integrateModelRoutingServerSource
 } = require("./ai/model-routing-server-integration");
 const {
+  integrateConnectedAppsServerSource
+} = require("./connections/server-integration");
+const {
   registerBuiltInAgeVerificationProviders
 } = require("./age/providers/register");
 
@@ -64,6 +67,7 @@ function compileIntegratedServer({
   integratedSource = integrateAdvertisingAnalyticsServerSource(integratedSource);
   integratedSource = integrateAdvertisingPolicyServerSource(integratedSource);
   integratedSource = integrateModelRoutingServerSource(integratedSource);
+  integratedSource = integrateConnectedAppsServerSource(integratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
   runtimeModule.filename = serverPath;
