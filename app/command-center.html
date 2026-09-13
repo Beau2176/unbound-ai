@@ -7,13 +7,7 @@
   <style>
     :root { color-scheme: dark; --panel: rgba(6, 14, 29, .9); --line: rgba(136, 186, 255, .19); }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: Arial, Helvetica, sans-serif;
-      color: #f5f8ff;
-      background: radial-gradient(circle at 50% -10%, #173761 0, #07101f 35%, #02050a 72%);
-    }
+    body { margin: 0; min-height: 100vh; font-family: Arial, Helvetica, sans-serif; color: #f5f8ff; background: radial-gradient(circle at 50% -10%, #173761 0, #07101f 35%, #02050a 72%); }
     a { color: inherit; }
     .shell { width: min(1180px, calc(100% - 28px)); margin: 0 auto; padding: 24px 0 48px; }
     header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 24px; }
@@ -21,25 +15,9 @@
     .eyebrow { color: #83b8ff; font-weight: 800; letter-spacing: .18em; font-size: .8rem; }
     .sub { color: #aebcd1; margin: 0; max-width: 700px; line-height: 1.5; }
     .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-    .button, select {
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,.07);
-      color: #fff;
-      border-radius: 999px;
-      padding: 11px 16px;
-      font: inherit;
-      font-weight: 800;
-      text-decoration: none;
-    }
+    .button, select { border: 1px solid var(--line); background: rgba(255,255,255,.07); color: #fff; border-radius: 999px; padding: 11px 16px; font: inherit; font-weight: 800; text-decoration: none; }
     .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
-    .card {
-      grid-column: span 3;
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      padding: 18px;
-      background: var(--panel);
-      box-shadow: 0 16px 46px rgba(0,0,0,.24);
-    }
+    .card { grid-column: span 3; border: 1px solid var(--line); border-radius: 20px; padding: 18px; background: var(--panel); box-shadow: 0 16px 46px rgba(0,0,0,.24); }
     .wide { grid-column: span 6; }
     .full { grid-column: 1 / -1; }
     .label { color: #90a3bf; font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; font-weight: 800; }
@@ -74,7 +52,7 @@
       <div>
         <div class="eyebrow">UNBOUND AI · TOP</div>
         <h1>COMMAND CENTER</h1>
-        <p class="sub">Your access, usage, account security, and UNBOUND product controls in one place.</p>
+        <p class="sub">Your access, usage, reminders, account security, and UNBOUND product controls in one place.</p>
       </div>
       <div class="header-actions">
         <select id="days" aria-label="Usage period">
@@ -100,6 +78,9 @@
       <article class="card"><div class="label">Security alerts</div><div id="alerts" class="value">—</div><div class="small">Unacknowledged alerts</div></article>
       <article class="card"><div class="label">Estimated AI cost</div><div id="cost" class="value">—</div><div id="costNote" class="small">Only priced events are included</div></article>
 
+      <article class="card"><div class="label">Active tasks</div><div id="activeTasks" class="value">—</div><div id="nextTask" class="small">Next: —</div></article>
+      <article class="card"><div class="label">Reminder events</div><div id="reminders" class="value">—</div><div class="small">Unacknowledged reminders</div></article>
+
       <article class="wide card">
         <h2 class="section-title">Platform status</h2>
         <div class="status-row"><span>AI provider</span><span id="aiStatus">—</span></div>
@@ -112,6 +93,7 @@
         <h2 class="section-title">UNBOUND tools</h2>
         <div class="links">
           <a class="product-link" href="/voice.html">VOICE</a>
+          <a class="product-link" href="/tasks.html">TASKS</a>
           <a class="product-link" href="/files.html">FILES</a>
           <a class="product-link" href="/images.html">IMAGE UNDERSTANDING</a>
           <a class="product-link" href="/image-tools.html">IMAGE STUDIO</a>
@@ -141,6 +123,12 @@
     function formatCost(micros) {
       const value = Number(micros || 0) / 1000000;
       return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(value);
+    }
+
+    function formatDate(value) {
+      if (!value) return "None scheduled";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
     }
 
     function statusText(element, ready, text) {
@@ -229,6 +217,9 @@
         $("alerts").textContent = nf.format(data.security?.unreadAlerts || 0);
         $("cost").textContent = formatCost(data.usage?.totals?.estimatedCostMicros || 0);
         $("costNote").textContent = `${nf.format(data.usage?.totals?.pricedEvents || 0)} priced events included`;
+        $("activeTasks").textContent = nf.format(data.tasks?.active || 0);
+        $("reminders").textContent = nf.format(data.tasks?.unreadEvents || 0);
+        $("nextTask").textContent = `Next: ${formatDate(data.tasks?.nextRunAt)}`;
 
         const ai = data.platform?.ai || {};
         statusText($("aiStatus"), ai.configured, ai.configured ? `${ai.provider || "AI"} · ${ai.model || "configured"}` : "Not configured");
