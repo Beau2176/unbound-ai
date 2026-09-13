@@ -110,8 +110,8 @@ const CAPABILITY_CATALOG = Object.freeze({
   }),
   voice: Object.freeze({
     label: "Voice conversation",
-    description: "Natural spoken conversation with UNBOUND AI.",
-    implemented: false,
+    description: "Natural spoken conversation with UNBOUND AI using the Boyd Voice V3 private voice clone.",
+    implemented: true,
     minimumPlan: "top"
   }),
   agents: Object.freeze({
