@@ -20,6 +20,9 @@ const {
   integrateCommandCenterServerSource
 } = require("./command-center/server-integration");
 const {
+  integrateScheduledTasksServerSource
+} = require("./tasks/server-integration");
+const {
   registerBuiltInAgeVerificationProviders
 } = require("./age/providers/register");
 
@@ -36,6 +39,7 @@ function compileIntegratedServer({
   let integratedSource = integrateImageUnderstandingServerSource(fileIntegratedSource);
   integratedSource = integrateVoiceServerSource(integratedSource);
   integratedSource = integrateCommandCenterServerSource(integratedSource);
+  integratedSource = integrateScheduledTasksServerSource(integratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
   runtimeModule.filename = serverPath;
