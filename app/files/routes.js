@@ -15,6 +15,7 @@ const IMAGES_NAV_LINK = '<a class="account-button advertiser-link" href="/images
 const IMAGE_STUDIO_NAV_LINK = '<a class="account-button advertiser-link" href="/image-tools.html">STUDIO</a>';
 const VOICE_NAV_LINK = '<a class="account-button advertiser-link" href="/voice.html">VOICE</a>';
 const TASKS_NAV_LINK = '<a class="account-button advertiser-link" href="/tasks.html">TASKS</a>';
+const AGENTS_NAV_LINK = '<a class="account-button advertiser-link" href="/agents.html">AGENTS</a>';
 const COMMAND_CENTER_NAV_LINK = '<a class="account-button advertiser-link" href="/command-center.html">CENTER</a>';
 
 function safeProviderError(error) {
@@ -75,7 +76,7 @@ function buildFileAwareIndexHtml(indexHtml) {
     error.code = "FILE_ANALYSIS_INDEX_MARKER_CHANGED";
     throw error;
   }
-  const withProductNavigation = source.replace(INDEX_NAV_MARKER, `${INDEX_NAV_MARKER}\n      ${FILES_NAV_LINK}\n      ${IMAGES_NAV_LINK}\n      ${IMAGE_STUDIO_NAV_LINK}\n      ${VOICE_NAV_LINK}\n      ${TASKS_NAV_LINK}\n      ${COMMAND_CENTER_NAV_LINK}`);
+  const withProductNavigation = source.replace(INDEX_NAV_MARKER, `${INDEX_NAV_MARKER}\n      ${FILES_NAV_LINK}\n      ${IMAGES_NAV_LINK}\n      ${IMAGE_STUDIO_NAV_LINK}\n      ${VOICE_NAV_LINK}\n      ${TASKS_NAV_LINK}\n      ${AGENTS_NAV_LINK}\n      ${COMMAND_CENTER_NAV_LINK}`);
   return injectEmailAccountUi(withProductNavigation);
 }
 
@@ -95,4 +96,4 @@ function sendFileAwareIndex(req, res) {
   }
 }
 
-module.exports = { INDEX_NAV_MARKER, FILES_NAV_LINK, IMAGES_NAV_LINK, IMAGE_STUDIO_NAV_LINK, VOICE_NAV_LINK, TASKS_NAV_LINK, COMMAND_CENTER_NAV_LINK, safeProviderError, createFileAnalysisRouter, sendFileAnalysisPage, buildFileAwareIndexHtml, sendFileAwareIndex };
+module.exports = { INDEX_NAV_MARKER, FILES_NAV_LINK, IMAGES_NAV_LINK, IMAGE_STUDIO_NAV_LINK, VOICE_NAV_LINK, TASKS_NAV_LINK, AGENTS_NAV_LINK, COMMAND_CENTER_NAV_LINK, safeProviderError, createFileAnalysisRouter, sendFileAnalysisPage, buildFileAwareIndexHtml, sendFileAwareIndex };
