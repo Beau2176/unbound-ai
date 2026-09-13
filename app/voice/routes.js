@@ -90,7 +90,7 @@ function createVoiceRouter({ env = process.env, getPool = null } = {}) {
 
       res.setHeader("Cache-Control", "no-store");
       res.setHeader("Content-Type", result.contentType);
-      res.setHeader("X-Unbound-Voice", result.voiceName);
+      res.setHeader("X-Unbound-Voice", result.voice);
       res.setHeader("X-Unbound-Voice-Provider", result.provider);
       return res.status(201).send(result.buffer);
     } catch (error) {
