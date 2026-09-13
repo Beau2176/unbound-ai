@@ -1,6 +1,5 @@
 const assert = require("assert");
 const {
-  DEFAULT_HEYGEN_VOICE_ID,
   DEFAULT_HEYGEN_VOICE_NAME,
   HEYGEN_SPEECH_URL,
   clampSpeed,
@@ -10,7 +9,7 @@ const {
 } = require("../voice/heygen-tts");
 
 async function main() {
-  assert.strictEqual(DEFAULT_HEYGEN_VOICE_ID, "cbca446e24b94d66a6ef405d9eb8355f");
+  const privateVoiceId = "private-test-voice-id";
   assert.strictEqual(DEFAULT_HEYGEN_VOICE_NAME, "Boyd Voice V3");
   assert.strictEqual(HEYGEN_SPEECH_URL, "https://api.heygen.com/v3/voices/speech");
   assert.strictEqual(clampSpeed("1.25"), 1.25);
@@ -19,13 +18,16 @@ async function main() {
   assert.throws(() => normalizeSpeechText(""), /Speech text is required/);
 
   const status = publicHeyGenVoiceStatus({
-    HEYGEN_API_KEY: "secret-value"
+    HEYGEN_API_KEY: "secret-value",
+    HEYGEN_VOICE_ID: privateVoiceId
   });
   assert.strictEqual(status.configured, true);
-  assert.strictEqual(status.voiceId, DEFAULT_HEYGEN_VOICE_ID);
   assert.strictEqual(status.voiceName, DEFAULT_HEYGEN_VOICE_NAME);
+  assert.strictEqual(status.privateVoiceIdConfigured, true);
   assert.strictEqual(status.rawApiKeyExposedToBrowser, false);
+  assert.strictEqual(status.privateVoiceIdExposedToBrowser, false);
   assert.ok(!JSON.stringify(status).includes("secret-value"));
+  assert.ok(!JSON.stringify(status).includes(privateVoiceId));
 
   let request = null;
   const fetchImpl = async (url, options) => {
@@ -45,18 +47,19 @@ async function main() {
   const result = await synthesizeSpeech({
     text: "Welcome to UNBOUND AI.",
     env: {
-      HEYGEN_API_KEY: "secret-value"
+      HEYGEN_API_KEY: "secret-value",
+      HEYGEN_VOICE_ID: privateVoiceId
     },
     fetchImpl
   });
 
-  assert.strictEqual(result.voiceId, DEFAULT_HEYGEN_VOICE_ID);
+  assert.strictEqual(result.voiceId, privateVoiceId);
   assert.strictEqual(result.voiceName, DEFAULT_HEYGEN_VOICE_NAME);
   assert.strictEqual(result.audioUrl, "https://example.com/generated-voice.mp3");
   assert.strictEqual(request.url, HEYGEN_SPEECH_URL);
   assert.strictEqual(request.options.headers["X-Api-Key"], "secret-value");
   const body = JSON.parse(request.options.body);
-  assert.strictEqual(body.voice_id, DEFAULT_HEYGEN_VOICE_ID);
+  assert.strictEqual(body.voice_id, privateVoiceId);
   assert.strictEqual(body.input_type, "text");
   assert.strictEqual(body.speed, 1);
   assert.strictEqual(body.language, "en");
@@ -64,7 +67,7 @@ async function main() {
   await assert.rejects(
     () => synthesizeSpeech({
       text: "Hello",
-      env: {},
+      env: { HEYGEN_VOICE_ID: privateVoiceId },
       fetchImpl
     }),
     (error) => error && error.code === "VOICE_PROVIDER_NOT_CONFIGURED"
