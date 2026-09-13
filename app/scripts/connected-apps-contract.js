@@ -8,6 +8,9 @@ const {
   decryptSecret
 } = require("../connections/token-vault");
 const {
+  API_VERSION,
+  normalizeCodeVerifier,
+  createPkceChallenge,
   publicGitHubStatus,
   buildAuthorizationUrl,
   exchangeAuthorizationCode,
@@ -16,7 +19,7 @@ const {
   getAuthenticatedUser,
   listAuthorizedRepositories
 } = require("../connections/providers/github");
-const { stateHash } = require("../connections/routes");
+const { stateHash, createPkceVerifier } = require("../connections/routes");
 const {
   integrateConnectedAppsServerSource
 } = require("../connections/server-integration");
@@ -74,23 +77,34 @@ async function main() {
   const status = publicGitHubStatus(env);
   assert.strictEqual(status.configured, true);
   assert.strictEqual(status.writeActionsEnabled, false);
-  assert.strictEqual(status.authorizationFlow, "web-application");
+  assert.strictEqual(status.authorizationFlow, "web-application-pkce");
+  assert.strictEqual(status.apiVersion, "2026-03-10");
+  assert.strictEqual(API_VERSION, "2026-03-10");
   assert.strictEqual(publicGitHubStatus({ ...env, GITHUB_APP_READ_ONLY_PERMISSIONS_VERIFIED: "false" }).configured, false);
   assert.strictEqual(publicGitHubStatus({ ...env, CONNECTED_APPS_TOKEN_KEY: "" }).configured, false);
 
   const state = "a".repeat(43);
-  const authorizeUrl = new URL(buildAuthorizationUrl({ state, env }));
+  const verifier = createPkceVerifier();
+  assert.ok(normalizeCodeVerifier(verifier));
+  assert.strictEqual(normalizeCodeVerifier("too-short"), null);
+  const challenge = createPkceChallenge(verifier);
+  assert.match(challenge, /^[A-Za-z0-9_-]{43}$/);
+  const authorizeUrl = new URL(buildAuthorizationUrl({ state, codeChallenge: challenge, env }));
   assert.strictEqual(authorizeUrl.origin, "https://github.com");
   assert.strictEqual(authorizeUrl.pathname, "/login/oauth/authorize");
   assert.strictEqual(authorizeUrl.searchParams.get("client_id"), env.GITHUB_APP_CLIENT_ID);
   assert.strictEqual(authorizeUrl.searchParams.get("state"), state);
+  assert.strictEqual(authorizeUrl.searchParams.get("code_challenge"), challenge);
+  assert.strictEqual(authorizeUrl.searchParams.get("code_challenge_method"), "S256");
   assert.strictEqual(authorizeUrl.searchParams.has("client_secret"), false);
+  assert.strictEqual(authorizeUrl.searchParams.has("code_verifier"), false);
   assert.strictEqual(stateHash(state).length, 64);
   assert.notStrictEqual(stateHash(state), state);
 
   let tokenExchangeBody = "";
   const exchanged = await exchangeAuthorizationCode({
     code: "temporary-code",
+    codeVerifier: verifier,
     env,
     fetchImpl: async (url, options) => {
       assert.strictEqual(url, "https://github.com/login/oauth/access_token");
@@ -99,7 +113,7 @@ async function main() {
         access_token: "ghu_access_one",
         expires_in: 28800,
         refresh_token: "ghr_refresh_one",
-        refresh_token_expires_in: 15811200,
+        refresh_token_expires_in: 15897600,
         token_type: "bearer"
       });
     }
@@ -109,7 +123,13 @@ async function main() {
   assert.ok(exchanged.expiresAt);
   assert.ok(exchanged.refreshTokenExpiresAt);
   assert.ok(tokenExchangeBody.includes("client_secret=server-only-client-secret"));
+  assert.ok(tokenExchangeBody.includes(`code_verifier=${encodeURIComponent(verifier)}`));
   assert.ok(!authorizeUrl.toString().includes("server-only-client-secret"));
+  assert.ok(!authorizeUrl.toString().includes(verifier));
+  await assert.rejects(
+    exchangeAuthorizationCode({ code: "temporary-code", codeVerifier: "bad", env, fetchImpl: async () => mockJsonResponse(500, {}) }),
+    (error) => error?.code === "GITHUB_PKCE_VERIFIER_INVALID"
+  );
 
   const refreshed = await refreshUserToken({
     refreshToken: "ghr_refresh_one",
@@ -121,7 +141,7 @@ async function main() {
         access_token: "ghu_access_two",
         expires_in: 28800,
         refresh_token: "ghr_refresh_two",
-        refresh_token_expires_in: 15811200,
+        refresh_token_expires_in: 15897600,
         token_type: "bearer"
       });
     }
@@ -133,6 +153,7 @@ async function main() {
     fetchImpl: async (url, options) => {
       assert.strictEqual(url, "https://api.github.com/user");
       assert.strictEqual(options.headers.Authorization, "Bearer ghu_access_two");
+      assert.strictEqual(options.headers["X-GitHub-Api-Version"], "2026-03-10");
       return mockJsonResponse(200, {
         id: 12345,
         login: "unbound-owner",
@@ -146,7 +167,8 @@ async function main() {
 
   const repositoryResult = await listAuthorizedRepositories({
     accessToken: "ghu_access_two",
-    fetchImpl: async (url) => {
+    fetchImpl: async (url, options) => {
+      assert.strictEqual(options.headers["X-GitHub-Api-Version"], "2026-03-10");
       if (String(url).includes("/user/installations?")) {
         return mockJsonResponse(200, {
           installations: [{ id: 222, account: { id: 12345, login: "unbound-owner", type: "User" }, repository_selection: "selected" }]
@@ -171,6 +193,7 @@ async function main() {
     fetchImpl: async (url, options) => {
       assert.strictEqual(url, `https://api.github.com/applications/${encodeURIComponent(env.GITHUB_APP_CLIENT_ID)}/token`);
       assert.strictEqual(options.method, "DELETE");
+      assert.strictEqual(options.headers["X-GitHub-Api-Version"], "2026-03-10");
       revokeAuthorization = options.headers.Authorization;
       return { ok: true, status: 204, async json() { return {}; } };
     }
@@ -203,6 +226,8 @@ async function main() {
 
   assert.ok(integrated.includes("CREATE TABLE IF NOT EXISTS connected_app_connections"));
   assert.ok(integrated.includes("CREATE TABLE IF NOT EXISTS connected_app_oauth_states"));
+  assert.ok(integrated.includes("pkce_verifier_ciphertext"));
+  assert.ok(integrated.includes("ALTER COLUMN pkce_verifier_ciphertext SET NOT NULL"));
   assert.ok(integrated.includes('requireCapability("connected_apps")'));
   assert.ok(integrated.includes('"/api/connections"'));
   assert.ok(integrated.includes('"/connected-apps.html"'));
@@ -218,9 +243,12 @@ async function main() {
   assert.ok(!page.includes("CONNECTED_APPS_TOKEN_KEY"));
   assert.ok(!page.includes("access_token"));
   assert.ok(!page.includes("refresh_token"));
+  assert.ok(!page.includes("code_verifier"));
 
   const routeSource = fs.readFileSync(path.join(appRoot, "connections", "routes.js"), "utf8");
   assert.ok(routeSource.includes("state_hash"));
+  assert.ok(routeSource.includes("pkce_verifier_ciphertext"));
+  assert.ok(routeSource.includes('aad: secretAad(req.user.id, "pkce")'));
   assert.ok(routeSource.includes("DELETE FROM connected_app_oauth_states"));
   assert.ok(routeSource.includes("encryptSecret(tokens.accessToken"));
   assert.ok(routeSource.includes("revokeUserToken({ accessToken })"));
@@ -236,7 +264,7 @@ async function main() {
     "Connected Apps should integrate after model routing."
   );
 
-  console.log("PASS connected-apps contract: encrypted tokens, one-time OAuth state, GitHub web flow, refresh/revocation, TOP entitlement, read-only UI, and runtime integration.");
+  console.log("PASS connected-apps contract: encrypted tokens, one-time state, PKCE, current GitHub API version, refresh/revocation, TOP entitlement, read-only UI, and runtime integration.");
 }
 
 main().catch((error) => {
