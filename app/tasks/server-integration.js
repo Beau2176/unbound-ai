@@ -48,11 +48,11 @@ function integrateScheduledTasksServerSource(serverSource) {
     "scheduled-task-schema"
   );
 
-  const initialization = `void initializeDatabaseWithRetry();`;
+  const startupAnchor = `if (!databaseReady && process.env.DATABASE_URL) {\n    scheduleDatabaseInitialization("initialization-failure");\n  }\n}\n\nvoid initializeDatabaseWithRetry();\n\nfunction requireDatabase(req, res, next) {`;
   source = replaceExactlyOnce(
     source,
-    initialization,
-    `${initialization}\nstartScheduledTaskWorker({\n  getPool: () => pool,\n  isDatabaseReady: () => databaseReady\n});`,
+    startupAnchor,
+    `if (!databaseReady && process.env.DATABASE_URL) {\n    scheduleDatabaseInitialization("initialization-failure");\n  }\n}\n\nvoid initializeDatabaseWithRetry();\nstartScheduledTaskWorker({\n  getPool: () => pool,\n  isDatabaseReady: () => databaseReady\n});\n\nfunction requireDatabase(req, res, next) {`,
     "scheduled-task-worker-start"
   );
 
