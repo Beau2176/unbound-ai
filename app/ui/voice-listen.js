@@ -1,5 +1,5 @@
-const VOICE_LISTEN_STYLE_ID = "unbound-voice-listen-v097";
-const VOICE_LISTEN_SCRIPT_ID = "unbound-voice-listen-v097";
+const VOICE_LISTEN_STYLE_ID = "unbound-voice-listen-v098";
+const VOICE_LISTEN_SCRIPT_ID = "unbound-voice-listen-v098";
 
 const VOICE_LISTEN_STYLES = `<style id="${VOICE_LISTEN_STYLE_ID}">
 .voice-listen-wrap {
@@ -72,21 +72,24 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
   function submitComposer(textarea) {
     if (!textarea) return false;
     const form = textarea.closest('form') || document.getElementById('chatForm');
-    if (!form) return false;
+    const sendButton = document.getElementById('sendButton') || form?.querySelector('.send, button[type="submit"]');
 
-    if (typeof form.requestSubmit === 'function') {
+    if (sendButton && !sendButton.disabled) {
+      sendButton.click();
+      return true;
+    }
+
+    if (form && typeof form.requestSubmit === 'function') {
       form.requestSubmit();
       return true;
     }
 
-    const submitButton = form.querySelector('button[type="submit"], .send, #sendButton');
-    if (submitButton && !submitButton.disabled) {
-      submitButton.click();
+    if (form) {
+      form.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true, submitter: sendButton || null }));
       return true;
     }
 
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    return true;
+    return false;
   }
 
   function getLastAssistantText() {
@@ -201,8 +204,9 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
       if (!recognitionFailed && recognizedSpeech && finalValue) {
         textarea.dispatchEvent(new Event('change', { bubbles: true }));
         setTimeout(() => {
-          submitComposer(textarea);
-        }, 80);
+          const sent = submitComposer(textarea);
+          if (!sent) textarea.focus();
+        }, 120);
         return;
       }
 
