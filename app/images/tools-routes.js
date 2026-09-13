@@ -2,6 +2,10 @@ const express = require("express");
 const path = require("path");
 const { generateImage, editImage, getImageGatewayStatus } = require("./gateway");
 const {
+  scanBufferForMalware,
+  publicMalwareScanStatus
+} = require("../security/malware-scan");
+const {
   getImageToolsConfig,
   normalizeGenerateRequest,
   normalizeEditRequest,
@@ -27,6 +31,15 @@ function safeImageToolError(error) {
       code,
       message: "The configured AI provider does not support this image operation."
     };
+  }
+  if (code === "UPLOAD_MALWARE_DETECTED") {
+    return { statusCode: 400, code, message: "That upload was blocked because malware was detected." };
+  }
+  if (code === "UPLOAD_MALWARE_SCANNER_UNAVAILABLE") {
+    return { statusCode: 503, code, message: "Upload malware scanning is temporarily unavailable. Try again shortly." };
+  }
+  if (code === "UPLOAD_MALWARE_SCAN_INPUT_INVALID") {
+    return { statusCode: 400, code, message: "The upload could not be scanned safely." };
   }
   if (code.startsWith("IMAGE_TOOL_")) {
     return {
@@ -71,6 +84,15 @@ async function recordImageUsage({
   }
 }
 
+function logImageEditMalwareScan(result) {
+  if (!result || result.state !== "unavailable") return;
+  console.warn(
+    "UNBOUND AI IMAGE EDIT MALWARE SCAN DEGRADED:",
+    result.internalReason || "scanner-unavailable",
+    result.sha256 ? `sha256=${result.sha256.slice(0, 16)}` : ""
+  );
+}
+
 function createImageToolsRouter({ recordUsageEvent = null, env = process.env } = {}) {
   const router = express.Router();
   const config = getImageToolsConfig(env);
@@ -84,7 +106,8 @@ function createImageToolsRouter({ recordUsageEvent = null, env = process.env } =
       model: ai.imageModel || null,
       generation: Boolean(ai.imageGeneration),
       editing: Boolean(ai.imageEditing),
-      limits: publicImageToolsConfig(env)
+      limits: publicImageToolsConfig(env),
+      malwareScan: publicMalwareScanStatus(env)
     });
   });
 
@@ -145,6 +168,12 @@ function createImageToolsRouter({ recordUsageEvent = null, env = process.env } =
         });
       }
       const input = normalizeEditRequest(req.body, env);
+      const malwareScan = await scanBufferForMalware({
+        filename: input.filename,
+        buffer: input.imageBuffer,
+        env
+      });
+      logImageEditMalwareScan(malwareScan);
       const result = await editImage({
         filename: input.filename,
         mimeType: input.mimeType,
@@ -182,6 +211,16 @@ function createImageToolsRouter({ recordUsageEvent = null, env = process.env } =
         privacy: {
           rawEditImageStoredByUnbound: false,
           generatedImageStoredByUnbound: false
+        },
+        security: {
+          staticUploadInspection: true,
+          malwareScan: {
+            mode: malwareScan.mode,
+            scanned: malwareScan.scanned,
+            clean: malwareScan.clean,
+            state: malwareScan.state,
+            engine: malwareScan.engine
+          }
         }
       });
     } catch (error) {
@@ -190,6 +229,19 @@ function createImageToolsRouter({ recordUsageEvent = null, env = process.env } =
         console.error(
           "UNBOUND AI IMAGE EDIT PROVIDER ERROR:",
           error?.code || error?.status || error?.name || "provider-error"
+        );
+      }
+      if (safe.code === "UPLOAD_MALWARE_DETECTED") {
+        console.warn(
+          "UNBOUND AI IMAGE EDIT MALWARE BLOCK:",
+          error?.details?.signature || "detected",
+          error?.details?.sha256 ? `sha256=${error.details.sha256.slice(0, 16)}` : ""
+        );
+      }
+      if (safe.code === "UPLOAD_MALWARE_SCANNER_UNAVAILABLE") {
+        console.warn(
+          "UNBOUND AI IMAGE EDIT REQUIRED MALWARE SCANNER UNAVAILABLE:",
+          error?.details?.reason || "unavailable"
         );
       }
       return res.status(safe.statusCode).json({ error: safe.message, code: safe.code });
@@ -223,6 +275,7 @@ function sendImageToolsPage(req, res) {
 module.exports = {
   safeImageToolError,
   recordImageUsage,
+  logImageEditMalwareScan,
   createImageToolsRouter,
   sendImageToolsPage
 };
