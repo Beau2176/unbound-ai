@@ -22,7 +22,7 @@ const CAPABILITY_CATALOG = Object.freeze({
   image_tools: Object.freeze({ label: "Image tools", description: "Generate new images and edit supported source images without storing raw image bytes in UNBOUND AI.", implemented: true, minimumPlan: "top" }),
   voice: Object.freeze({ label: "Voice conversation", description: "Natural spoken conversation with UNBOUND AI using the Boyd Voice V3 private voice clone.", implemented: true, minimumPlan: "top" }),
   agents: Object.freeze({ label: "Authorized agents", description: "Permission-based task execution and browser automation.", implemented: false, minimumPlan: "top" }),
-  monitoring: Object.freeze({ label: "Monitoring and scheduled tasks", description: "Recurring checks, reminders, and condition-based monitoring.", implemented: false, minimumPlan: "top" }),
+  monitoring: Object.freeze({ label: "Scheduled tasks & reminders", description: "Database-backed one-time and recurring reminders with in-app and browser alerts while Task Center is open.", implemented: true, minimumPlan: "top" }),
   multi_model: Object.freeze({ label: "Multi-model routing", description: "Route work across multiple supported model providers.", implemented: false, minimumPlan: "top" }),
   connected_apps: Object.freeze({ label: "Connected apps", description: "Permission-based connections to external services.", implemented: false, minimumPlan: "top" }),
   command_center: Object.freeze({ label: "UNBOUND Command Center", description: "Central view of account access, usage, costs, security, platform status, and product controls.", implemented: true, minimumPlan: "top" })
@@ -31,15 +31,8 @@ const CAPABILITY_CATALOG = Object.freeze({
 function normalizePlanTier(value) {
   return String(value || "").trim().toLowerCase() === "top" ? "top" : "free";
 }
-
-function getPlanDefinition(value) {
-  return PLAN_DEFINITIONS[normalizePlanTier(value)];
-}
-
-function isKnownCapability(value) {
-  return Object.prototype.hasOwnProperty.call(CAPABILITY_CATALOG, String(value || "").trim());
-}
-
+function getPlanDefinition(value) { return PLAN_DEFINITIONS[normalizePlanTier(value)]; }
+function isKnownCapability(value) { return Object.prototype.hasOwnProperty.call(CAPABILITY_CATALOG, String(value || "").trim()); }
 function buildCapabilityAccess({ planTier, overrides = [] } = {}) {
   const plan = getPlanDefinition(planTier);
   const now = Date.now();
@@ -57,24 +50,8 @@ function buildCapabilityAccess({ planTier, overrides = [] } = {}) {
     const override = overrideMap.get(key);
     const entitled = override ? Boolean(override.enabled) : planEntitled;
     const available = Boolean(capability.implemented);
-    return {
-      key,
-      label: capability.label,
-      description: capability.description,
-      entitled,
-      available,
-      usable: entitled && available,
-      source: override ? "override" : "plan",
-      minimumPlan: minimumPlan.id
-    };
+    return { key, label: capability.label, description: capability.description, entitled, available, usable: entitled && available, source: override ? "override" : "plan", minimumPlan: minimumPlan.id };
   });
 }
 
-module.exports = {
-  PLAN_DEFINITIONS,
-  CAPABILITY_CATALOG,
-  normalizePlanTier,
-  getPlanDefinition,
-  isKnownCapability,
-  buildCapabilityAccess
-};
+module.exports = { PLAN_DEFINITIONS, CAPABILITY_CATALOG, normalizePlanTier, getPlanDefinition, isKnownCapability, buildCapabilityAccess };
