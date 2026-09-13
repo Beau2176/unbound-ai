@@ -4,7 +4,11 @@ UNBOUND AI exposes a strict engineering/operational launch gate for the commerci
 
 This gate is intentionally conservative. A healthy web process by itself is not enough to mark the product launch-ready.
 
-## Administrator endpoints
+## Administrator dashboard and endpoints
+
+Authenticated administrators can open:
+
+- `/launch-readiness.html` — color-coded engineering launch dashboard powered by the real server-side launch gate. It calculates its completion percentage from passed checks versus total checks and does not hard-code green statuses.
 
 Authenticated administrators can query:
 
@@ -12,6 +16,8 @@ Authenticated administrators can query:
 - `GET /api/admin/ops/status` — consolidated operations snapshot including the same launch result.
 
 The gate returns `launchReady: true` only when every blocker check passes.
+
+The dashboard percentage is an engineering/operational percentage only. Business banking approval, advertiser or network acceptance, legal-counsel review, and other owner/business approvals remain separate and must not be represented as complete merely because software exists.
 
 ## Required checks
 
