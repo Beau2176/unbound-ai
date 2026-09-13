@@ -1,4 +1,5 @@
 const path = require("path");
+const { assertUploadSafe } = require("../security/upload-protection");
 
 const DEFAULT_MAX_EDIT_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_IMAGE_PROMPT_CHARS = 8000;
@@ -145,6 +146,14 @@ function normalizeEditRequest(body = {}, env = process.env) {
     );
   }
   const decoded = decodeStrictBase64(body.imageBase64, config.maxEditImageBytes);
+  try {
+    assertUploadSafe({ filename, buffer: decoded.buffer, kind: "image" });
+  } catch (error) {
+    throw imageToolError(
+      "IMAGE_TOOL_EDIT_SECURITY_REJECTED",
+      error?.publicMessage || "That upload was blocked by UNBOUND AI upload protection."
+    );
+  }
   return {
     filename,
     mimeType,
@@ -170,7 +179,8 @@ function publicImageToolsConfig(env = process.env) {
     allowedInputFidelities: config.allowedInputFidelities,
     oneImagePerRequest: true,
     generatedImagesStoredByUnbound: false,
-    rawEditImagesStoredByUnbound: false
+    rawEditImagesStoredByUnbound: false,
+    uploadProtection: true
   };
 }
 
