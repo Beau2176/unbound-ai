@@ -22,7 +22,7 @@ assert(presetSource.includes("primeSpeechEngine"), "Voice 2 should prewarm the b
 assert(presetSource.includes("warmup.volume = 0"), "Voice 2 engine warmup must remain inaudible");
 assert(presetSource.includes("preview.addEventListener('pointerdown'"), "preview should begin on pointerdown instead of waiting for click release");
 assert(presetSource.includes("playing Voice 2 — Clear instead"), "cloud voice failures should fall back to Voice 2");
-assert(presetSource.includes("response.status === 429"), "OpenAI rate limits should be handled explicitly");
+assert(presetSource.includes("error.status === 429"), "OpenAI rate limits should be handled explicitly");
 assert(presetSource.includes("credentials: 'same-origin'"), "cloud speech requests should stay same-origin");
 assert(!presetSource.includes("OPENAI_API_KEY"), "browser voice code must never contain an OpenAI API key");
 assert(presetSource.includes("Preview selected voice"), "voice preview control should be present");
