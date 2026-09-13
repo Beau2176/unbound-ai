@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v0.70";
+const INTEGRATION_VERSION = "v0.72";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const first = source.indexOf(marker);
@@ -51,7 +51,7 @@ function integrateVoiceServerSource(serverSource) {
   source = replaceExactlyOnce(
     source,
     healthRoute,
-    `app.use(\n  "/api/voice",\n  requireDatabase,\n  requireSignedIn,\n  voiceSessionRateLimit,\n  requireCapability("voice"),\n  createVoiceRouter()\n);\n\n${healthRoute}`,
+    `app.use(\n  "/api/voice",\n  requireDatabase,\n  requireSignedIn,\n  voiceSessionRateLimit,\n  requireCapability("voice"),\n  createVoiceRouter({\n    getPool: () => pool\n  })\n);\n\n${healthRoute}`,
     "voice-api-mount"
   );
 
