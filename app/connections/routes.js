@@ -3,6 +3,7 @@ const express = require("express");
 const path = require("path");
 const {
   publicGitHubStatus,
+  createPkceChallenge,
   buildAuthorizationUrl,
   exchangeAuthorizationCode,
   refreshUserToken,
@@ -22,6 +23,10 @@ function stateHash(value) {
 function cleanState(value) {
   const state = String(value || "").trim();
   return /^[A-Za-z0-9_-]{32,200}$/.test(state) ? state : null;
+}
+
+function createPkceVerifier() {
+  return crypto.randomBytes(32).toString("base64url");
 }
 
 function publicConnection(row) {
@@ -177,6 +182,11 @@ function createConnectionsRouter({ getPool } = {}) {
         });
       }
       const rawState = crypto.randomBytes(32).toString("base64url");
+      const codeVerifier = createPkceVerifier();
+      const codeChallenge = createPkceChallenge(codeVerifier);
+      const verifierCiphertext = encryptSecret(codeVerifier, {
+        aad: secretAad(req.user.id, "pkce")
+      });
       const hash = stateHash(rawState);
       const pool = getPool();
       await pool.query(
@@ -186,12 +196,12 @@ function createConnectionsRouter({ getPool } = {}) {
       );
       await pool.query(
         `INSERT INTO connected_app_oauth_states (
-           user_id, provider, state_hash, expires_at, created_at
-         ) VALUES ($1, 'github', $2, NOW() + INTERVAL '${OAUTH_STATE_TTL_MINUTES} minutes', NOW())`,
-        [req.user.id, hash]
+           user_id, provider, state_hash, pkce_verifier_ciphertext, expires_at, created_at
+         ) VALUES ($1, 'github', $2, $3, NOW() + INTERVAL '${OAUTH_STATE_TTL_MINUTES} minutes', NOW())`,
+        [req.user.id, hash, verifierCiphertext]
       );
       return res.json({
-        authorizationUrl: buildAuthorizationUrl({ state: rawState }),
+        authorizationUrl: buildAuthorizationUrl({ state: rawState, codeChallenge }),
         expiresInSeconds: OAUTH_STATE_TTL_MINUTES * 60
       });
     } catch (error) {
@@ -215,14 +225,18 @@ function createConnectionsRouter({ getPool } = {}) {
            AND provider = 'github'
            AND state_hash = $2
            AND expires_at > NOW()
-         RETURNING id`,
+         RETURNING id, pkce_verifier_ciphertext`,
         [req.user.id, stateHash(state)]
       );
-      if (!stateResult.rows[0]) {
+      const stateRow = stateResult.rows[0];
+      if (!stateRow?.pkce_verifier_ciphertext) {
         return res.redirect("/connected-apps.html?github=state_rejected");
       }
 
-      const tokens = await exchangeAuthorizationCode({ code });
+      const codeVerifier = decryptSecret(stateRow.pkce_verifier_ciphertext, {
+        aad: secretAad(req.user.id, "pkce")
+      });
+      const tokens = await exchangeAuthorizationCode({ code, codeVerifier });
       const account = await getAuthenticatedUser({ accessToken: tokens.accessToken });
       await saveTokens(pool, req.user.id, account, tokens);
       return res.redirect("/connected-apps.html?github=connected");
@@ -324,6 +338,7 @@ module.exports = {
   OAUTH_STATE_TTL_MINUTES,
   REFRESH_SKEW_MS,
   stateHash,
+  createPkceVerifier,
   publicConnection,
   createConnectionsRouter,
   sendConnectedAppsPage

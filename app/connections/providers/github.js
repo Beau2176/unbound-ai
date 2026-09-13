@@ -1,10 +1,11 @@
+const crypto = require("crypto");
 const { getTokenVaultStatus } = require("../token-vault");
 
 const PROVIDER_ID = "github";
 const AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 const TOKEN_URL = "https://github.com/login/oauth/access_token";
 const API_ORIGIN = "https://api.github.com";
-const API_VERSION = "2022-11-28";
+const API_VERSION = "2026-03-10";
 const DEFAULT_TIMEOUT_MS = 12_000;
 const MAX_REPOSITORIES = 500;
 
@@ -24,6 +25,21 @@ function cleanHttpsUrl(value) {
   } catch (_) {
     return null;
   }
+}
+
+function normalizeCodeVerifier(value) {
+  const text = String(value || "").trim();
+  return /^[A-Za-z0-9._~-]{43,128}$/.test(text) ? text : null;
+}
+
+function createPkceChallenge(codeVerifier) {
+  const verifier = normalizeCodeVerifier(codeVerifier);
+  if (!verifier) {
+    const error = new Error("GitHub PKCE code verifier is invalid.");
+    error.code = "GITHUB_PKCE_VERIFIER_INVALID";
+    throw error;
+  }
+  return crypto.createHash("sha256").update(verifier, "ascii").digest("base64url");
 }
 
 function getGitHubConfig(env = process.env) {
@@ -61,7 +77,8 @@ function publicGitHubStatus(env = process.env) {
     appRegistrationVerified: config.appRegistrationVerified,
     readOnlyPermissionsVerified: config.readOnlyPermissionsVerified,
     tokenEncryptionConfigured: config.tokenVaultConfigured,
-    authorizationFlow: "web-application",
+    authorizationFlow: "web-application-pkce",
+    apiVersion: API_VERSION,
     writeActionsEnabled: false
   };
 }
@@ -74,12 +91,18 @@ function assertConfigured(env = process.env) {
   }
 }
 
-function buildAuthorizationUrl({ state, env = process.env } = {}) {
+function buildAuthorizationUrl({ state, codeChallenge, env = process.env } = {}) {
   assertConfigured(env);
   const normalizedState = safeText(state, 200);
+  const normalizedChallenge = safeText(codeChallenge, 200);
   if (!normalizedState || !/^[A-Za-z0-9_-]{32,200}$/.test(normalizedState)) {
     const error = new Error("GitHub authorization state is invalid.");
     error.code = "GITHUB_AUTH_STATE_INVALID";
+    throw error;
+  }
+  if (!normalizedChallenge || !/^[A-Za-z0-9_-]{43}$/.test(normalizedChallenge)) {
+    const error = new Error("GitHub PKCE code challenge is invalid.");
+    error.code = "GITHUB_PKCE_CHALLENGE_INVALID";
     throw error;
   }
 
@@ -88,6 +111,8 @@ function buildAuthorizationUrl({ state, env = process.env } = {}) {
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", config.callbackUrl);
   url.searchParams.set("state", normalizedState);
+  url.searchParams.set("code_challenge", normalizedChallenge);
+  url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("allow_signup", "false");
   return url.toString();
 }
@@ -157,12 +182,18 @@ function normalizeTokenPayload(payload = {}) {
   };
 }
 
-async function exchangeAuthorizationCode({ code, env = process.env, fetchImpl = fetch } = {}) {
+async function exchangeAuthorizationCode({ code, codeVerifier, env = process.env, fetchImpl = fetch } = {}) {
   assertConfigured(env);
   const normalizedCode = safeText(code, 500);
+  const verifier = normalizeCodeVerifier(codeVerifier);
   if (!normalizedCode) {
     const error = new Error("GitHub authorization code is invalid.");
     error.code = "GITHUB_AUTH_CODE_INVALID";
+    throw error;
+  }
+  if (!verifier) {
+    const error = new Error("GitHub PKCE code verifier is invalid.");
+    error.code = "GITHUB_PKCE_VERIFIER_INVALID";
     throw error;
   }
 
@@ -171,7 +202,8 @@ async function exchangeAuthorizationCode({ code, env = process.env, fetchImpl = 
     client_id: config.clientId,
     client_secret: config.clientSecret,
     code: normalizedCode,
-    redirect_uri: config.callbackUrl
+    redirect_uri: config.callbackUrl,
+    code_verifier: verifier
   });
   const response = await fetchWithTimeout(
     TOKEN_URL,
@@ -357,6 +389,8 @@ module.exports = {
   TOKEN_URL,
   API_ORIGIN,
   API_VERSION,
+  normalizeCodeVerifier,
+  createPkceChallenge,
   getGitHubConfig,
   publicGitHubStatus,
   buildAuthorizationUrl,
