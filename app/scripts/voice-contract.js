@@ -1,30 +1,29 @@
 const assert = require("assert");
 const {
-  DEFAULT_REALTIME_MODEL,
-  DEFAULT_VOICE,
-  REALTIME_CALL_URL,
-  normalizeVoice,
-  normalizeSdpOffer,
-  publicRealtimeStatus,
-  createRealtimeCall
-} = require("../voice/realtime");
+  DEFAULT_HEYGEN_VOICE_ID,
+  DEFAULT_HEYGEN_VOICE_NAME,
+  HEYGEN_SPEECH_URL,
+  clampSpeed,
+  normalizeSpeechText,
+  publicHeyGenVoiceStatus,
+  synthesizeSpeech
+} = require("../voice/heygen-tts");
 
 async function main() {
-  assert.strictEqual(DEFAULT_REALTIME_MODEL, "gpt-realtime-2.1");
-  assert.strictEqual(DEFAULT_VOICE, "marin");
-  assert.strictEqual(REALTIME_CALL_URL, "https://api.openai.com/v1/realtime/calls");
-  assert.strictEqual(normalizeVoice("CEDAR"), "cedar");
-  assert.strictEqual(normalizeVoice("not-a-voice"), "marin");
-  assert.throws(() => normalizeSdpOffer(""), /SDP offer is required/);
-  assert.throws(() => normalizeSdpOffer("not-sdp"), /malformed/);
+  assert.strictEqual(DEFAULT_HEYGEN_VOICE_ID, "cbca446e24b94d66a6ef405d9eb8355f");
+  assert.strictEqual(DEFAULT_HEYGEN_VOICE_NAME, "Boyd Voice V3");
+  assert.strictEqual(HEYGEN_SPEECH_URL, "https://api.heygen.com/v3/voices/speech");
+  assert.strictEqual(clampSpeed("1.25"), 1.25);
+  assert.strictEqual(clampSpeed("99"), 2);
+  assert.strictEqual(clampSpeed("bad"), 1);
+  assert.throws(() => normalizeSpeechText(""), /Speech text is required/);
 
-  const status = publicRealtimeStatus({
-    OPENAI_API_KEY: "secret-value",
-    OPENAI_REALTIME_MODEL: "gpt-realtime-2.1",
-    OPENAI_REALTIME_VOICE: "cedar"
+  const status = publicHeyGenVoiceStatus({
+    HEYGEN_API_KEY: "secret-value"
   });
   assert.strictEqual(status.configured, true);
-  assert.strictEqual(status.voice, "cedar");
+  assert.strictEqual(status.voiceId, DEFAULT_HEYGEN_VOICE_ID);
+  assert.strictEqual(status.voiceName, DEFAULT_HEYGEN_VOICE_NAME);
   assert.strictEqual(status.rawApiKeyExposedToBrowser, false);
   assert.ok(!JSON.stringify(status).includes("secret-value"));
 
@@ -34,42 +33,44 @@ async function main() {
     return {
       ok: true,
       status: 200,
-      headers: { get: (name) => name.toLowerCase() === "location" ? "/v1/realtime/calls/call_123" : null },
-      text: async () => "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\n"
+      json: async () => ({
+        data: {
+          audio_url: "https://example.com/generated-voice.mp3",
+          duration: 1.8
+        }
+      })
     };
   };
 
-  const result = await createRealtimeCall({
-    sdp: "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\n",
-    instructions: "Be useful.",
+  const result = await synthesizeSpeech({
+    text: "Welcome to UNBOUND AI.",
     env: {
-      OPENAI_API_KEY: "secret-value",
-      OPENAI_REALTIME_MODEL: "gpt-realtime-2.1",
-      OPENAI_REALTIME_VOICE: "cedar"
+      HEYGEN_API_KEY: "secret-value"
     },
     fetchImpl
   });
 
-  assert.strictEqual(result.voice, "cedar");
-  assert.strictEqual(result.model, "gpt-realtime-2.1");
-  assert.strictEqual(request.url, REALTIME_CALL_URL);
-  assert.strictEqual(request.options.headers.Authorization, "Bearer secret-value");
+  assert.strictEqual(result.voiceId, DEFAULT_HEYGEN_VOICE_ID);
+  assert.strictEqual(result.voiceName, DEFAULT_HEYGEN_VOICE_NAME);
+  assert.strictEqual(result.audioUrl, "https://example.com/generated-voice.mp3");
+  assert.strictEqual(request.url, HEYGEN_SPEECH_URL);
+  assert.strictEqual(request.options.headers["X-Api-Key"], "secret-value");
   const body = JSON.parse(request.options.body);
-  assert.strictEqual(body.session.type, "realtime");
-  assert.deepStrictEqual(body.session.output_modalities, ["audio"]);
-  assert.strictEqual(body.session.audio.output.voice, "cedar");
-  assert.strictEqual(body.session.instructions, "Be useful.");
+  assert.strictEqual(body.voice_id, DEFAULT_HEYGEN_VOICE_ID);
+  assert.strictEqual(body.input_type, "text");
+  assert.strictEqual(body.speed, 1);
+  assert.strictEqual(body.language, "en");
 
   await assert.rejects(
-    () => createRealtimeCall({
-      sdp: "v=0\r\n",
+    () => synthesizeSpeech({
+      text: "Hello",
       env: {},
       fetchImpl
     }),
     (error) => error && error.code === "VOICE_PROVIDER_NOT_CONFIGURED"
   );
 
-  console.log("UNBOUND AI voice realtime checks passed.");
+  console.log("UNBOUND AI Boyd voice checks passed.");
 }
 
 main().catch((error) => {
