@@ -208,10 +208,8 @@ function createConnectionsRouter({ getPool } = {}) {
     }
 
     const pool = getPool();
-    const client = await pool.connect();
     try {
-      await client.query("BEGIN");
-      const stateResult = await client.query(
+      const stateResult = await pool.query(
         `DELETE FROM connected_app_oauth_states
          WHERE user_id = $1
            AND provider = 'github'
@@ -221,21 +219,16 @@ function createConnectionsRouter({ getPool } = {}) {
         [req.user.id, stateHash(state)]
       );
       if (!stateResult.rows[0]) {
-        await client.query("ROLLBACK");
         return res.redirect("/connected-apps.html?github=state_rejected");
       }
 
       const tokens = await exchangeAuthorizationCode({ code });
       const account = await getAuthenticatedUser({ accessToken: tokens.accessToken });
-      await saveTokens(client, req.user.id, account, tokens);
-      await client.query("COMMIT");
+      await saveTokens(pool, req.user.id, account, tokens);
       return res.redirect("/connected-apps.html?github=connected");
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => {});
       console.error("UNBOUND AI GITHUB CALLBACK ERROR:", error?.code || error?.message || "unknown");
       return res.redirect("/connected-apps.html?github=failed");
-    } finally {
-      client.release();
     }
   });
 
