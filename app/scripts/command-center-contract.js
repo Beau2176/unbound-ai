@@ -74,12 +74,24 @@ function main() {
   const composed = buildFileAwareIndexHtml(indexSource);
   assert.strictEqual(count(composed, COMMAND_CENTER_NAV_LINK), 1);
 
+  const routes = fs.readFileSync(
+    path.join(__dirname, "..", "command-center", "routes.js"),
+    "utf8"
+  );
+  assert.ok(routes.includes("scheduled_task_events"));
+  assert.ok(routes.includes("active_tasks"));
+  assert.ok(routes.includes("unread_events"));
+  assert.ok(routes.includes("nextRunAt"));
+
   const page = fs.readFileSync(path.join(__dirname, "..", "command-center.html"), "utf8");
   assert.ok(page.includes("COMMAND CENTER"));
   assert.ok(page.includes("/api/command-center/overview"));
   assert.ok(page.includes("Capability access"));
   assert.ok(page.includes("Usage by feature"));
   assert.ok(page.includes("/voice.html"));
+  assert.ok(page.includes("/tasks.html"));
+  assert.ok(page.includes("Active tasks"));
+  assert.ok(page.includes("Reminder events"));
   assert.ok(page.includes("/image-tools.html"));
 
   const scriptPattern = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
