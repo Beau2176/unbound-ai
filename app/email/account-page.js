@@ -7,10 +7,10 @@ const ACCOUNT_UI_PATH = path.join(__dirname, "account-ui.js");
 const ACCOUNT_UI_SCRIPT = '<script src="/email-account-ui.js" defer></script>';
 
 function injectEmailAccountUi(html) {
-  const source = injectModelRoutingUi(String(html || ""));
+  const rawSource = String(html || "");
   const marker = "</body>";
-  const firstIndex = source.indexOf(marker);
-  const lastIndex = source.lastIndexOf(marker);
+  const firstIndex = rawSource.indexOf(marker);
+  const lastIndex = rawSource.lastIndexOf(marker);
 
   if (firstIndex === -1 || firstIndex !== lastIndex) {
     const error = new Error("UNBOUND AI account page body marker is missing or ambiguous.");
@@ -18,13 +18,17 @@ function injectEmailAccountUi(html) {
     throw error;
   }
 
-  if (source.includes(ACCOUNT_UI_SCRIPT)) {
+  if (rawSource.includes(ACCOUNT_UI_SCRIPT)) {
     const error = new Error("UNBOUND AI email account UI script is already injected.");
     error.code = "EMAIL_ACCOUNT_UI_ALREADY_INJECTED";
     throw error;
   }
 
-  return source.slice(0, firstIndex) + `  ${ACCOUNT_UI_SCRIPT}\n` + source.slice(firstIndex);
+  const source = rawSource.includes('id="modelProfileSelect"')
+    ? rawSource
+    : injectModelRoutingUi(rawSource);
+  const bodyIndex = source.indexOf(marker);
+  return source.slice(0, bodyIndex) + `  ${ACCOUNT_UI_SCRIPT}\n` + source.slice(bodyIndex);
 }
 
 async function sendAccountIndexPage(_req, res) {
