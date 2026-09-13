@@ -29,7 +29,7 @@ function getAdvertisingPaymentAdapter(name) {
 registerAdvertisingPaymentAdapter(SEGPAY_PROVIDER_ID, segpayAdvertisingAdapter);
 
 function getAdvertisingPaymentStatus(env = process.env) {
-  const provider = normalizeProvider(env.ADVERTISING_PAYMENT_PROVIDER || env.BILLING_PROVIDER);
+  const provider = normalizeProvider(env.ADVERTISING_PAYMENT_PROVIDER);
   if (!provider) {
     return {
       configured: false,
