@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UNBOUND AI Mode Library</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: Arial, Helvetica, sans-serif; color: #f5f8ff; background: radial-gradient(circle at top, #17365f 0, #07101e 38%, #02050a 76%); }
+    .shell { width: min(1160px, calc(100% - 28px)); margin: auto; padding: 26px 0 56px; }
+    header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+    h1 { margin:0 0 8px; font-size:clamp(34px,7vw,60px); line-height:.95; }
+    .eyebrow { color:#86baff; font-size:.78rem; font-weight:900; letter-spacing:.18em; }
+    .sub,.muted { color:#aebbd0; line-height:1.5; }
+    .actions { display:flex; gap:9px; flex-wrap:wrap; }
+    .button { border:1px solid rgba(143,189,255,.22); background:rgba(255,255,255,.07); color:#fff; border-radius:999px; padding:11px 16px; font:inherit; font-weight:900; text-decoration:none; cursor:pointer; }
+    .toolbar { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; margin-bottom:16px; }
+    input, select { width:100%; border:1px solid rgba(255,255,255,.15); background:rgba(255,255,255,.06); color:#fff; border-radius:12px; padding:12px; font:inherit; }
+    .summary { margin:0 0 14px; color:#b8c6d9; }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+    .card { border:1px solid rgba(143,189,255,.16); background:rgba(5,13,27,.9); border-radius:18px; padding:16px; display:flex; flex-direction:column; min-height:190px; box-shadow:0 15px 45px rgba(0,0,0,.22); }
+    .card.active { border-color:rgba(96,165,250,.75); box-shadow:0 0 0 2px rgba(96,165,250,.16),0 15px 45px rgba(0,0,0,.22); }
+    .card h2 { margin:0 0 8px; font-size:1.05rem; }
+    .desc { color:#a9b8cc; line-height:1.45; font-size:.9rem; flex:1; }
+    .card .button { margin-top:14px; align-self:flex-start; }
+    .active-label { color:#8cf1c7; font-size:.72rem; font-weight:900; letter-spacing:.08em; margin-bottom:8px; }
+    #error { display:none; border:1px solid rgba(248,113,113,.3); background:rgba(127,29,29,.36); border-radius:12px; padding:12px 14px; margin-bottom:14px; }
+    #notice { display:none; border:1px solid rgba(52,211,153,.25); background:rgba(6,78,59,.28); border-radius:12px; padding:12px 14px; margin-bottom:14px; }
+    @media (max-width:900px){ .grid{grid-template-columns:repeat(2,minmax(0,1fr));} }
+    @media (max-width:620px){ .toolbar{grid-template-columns:1fr;} .grid{grid-template-columns:1fr;} }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <div class="eyebrow">UNBOUND AI · 100 USER MODES</div>
+        <h1>MODE LIBRARY</h1>
+        <div class="sub">Search 100 built-in modes and set the one that should shape your signed-in UNBOUND conversations.</div>
+      </div>
+      <div class="actions">
+        <a class="button" href="/command-center.html">COMMAND CENTER</a>
+        <a class="button" href="/">CHAT</a>
+      </div>
+    </header>
+
+    <div id="error"></div>
+    <div id="notice"></div>
+
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Search modes: programmer, teacher, strategist…" aria-label="Search modes" />
+      <select id="sort" aria-label="Sort modes">
+        <option value="catalog">CATALOG ORDER</option>
+        <option value="az">A–Z</option>
+      </select>
+    </div>
+    <div id="summary" class="summary">Loading mode library…</div>
+    <section id="modeGrid" class="grid" aria-live="polite"></section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let styles = [];
+    let selected = "balanced";
+
+    function showError(message) {
+      const node = $("error");
+      node.textContent = message;
+      node.style.display = message ? "block" : "none";
+    }
+
+    function showNotice(message) {
+      const node = $("notice");
+      node.textContent = message;
+      node.style.display = message ? "block" : "none";
+      if (message) setTimeout(() => { node.style.display = "none"; }, 3000);
+    }
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, {
+        ...options,
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        cache: "no-store",
+        credentials: "same-origin"
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Mode Library request failed.");
+      return payload;
+    }
+
+    function filteredStyles() {
+      const query = $("search").value.trim().toLowerCase();
+      let list = styles.filter((style) => {
+        if (!query) return true;
+        return `${style.label} ${style.description} ${style.id}`.toLowerCase().includes(query);
+      });
+      if ($("sort").value === "az") {
+        list = [...list].sort((a, b) => a.label.localeCompare(b.label));
+      }
+      return list;
+    }
+
+    function render() {
+      const list = filteredStyles();
+      $("summary").textContent = `${list.length} of ${styles.length} modes shown · Current: ${styles.find((style) => style.id === selected)?.label || selected}`;
+      const grid = $("modeGrid");
+      grid.replaceChildren();
+      for (const style of list) {
+        const card = document.createElement("article");
+        card.className = `card${style.id === selected ? " active" : ""}`;
+        if (style.id === selected) {
+          const active = document.createElement("div");
+          active.className = "active-label";
+          active.textContent = "CURRENT MODE";
+          card.append(active);
+        }
+        const title = document.createElement("h2");
+        title.textContent = style.label;
+        const desc = document.createElement("div");
+        desc.className = "desc";
+        desc.textContent = style.description;
+        const choose = document.createElement("button");
+        choose.className = "button";
+        choose.type = "button";
+        choose.disabled = style.id === selected;
+        choose.textContent = style.id === selected ? "SELECTED" : "USE THIS MODE";
+        choose.addEventListener("click", () => chooseMode(style));
+        card.append(title, desc, choose);
+        grid.append(card);
+      }
+      if (!list.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.textContent = "No modes match that search.";
+        grid.append(empty);
+      }
+    }
+
+    async function chooseMode(style) {
+      try {
+        const data = await api("/api/account/ai-preferences", {
+          method: "POST",
+          body: JSON.stringify({ aiStyle: style.id })
+        });
+        selected = data.preferences?.aiStyle || style.id;
+        render();
+        showNotice(`${style.label} is now your active UNBOUND mode.`);
+      } catch (error) {
+        showError(error.message);
+      }
+    }
+
+    async function load() {
+      try {
+        const data = await api("/api/account/ai-preferences");
+        styles = Array.isArray(data.styles) ? data.styles : [];
+        selected = data.preferences?.aiStyle || "balanced";
+        render();
+      } catch (error) {
+        showError(error.message);
+        $("summary").textContent = "Could not load modes.";
+      }
+    }
+
+    $("search").addEventListener("input", render);
+    $("sort").addEventListener("change", render);
+    load();
+  </script>
+</body>
+</html>
