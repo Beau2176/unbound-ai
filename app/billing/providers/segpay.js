@@ -190,14 +190,15 @@ function parseSegpayTimestamp(value) {
   const text = String(value || "").trim();
   if (!text) return null;
 
-  const direct = new Date(text);
-  if (Number.isFinite(direct.getTime())) return direct.toISOString();
-
+  // Parse the provider's GMT form before Date's host-local string parser.
   const cleaned = text.replace(/\s*\(GMT[^)]*\)\s*$/i, "").trim();
   const match = cleaned.match(
     /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)$/i
   );
-  if (!match) return null;
+  if (!match) {
+    const direct = new Date(text);
+    return Number.isFinite(direct.getTime()) ? direct.toISOString() : null;
+  }
   let hour = Number(match[4]);
   const meridiem = match[7].toUpperCase();
   if (meridiem === "AM" && hour === 12) hour = 0;

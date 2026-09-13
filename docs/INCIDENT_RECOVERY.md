@@ -55,6 +55,35 @@ The script:
 - writes files with a restrictive process umask;
 - removes matching local backup files older than the configured retention period.
 
+### v0.67 backup integrity hardening
+
+Each run now stages its archive and checksum in a private directory and adds a
+random suffix to the timestamp, so simultaneous runs cannot overwrite one another.
+The checksum is generated and checked before publication; publication refuses
+to replace an existing file. Ordinary failures and handled termination signals
+clean up staging files. An uncatchable kill or host failure can leave a staging
+directory or an archive without its checksum: consumers must require both files
+and verify the checksum before accepting a backup.
+
+`BACKUP_PREFIX` accepts 1–64 ASCII letters, digits, underscores or hyphens and
+must start with a letter or digit. `BACKUP_RETENTION_DAYS` accepts integers from
+1 to 9999 without leading zeros. Retention runs only after a new archive and
+checksum are published, only in the output directory itself, and only for exact
+timestamped backup filenames belonging to the selected prefix. Both original
+timestamp-only filenames and new filenames with random suffixes are recognized.
+Unrelated files and nested directories are preserved. Use a trusted backup
+directory on a filesystem supporting hard links.
+
+Run `npm run backup-check` from `app` for isolated script regression tests. The
+tests substitute PostgreSQL commands and exercise concurrent runs, private file
+permissions, actual SHA-256 verification, failed dump/list/checksum commands,
+empty dumps, invalid configuration, and retention boundaries. Production CI
+includes this check. These tests do not connect to production or replace a real
+restore drill, durable storage configuration, or operational readiness evidence.
+
+Archive listing checks inspect the archive table of contents; they do not test
+restoring all data. See the official [PostgreSQL pg_restore documentation](https://www.postgresql.org/docs/current/app-pgrestore.html).
+
 A local dump is **not** a durable backup until it has been copied to storage that survives loss of the database host and application host.
 
 ## Verify a backup before depending on it
