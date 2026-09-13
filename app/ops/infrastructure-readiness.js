@@ -25,7 +25,7 @@ function parseTimestamp(value) {
 
 function ageDays(date, nowMs) {
   if (!date) return null;
-  return Math.max(0, (nowMs - date.getTime()) / 86_400_000);
+  return (nowMs - date.getTime()) / 86_400_000;
 }
 
 function buildInfrastructureReadiness({ env = process.env, nowMs = Date.now() } = {}) {
@@ -37,7 +37,8 @@ function buildInfrastructureReadiness({ env = process.env, nowMs = Date.now() } 
   const reviewMaxAgeDays = positiveInteger(env.UNBOUND_INFRA_REVIEW_MAX_AGE_DAYS, 90);
   const reviewedAt = parseTimestamp(env.UNBOUND_INFRA_REVIEWED_AT);
   const reviewAgeDays = ageDays(reviewedAt, nowMs);
-  const reviewFresh = Boolean(reviewedAt && reviewAgeDays <= reviewMaxAgeDays);
+  const reviewNotFuture = Boolean(reviewedAt && reviewAgeDays >= -5 / 1440);
+  const reviewFresh = Boolean(reviewNotFuture && reviewAgeDays <= reviewMaxAgeDays);
 
   const blockers = [];
   if (profile !== "production") {
@@ -57,6 +58,8 @@ function buildInfrastructureReadiness({ env = process.env, nowMs = Date.now() } 
   }
   if (!reviewedAt) {
     blockers.push("No production infrastructure review timestamp is recorded.");
+  } else if (!reviewNotFuture) {
+    blockers.push("The infrastructure review timestamp is unexpectedly in the future.");
   } else if (!reviewFresh) {
     blockers.push(`The most recent infrastructure review is older than ${reviewMaxAgeDays} days.`);
   }
@@ -74,7 +77,7 @@ function buildInfrastructureReadiness({ env = process.env, nowMs = Date.now() } 
     review: {
       maxAgeDays: reviewMaxAgeDays,
       reviewedAt: reviewedAt ? reviewedAt.toISOString() : null,
-      ageDays: reviewAgeDays === null ? null : Number(reviewAgeDays.toFixed(2)),
+      ageDays: reviewAgeDays === null ? null : Number(Math.max(0, reviewAgeDays).toFixed(2)),
       fresh: reviewFresh
     },
     blockers

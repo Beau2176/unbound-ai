@@ -88,7 +88,7 @@ A local dump is **not** a durable backup until it has been copied to storage tha
 
 ### v0.68 real PostgreSQL recovery integration gate
 
-Production CI also starts an isolated PostgreSQL 16 service and runs
+Production CI also starts isolated PostgreSQL 16 and 18 services and runs
 `npm run recovery-integration-check`. This test starts the actual integrated
 application (`start.js`) against a new database, registers a synthetic account,
 and seeds conversation, subscription, consent, usage and audit records. It stops
@@ -111,6 +111,9 @@ customer data are used. A successful CI run proves the tested schema and
 synthetic records survive a logical backup/restore cycle. It does **not** verify
 offsite backup storage, production retention, production volume, or recovery of
 a real production backup. It must not update production recovery attestations.
+
+The v0.69 matrix includes PostgreSQL 18 to match the production database major
+version verified on 2026-09-13; each job installs matching client tools.
 
 ## Verify a backup before depending on it
 
