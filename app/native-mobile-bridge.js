@@ -52,12 +52,70 @@
     } catch {}
   };
 
-  const normalizeAppUrl = (value) => {
+  const APP_LINK_ROUTES = new Set([
+    '/',
+    '/index.html',
+    '/terms.html',
+    '/privacy.html',
+    '/advertisers.html',
+    '/connected-apps.html'
+  ]);
+
+  const CUSTOM_ROUTE_ALIASES = new Map([
+    ['home', '/'],
+    ['chat', '/'],
+    ['terms', '/terms.html'],
+    ['privacy', '/privacy.html'],
+    ['advertise', '/advertisers.html'],
+    ['advertisers', '/advertisers.html'],
+    ['apps', '/connected-apps.html']
+  ]);
+
+  const normalizePublicRoute = (pathname) => {
+    const raw = String(pathname || '/');
+    if (!raw.startsWith('/') || raw.includes('\\')) return null;
+
     try {
-      const url = new URL(value);
-      const allowedHosts = new Set(['unbound-ai-app.onrender.com']);
-      if (url.protocol === 'unbound:') return `${location.origin}${url.pathname}${url.search}${url.hash}`;
-      if (allowedHosts.has(url.hostname)) return `${location.origin}${url.pathname}${url.search}${url.hash}`;
+      const parsed = new URL(raw, location.origin);
+      if (parsed.origin !== location.origin) return null;
+      if (parsed.pathname !== raw) return null;
+      if (!APP_LINK_ROUTES.has(parsed.pathname)) return null;
+      return parsed.pathname;
+    } catch {}
+    return null;
+  };
+
+  const normalizeAppUrl = (value) => {
+    const input = typeof value === 'string' ? value.trim() : '';
+    if (!input || input.length > 2048) return null;
+
+    try {
+      const url = new URL(input);
+      if (url.username || url.password || url.port) return null;
+      if (url.search.length > 1024 || url.hash.length > 1024) return null;
+
+      let route = null;
+      if (url.protocol === 'unbound:') {
+        const alias = String(url.hostname || '').toLowerCase();
+        if (alias) {
+          if (url.pathname && url.pathname !== '/') return null;
+          route = CUSTOM_ROUTE_ALIASES.get(alias) || null;
+        } else {
+          route = normalizePublicRoute(url.pathname || '/');
+        }
+      } else if (url.protocol === 'https:') {
+        const allowedHosts = new Set([
+          'unbound-ai-app.onrender.com',
+          String(location.hostname || '').toLowerCase()
+        ]);
+        if (!allowedHosts.has(String(url.hostname || '').toLowerCase())) return null;
+        route = normalizePublicRoute(url.pathname);
+      } else {
+        return null;
+      }
+
+      if (!route) return null;
+      return `${location.origin}${route}${url.search}${url.hash}`;
     } catch {}
     return null;
   };
@@ -66,7 +124,11 @@
     if (!plugins.App?.addListener) return;
     await plugins.App.addListener('appUrlOpen', ({ url }) => {
       const destination = normalizeAppUrl(url);
-      if (destination) location.assign(destination);
+      if (!destination) {
+        dispatch('unbound:deep-link-blocked', { reason: 'not-allowed' });
+        return;
+      }
+      if (destination !== location.href) location.assign(destination);
     });
     await plugins.App.addListener('appStateChange', ({ isActive }) => {
       if (isActive) refreshNativeState().catch(() => {});
