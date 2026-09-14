@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UNBOUND AI Adaptive Knowledge</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: Arial, Helvetica, sans-serif; color: #f5f8ff; background: radial-gradient(circle at top, #18375d 0, #07101d 36%, #020509 75%); }
+    .shell { width: min(920px, calc(100% - 28px)); margin: auto; padding: 26px 0 56px; }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 20px; }
+    h1 { margin: 0 0 8px; font-size: clamp(32px, 7vw, 54px); }
+    h2 { margin: 0 0 12px; font-size: 1.08rem; }
+    .eyebrow { color: #84b9ff; font-size: .78rem; font-weight: 900; letter-spacing: .18em; }
+    .sub, .muted { color: #aebbd0; line-height: 1.5; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+    .panel { border: 1px solid rgba(143,189,255,.18); border-radius: 20px; background: rgba(5,13,27,.9); padding: 19px; box-shadow: 0 18px 55px rgba(0,0,0,.25); }
+    a, button, input, textarea { font: inherit; }
+    .button { border: 1px solid rgba(143,189,255,.22); color: #fff; background: rgba(255,255,255,.07); border-radius: 999px; padding: 11px 16px; text-decoration: none; font-weight: 900; cursor: pointer; }
+    .primary { background: #eff6ff; color: #071326; }
+    .switch-row { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border: 1px solid rgba(255,255,255,.09); border-radius: 14px; background: rgba(255,255,255,.035); }
+    .switch-row input { margin-top: 4px; transform: scale(1.35); }
+    label { display: block; color: #cbd8e9; font-size: .86rem; font-weight: 900; margin: 12px 0 6px; }
+    input[type="text"], textarea { width: 100%; border: 1px solid rgba(255,255,255,.14); border-radius: 12px; background: rgba(255,255,255,.06); color: #fff; padding: 11px 12px; }
+    textarea { min-height: 130px; resize: vertical; }
+    .actions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 14px; }
+    .notice { display: none; margin-bottom: 14px; padding: 12px 14px; border-radius: 12px; }
+    .ok { border: 1px solid rgba(52,211,153,.25); background: rgba(6,78,59,.28); }
+    .bad { border: 1px solid rgba(248,113,113,.3); background: rgba(127,29,29,.36); }
+    .stat { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.07); }
+    .stat:last-child { border-bottom: 0; }
+    .value { font-weight: 900; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <div class="eyebrow">UNBOUND AI · ADAPTIVE KNOWLEDGE</div>
+        <h1>KNOWLEDGE ENGINE</h1>
+        <div class="sub">UNBOUND can reuse fresh public-web research and optionally learn from confirmed community feedback.</div>
+      </div>
+      <div class="actions">
+        <a class="button" href="/memory.html">MEMORY</a>
+        <a class="button" href="/">CHAT</a>
+      </div>
+    </header>
+
+    <div id="notice" class="notice ok"></div>
+    <div id="error" class="notice bad"></div>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>Community learning</h2>
+        <label class="switch-row">
+          <input id="communityEnabled" type="checkbox" />
+          <span>
+            <strong>Help UNBOUND improve from my feedback</strong><br />
+            <span class="muted">Off by default. When enabled, only feedback you deliberately submit below may contribute to shared knowledge. Raw conversations are not automatically copied into community learning.</span>
+          </span>
+        </label>
+        <p class="muted">Private or sensitive information is rejected from shared learning. Community facts require repeated confirmation before they become reusable context.</p>
+      </article>
+
+      <article class="panel">
+        <h2>Engine status</h2>
+        <div class="stat"><span>Public-web learning</span><span class="value">ON</span></div>
+        <div class="stat"><span>Raw chat harvesting</span><span class="value">OFF</span></div>
+        <div class="stat"><span>Autonomous code changes</span><span class="value">OFF</span></div>
+        <div class="stat"><span>Active knowledge items</span><span id="activeCount" class="value">—</span></div>
+        <div class="stat"><span>Knowledge reuses</span><span id="reuseCount" class="value">—</span></div>
+      </article>
+
+      <article class="panel" style="grid-column: 1 / -1;">
+        <h2>Contribute a correction or useful fact</h2>
+        <form id="feedbackForm">
+          <label for="query">Question or topic</label>
+          <input id="query" type="text" maxlength="2000" required placeholder="Example: What is the capital of Colorado?" />
+          <label for="content">Correction or reusable fact</label>
+          <textarea id="content" maxlength="4000" required placeholder="Example: Denver is the capital of Colorado."></textarea>
+          <div class="actions">
+            <button class="button primary" type="submit">SUBMIT FEEDBACK</button>
+          </div>
+        </form>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function show(id, message) {
+      const node = $(id);
+      node.textContent = message || "";
+      node.style.display = message ? "block" : "none";
+    }
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, {
+        ...options,
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        cache: "no-store"
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Knowledge request failed.");
+      return payload;
+    }
+
+    async function load() {
+      try {
+        const [prefs, status] = await Promise.all([
+          api("/api/knowledge/preferences"),
+          api("/api/knowledge/status")
+        ]);
+        $("communityEnabled").checked = Boolean(prefs.communityLearningEnabled);
+        $("activeCount").textContent = String(status.stats?.active ?? 0);
+        $("reuseCount").textContent = String(status.stats?.timesUsed ?? 0);
+      } catch (error) {
+        show("error", error.message);
+      }
+    }
+
+    $("communityEnabled").addEventListener("change", async () => {
+      show("error", "");
+      try {
+        const enabled = $("communityEnabled").checked;
+        await api("/api/knowledge/preferences", {
+          method: "PUT",
+          body: JSON.stringify({ communityLearningEnabled: enabled })
+        });
+        show("notice", enabled ? "Community learning is enabled for deliberate feedback you submit." : "Community learning is disabled.");
+      } catch (error) {
+        $("communityEnabled").checked = !$("communityEnabled").checked;
+        show("error", error.message);
+      }
+    });
+
+    $("feedbackForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      show("error", "");
+      try {
+        const data = await api("/api/knowledge/feedback", {
+          method: "POST",
+          body: JSON.stringify({ query: $("query").value, content: $("content").value })
+        });
+        show("notice", `Feedback accepted. Confirmations: ${data.confirmations}.`);
+        $("query").value = "";
+        $("content").value = "";
+        await load();
+      } catch (error) {
+        show("error", error.message);
+      }
+    });
+
+    load();
+  </script>
+</body>
+</html>
