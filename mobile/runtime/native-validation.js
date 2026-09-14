@@ -1,8 +1,9 @@
 (() => {
-  const REPORT_SCHEMA_VERSION = 1;
+  const REPORT_SCHEMA_VERSION = 2;
   const BASELINE_KEY = 'unbound.native.validation.baseline.v1';
   const MAX_BASELINE_AGE_MS = 24 * 60 * 60 * 1000;
   const API_ORIGIN = 'https://unbound-ai-app.onrender.com';
+  const EXPECTED_APP_ID = 'ai.unbound.app';
 
   const state = {
     latestReport: null,
@@ -43,6 +44,22 @@
       return Boolean(cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform());
     } catch {
       return false;
+    }
+  }
+
+  async function readAppInfo() {
+    try {
+      const appPlugin = window.Capacitor?.Plugins?.App;
+      if (!appPlugin || typeof appPlugin.getInfo !== 'function') return null;
+      const info = await appPlugin.getInfo();
+      return {
+        id: String(info?.id || '').slice(0, 160),
+        name: String(info?.name || '').slice(0, 120),
+        version: String(info?.version || '').slice(0, 80),
+        build: String(info?.build || '').slice(0, 80)
+      };
+    } catch {
+      return null;
     }
   }
 
@@ -105,6 +122,7 @@
       checkedAt: report.checkedAt,
       platform: report.platform,
       native: report.native,
+      app: report.app ? { ...report.app } : null,
       localOrigin: report.localOrigin,
       apiOrigin: report.apiOrigin,
       overall: report.overall,
@@ -169,10 +187,27 @@
     const platform = platformName();
     const transport = window.__UNBOUND_NATIVE_API_TRANSPORT__ || null;
     const priorBaseline = readBaseline();
+    const app = native ? await readAppInfo() : null;
 
     checks.push(native
       ? result('native-platform', 'pass', `Running inside Capacitor on ${platform}.`)
       : result('native-platform', 'fail', 'This validation must run inside the packaged Android or iOS app.'));
+
+    const appIdentityReady = Boolean(
+      app &&
+      app.id === EXPECTED_APP_ID &&
+      app.version &&
+      app.build
+    );
+    checks.push(appIdentityReady
+      ? result('app-identity', 'pass', `Verified native package ${app.id} version ${app.version} build ${app.build}.`)
+      : result(
+          'app-identity',
+          'fail',
+          native
+            ? `Native package identity is unavailable or does not match ${EXPECTED_APP_ID}.`
+            : 'Native package identity cannot be verified outside the packaged app.'
+        ));
 
     const transportReady = Boolean(
       transport &&
@@ -189,7 +224,7 @@
     let access = null;
     let signedIn = null;
 
-    if (native && transportReady) {
+    if (native && appIdentityReady && transportReady) {
       [system, auth1] = await Promise.all([
         probe('/api/system/status'),
         probe('/api/auth/me')
@@ -306,6 +341,7 @@
       reason,
       platform,
       native,
+      app,
       localOrigin: String(transport?.localOrigin || location.origin || ''),
       apiOrigin: String(transport?.apiOrigin || ''),
       signedIn,
