@@ -12,6 +12,9 @@ const baseConfig: CapacitorConfig = {
   appName: 'UNBOUND AI',
   webDir: 'www',
   plugins: {
+    CapacitorHttp: {
+      enabled: true
+    },
     SplashScreen: {
       launchShowDuration: 1800,
       launchAutoHide: true,
