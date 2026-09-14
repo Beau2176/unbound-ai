@@ -22,7 +22,7 @@ Required Segpay values:
 - `SEGPAY_POSTBACK_USERNAME`
 - `SEGPAY_POSTBACK_PASSWORD`
 - `SEGPAY_MERCHANT_APPROVAL_VERIFIED=true` — set only after Segpay has actually approved the intended UNBOUND AI business model for production processing.
-- `SEGPAY_SIGNED_CHECKOUT_FIELDS_VERIFIED=true` — set only after Merchant Services has confirmed Require Signing for `amount`, `ubsubject1`, and `ubsubject2` on the production pay page.
+- `SEGPAY_SIGNED_CHECKOUT_FIELDS_VERIFIED=true` — set only after Merchant Services has confirmed Require Signing for `amount`, `REF1`, and `REF2` on the production pay page.
 - `SEGPAY_POSTBACK_AUTH_VERIFIED=true` — set only after the production postback configuration has been tested with the configured Basic Auth credentials.
 
 UNBOUND AI should also keep `BILLING_SUBJECT_SECRET` outside the repository. Existing billing success/cancel URL settings remain provider-neutral.
@@ -38,7 +38,7 @@ Checkout uses Segpay's signed hosted-pay-page flow:
 - Unique `jti` for each checkout.
 - The Segpay signing key is used literally as issued.
 - `amount` is signed.
-- The opaque UNBOUND billing subject is split into `ubsubject1` and `ubsubject2`, each no longer than 32 characters, and signed.
+- The opaque UNBOUND billing subject is split into `REF1` and `REF2`, each no longer than 32 characters, and signed.
 - Account email is not embedded in the checkout JWT or checkout URL.
 - The checkout URL uses `https://pay.segpay.com/<pageref>?jwt=...`.
 
@@ -65,10 +65,10 @@ For custom postback URLs, include the fields needed by the lifecycle parser. At 
 - `paymentaccountid` where available
 - `transtime` where available
 - `rint` where available
-- `ubsubject1=<extra ubsubject1>`
-- `ubsubject2=<extra ubsubject2>`
+- `ref1=<REF1>`
+- `ref2=<REF2>`
 
-The two subject fields originate in the signed checkout request. Segpay documentation states original custom variables can be returned on cancellation/disable/reactivation flows; those fields are used to reconnect lifecycle events to the existing server-side subscription record.
+The two merchant-reference fields originate in the signed checkout request and are used to reconnect lifecycle events to the existing server-side subscription record. Confirm the exact Segpay postback placeholder names with Merchant Services during production setup, then verify that the received parameters normalize to `ref1` and `ref2` before enabling the production attestation.
 
 Successful billing webhook acknowledgements return plain text `OK`. This is compatible with Segpay member-management postbacks that require a configured expected response, while transaction postbacks also receive a normal 2xx HTTP status.
 
@@ -99,8 +99,8 @@ The adapter is code, not provider approval. Before billing can truthfully pass c
 1. Apply to Segpay and obtain explicit production approval for UNBOUND AI's actual adults-only/AI business model.
 2. Complete Segpay/card-brand compliance requirements for the approved site and content model.
 3. Create the TOP recurring price/package and hosted pay page.
-4. Have Merchant Services enable/verify signed amount and the two signed subject fields.
-5. Configure authenticated transaction/member-management postbacks and test GET/POST delivery as applicable.
+4. Have Merchant Services enable/verify signed `amount`, `REF1`, and `REF2`.
+5. Configure authenticated transaction/member-management postbacks and test GET/POST delivery as applicable, including the `REF1`/`REF2` round trip.
 6. Set the production price and secrets only in Render environment variables.
 7. Run real checkout, rebill, cancellation, disable/expiry, refund/chargeback, reactivation, portal, retry/idempotency, and failure tests.
 8. Only then set the three Segpay verification attestations to true.
