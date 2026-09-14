@@ -14,6 +14,9 @@ const {
 const {
   integrateLawEnforcementServerSource
 } = require("../security/law-enforcement-server-integration");
+const {
+  buildCompanyLegalResponseHtml
+} = require("../security/law-enforcement-ui");
 
 function main() {
   const appRoot = path.resolve(__dirname, "..");
@@ -41,6 +44,7 @@ function main() {
   assert.match(integrated, /\/law-enforcement/);
   assert.match(integrated, /\/api\/admin\/law-enforcement\/requests/);
   assert.match(integrated, /requireAdmin/);
+  assert.match(integrated, /buildCompanyLegalResponseHtml/);
   assert.match(integrated, /Content-Disposition/);
   assert.match(integrated, /Download|attachment/);
   assert.doesNotMatch(integrated, /\/api\/law-enforcement\/automatic-disclosure/);
@@ -49,8 +53,12 @@ function main() {
   const integrationSource = fs.readFileSync(path.join(appRoot, "security", "law-enforcement-server-integration.js"), "utf8");
   assert.doesNotMatch(integrationSource, /\bfetch\s*\(|\baxios\b|https:\/\//, "server integration must not transmit evidence externally");
 
-  const ui = fs.readFileSync(path.join(appRoot, "law-enforcement.html"), "utf8");
-  assert.match(ui, /Manual disclosure only/i);
+  const rawUi = fs.readFileSync(path.join(appRoot, "law-enforcement.html"), "utf8");
+  const ui = buildCompanyLegalResponseHtml(rawUi);
+  assert.match(ui, /Company Legal \/ Law Enforcement Response/i);
+  assert.match(ui, /Preserved High-Risk Safety Records/i);
+  assert.match(ui, /Company-controlled disclosure only/i);
+  assert.match(ui, /does not create a blanket surveillance archive/i);
   assert.match(ui, /agencyName/);
   assert.match(ui, /requesterName/);
   assert.match(ui, /requestReference/);
@@ -68,7 +76,7 @@ function main() {
     "Law-enforcement workspace must integrate after the evidence vault."
   );
 
-  console.log("Law-enforcement evidence response contract passed: specific request, exact-name/time-window search, audited manual export, legal hold, and no automatic disclosure.");
+  console.log("Company legal/law-enforcement response contract passed: Preserved High-Risk Safety Records, specific request, exact-name/time-window search, audited manual export, legal hold, and no automatic disclosure.");
 }
 
 try {
