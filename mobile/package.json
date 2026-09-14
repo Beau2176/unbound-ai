@@ -1,14 +1,17 @@
 {
   "name": "unbound-ai-mobile",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "description": "Native Android and iOS shell for UNBOUND AI",
   "scripts": {
-    "sync": "npx cap sync",
-    "android": "npx cap open android",
-    "ios": "npx cap open ios",
-    "add:android": "npx cap add android",
-    "add:ios": "npx cap add ios",
+    "sync": "node scripts/run-capacitor.mjs remote-dev sync",
+    "sync:store": "node scripts/run-capacitor.mjs store sync",
+    "android": "node scripts/run-capacitor.mjs remote-dev open android",
+    "ios": "node scripts/run-capacitor.mjs remote-dev open ios",
+    "add:android": "node scripts/run-capacitor.mjs remote-dev add android",
+    "add:ios": "node scripts/run-capacitor.mjs remote-dev add ios",
+    "add:android:store": "node scripts/run-capacitor.mjs store add android",
+    "add:ios:store": "node scripts/run-capacitor.mjs store add ios",
     "verify:assets": "node scripts/verify-brand-assets.mjs",
     "assets:android": "npm run verify:assets && npx capacitor-assets generate --android --iconBackgroundColor '#030810' --iconBackgroundColorDark '#030810' --splashBackgroundColor '#030810' --splashBackgroundColorDark '#030810'",
     "assets:ios": "npm run verify:assets && npx capacitor-assets generate --ios --iconBackgroundColor '#030810' --iconBackgroundColorDark '#030810' --splashBackgroundColor '#030810' --splashBackgroundColorDark '#030810'",
@@ -19,7 +22,10 @@
     "configure:permissions:android": "node scripts/configure-media-permissions.mjs --android",
     "configure:permissions:ios": "node scripts/configure-media-permissions.mjs --ios",
     "configure:permissions": "node scripts/configure-media-permissions.mjs",
-    "prepare:native": "npm run sync && npm run assets && npm run configure:links && npm run configure:permissions"
+    "verify:store-config": "node scripts/verify-store-shell.mjs --expect-blocked",
+    "verify:store-shell": "node scripts/verify-store-shell.mjs",
+    "prepare:native": "npm run sync && npm run assets && npm run configure:links && npm run configure:permissions",
+    "prepare:store": "npm run verify:store-shell && npm run sync:store && npm run assets && npm run configure:links && npm run configure:permissions"
   },
   "dependencies": {
     "@capacitor/app": "^7.0.2",
