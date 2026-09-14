@@ -19,6 +19,16 @@ const { injectInterruptedStreamRecovery } = require(resolve(appDir, 'ui/chat-str
 const LOCAL_BUNDLE_MARKER = '<meta name="unbound-local-ui-bundle" content="generated" />';
 const NATIVE_API_MARKER = '<meta name="unbound-native-api-transport" content="capacitor-http-v1" />';
 const NATIVE_API_SCRIPT = ['native-api-bridge.js', '108'];
+const HOMEPAGE_MOBILE_SCRIPTS = [
+  ['native-validation-link.js', '109']
+];
+const MOBILE_RUNTIME_FILES = [
+  'native-validation-link.js',
+  'native-validation.js'
+];
+const MOBILE_PAGES = [
+  'native-validation.html'
+];
 const RUNTIME_SCRIPTS = [
   ['desktop-voice-input.js', '121'],
   ['native-mobile-bridge.js', '102'],
@@ -79,11 +89,12 @@ function injectLocalRuntime(html) {
     output = output.replace(headMarker, `  ${LOCAL_BUNDLE_MARKER}\n${headMarker}`);
   }
 
-  const tags = RUNTIME_SCRIPTS
+  const scripts = [...RUNTIME_SCRIPTS, ...HOMEPAGE_MOBILE_SCRIPTS];
+  const tags = scripts
     .map(([file, version]) => `  <script src="./${file}?v=${version}" defer></script>`)
     .join('\n');
 
-  for (const [file] of RUNTIME_SCRIPTS) {
+  for (const [file] of scripts) {
     if (output.includes(`src="./${file}`) || output.includes(`src="/${file}`)) {
       throw new Error(`UNBOUND local bundle runtime script already appears before injection: ${file}`);
     }
@@ -111,20 +122,22 @@ async function writePublicPage(relativePath) {
   return destinationPath;
 }
 
-async function copyAppRequired(relativePath) {
-  const sourcePath = resolve(appDir, relativePath);
-  const destinationPath = resolve(wwwDir, relativePath);
+async function copyRequired(sourcePath, destinationPath) {
   await mkdir(dirname(destinationPath), { recursive: true });
   await copyFile(sourcePath, destinationPath);
   return destinationPath;
 }
 
+async function copyAppRequired(relativePath) {
+  return copyRequired(resolve(appDir, relativePath), resolve(wwwDir, relativePath));
+}
+
 async function copyNativeRuntime(relativePath) {
-  const sourcePath = resolve(runtimeDir, relativePath);
-  const destinationPath = resolve(wwwDir, relativePath);
-  await mkdir(dirname(destinationPath), { recursive: true });
-  await copyFile(sourcePath, destinationPath);
-  return destinationPath;
+  return copyRequired(resolve(runtimeDir, relativePath), resolve(wwwDir, relativePath));
+}
+
+async function copyMobilePage(relativePath) {
+  return copyRequired(resolve(mobileDir, relativePath), resolve(wwwDir, relativePath));
 }
 
 await rm(wwwDir, { recursive: true, force: true });
@@ -134,6 +147,8 @@ const homepage = await buildHomepage();
 await writeFile(resolve(wwwDir, 'index.html'), homepage, 'utf8');
 
 await copyNativeRuntime(NATIVE_API_SCRIPT[0]);
+for (const file of MOBILE_RUNTIME_FILES) await copyNativeRuntime(file);
+for (const page of MOBILE_PAGES) await copyMobilePage(page);
 for (const [file] of RUNTIME_SCRIPTS) await copyAppRequired(file);
 for (const page of PUBLIC_PAGES) await writePublicPage(page);
 for (const asset of STATIC_ASSETS) await copyAppRequired(asset);
@@ -141,6 +156,8 @@ for (const asset of STATIC_ASSETS) await copyAppRequired(asset);
 const outputFiles = [
   'index.html',
   NATIVE_API_SCRIPT[0],
+  ...MOBILE_RUNTIME_FILES,
+  ...MOBILE_PAGES,
   ...RUNTIME_SCRIPTS.map(([file]) => file),
   ...PUBLIC_PAGES,
   ...STATIC_ASSETS
@@ -170,13 +187,27 @@ for (const file of sourceFiles) {
   sourceHashes[file] = sha256(bytes);
 }
 
+const mobileSourceFiles = [
+  NATIVE_API_SCRIPT[0],
+  ...MOBILE_RUNTIME_FILES,
+  ...MOBILE_PAGES
+];
+const mobileSourceHashes = {};
+for (const file of mobileSourceFiles) {
+  const sourcePath = file === NATIVE_API_SCRIPT[0] || MOBILE_RUNTIME_FILES.includes(file)
+    ? resolve(runtimeDir, file)
+    : resolve(mobileDir, file);
+  const bytes = await readFile(sourcePath);
+  mobileSourceHashes[file] = sha256(bytes);
+}
+
 const nativeApiBytes = await readFile(resolve(runtimeDir, NATIVE_API_SCRIPT[0]));
 
 await writeFile(
   resolve(wwwDir, 'unbound-local-bundle-manifest.json'),
   `${JSON.stringify({
-    schemaVersion: 2,
-    generatedFrom: 'app production UI sources plus mobile native transport runtime',
+    schemaVersion: 3,
+    generatedFrom: 'app production UI sources plus mobile native transport and validation runtime',
     releaseReady: false,
     transportStatus: 'capacitor-http bridge implemented; signed native runtime validation pending',
     nativeApiTransport: {
@@ -185,13 +216,23 @@ await writeFile(
       runtime: NATIVE_API_SCRIPT[0],
       sha256: sha256(nativeApiBytes)
     },
+    nativeValidation: {
+      page: MOBILE_PAGES[0],
+      runtime: 'native-validation.js',
+      launcher: 'native-validation-link.js',
+      reportSchemaVersion: 1,
+      exposesSecrets: false
+    },
     runtimeScripts: RUNTIME_SCRIPTS.map(([file]) => file),
+    mobileRuntimeScripts: MOBILE_RUNTIME_FILES,
     publicPages: PUBLIC_PAGES,
+    mobilePages: MOBILE_PAGES,
     files: manifestFiles,
-    sourceSha256: sourceHashes
+    sourceSha256: sourceHashes,
+    mobileSourceSha256: mobileSourceHashes
   }, null, 2)}\n`,
   'utf8'
 );
 
 console.log(`UNBOUND local mobile UI bundle generated with ${outputFiles.length} verified output files.`);
-console.log('Native API transport is packaged; store release remains blocked pending signed-device session validation.');
+console.log('Native validation harness is packaged; store release remains blocked pending signed-device evidence.');
