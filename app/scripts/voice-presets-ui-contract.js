@@ -35,6 +35,8 @@ assert(presetSource.includes("Auto-read new replies: OFF"), "Auto-Read should ex
 assert(presetSource.includes("hasAutoReadAccess"), "Auto-Read should verify Voice entitlement before enabling");
 assert(presetSource.includes("requires Premium or Ultra Voice access"), "Auto-Read should preserve the paid Voice entitlement gate");
 assert(presetSource.includes("MutationObserver"), "Auto-Read should watch for newly completed assistant replies");
+assert(presetSource.includes("attributeFilter: ['disabled']"), "Auto-Read should observe the send button busy/ready transition");
+assert(presetSource.includes("autoReadSawBusy"), "Auto-Read should require a real send/reply cycle before speaking");
 assert(presetSource.includes("sendIsBusy()"), "Auto-Read should wait while a reply is still streaming");
 assert(presetSource.includes("Response interrupted before completion"), "Auto-Read should skip interrupted replies");
 assert(presetSource.includes("handsFreeActive()"), "Auto-Read should yield to Hands-Free Conversation");
