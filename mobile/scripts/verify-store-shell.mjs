@@ -1,9 +1,16 @@
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
+import {
+  readPlatformEvidence,
+  validatePlatformEvidence
+} from './release-evidence.mjs';
 
 const expectBlocked = process.argv.includes('--expect-blocked');
-const configPath = resolve(process.cwd(), 'capacitor.config.ts');
-const webIndexPath = resolve(process.cwd(), 'www/index.html');
+const mobileDir = process.cwd();
+const configPath = resolve(mobileDir, 'capacitor.config.ts');
+const webIndexPath = resolve(mobileDir, 'www/index.html');
+const bundleManifestPath = resolve(mobileDir, 'www/unbound-local-bundle-manifest.json');
 
 const [configSource, webIndex] = await Promise.all([
   readFile(configPath, 'utf8'),
@@ -34,8 +41,34 @@ if (!configSource.includes('CapacitorHttp:') || !configSource.includes('enabled:
   failures.push('store/native configuration must keep CapacitorHttp enabled for the packaged API transport');
 }
 
-const readyMarker = '<meta name="unbound-production-bundle" content="ready"';
-const productionBundleReady = webIndex.includes(readyMarker);
+const legacyReadyMarker = '<meta name="unbound-production-bundle" content="ready"';
+if (webIndex.includes(legacyReadyMarker)) {
+  failures.push('legacy production-ready HTML marker is forbidden; release readiness must come from Android/iOS evidence files');
+}
+
+let bundleManifestSha256 = '';
+try {
+  const manifestBytes = await readFile(bundleManifestPath);
+  bundleManifestSha256 = createHash('sha256').update(manifestBytes).digest('hex');
+} catch (error) {
+  failures.push(`generated mobile bundle manifest is missing or unreadable (${error?.message || error})`);
+}
+
+const evidenceResults = [];
+if (bundleManifestSha256) {
+  for (const platform of ['android', 'ios']) {
+    const loaded = await readPlatformEvidence({ mobileDir, platform });
+    if (loaded.error) {
+      evidenceResults.push({ platform, ready: false, errors: [loaded.error] });
+      continue;
+    }
+    const result = validatePlatformEvidence(loaded.evidence, {
+      platform,
+      bundleManifestSha256
+    });
+    evidenceResults.push({ platform, ...result });
+  }
+}
 
 if (failures.length) {
   console.error('UNBOUND store-shell configuration verification failed.');
@@ -43,19 +76,26 @@ if (failures.length) {
   process.exit(1);
 }
 
+const releaseEvidenceReady =
+  evidenceResults.length === 2 &&
+  evidenceResults.every((result) => result.ready);
+
 if (expectBlocked) {
-  if (productionBundleReady) {
-    console.error('Expected store preparation to remain blocked, but the production-bundle readiness marker is present. Update the CI expectation only after signed Android/iOS session and provider-flow validation completes.');
+  if (releaseEvidenceReady) {
+    console.error('Expected store preparation to remain blocked, but complete Android and iOS signed-device release evidence is present. Update the CI release workflow deliberately before changing this expectation.');
     process.exit(1);
   }
-  console.log('UNBOUND store config is remote-free, native API transport is configured, and store preparation remains correctly blocked pending signed-device validation.');
+  console.log('UNBOUND store config is remote-free and native transport is configured. Store preparation remains correctly blocked until complete Android and iOS release evidence matches the exact generated bundle.');
   process.exit(0);
 }
 
-if (!productionBundleReady) {
-  console.error('UNBOUND store preparation is blocked: the packaged native API/session transport has not yet completed signed-device release validation.');
-  console.error('Validate sign-in cookie persistence, logout/revocation, chat completion, passkeys, account resume sync, checkout/age-verification provider returns, and failure recovery on signed Android and iOS builds before adding the readiness marker.');
+if (!releaseEvidenceReady) {
+  console.error('UNBOUND store preparation is blocked: complete, fresh signed-device release evidence is required for both Android and iOS.');
+  for (const result of evidenceResults) {
+    for (const error of result.errors || []) console.error(` - ${error}`);
+  }
+  console.error('Required evidence covers authenticated session persistence, logout/revocation, passkeys, chat completion, account resume, provider returns, failure recovery, custom-scheme routing, and camera/microphone permission behavior.');
   process.exit(1);
 }
 
-console.log('UNBOUND store shell is marked ready for native store preparation.');
+console.log('UNBOUND store shell passed evidence-backed Android and iOS release validation for the exact generated mobile bundle.');
