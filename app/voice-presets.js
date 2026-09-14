@@ -38,6 +38,7 @@
   let autoReadTimer = null;
   let autoReadObserver = null;
   let autoReadLastText = '';
+  let autoReadSawBusy = false;
 
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -443,16 +444,23 @@
   function maybeAutoRead(note) {
     if (!autoReadEnabled || handsFreeActive()) return;
     if (sendIsBusy()) {
+      autoReadSawBusy = true;
       scheduleAutoRead(note, 250);
       return;
     }
+    if (!autoReadSawBusy) return;
     const text = getLastAssistantText();
-    if (!text || text === autoReadLastText) return;
+    if (!text || text === autoReadLastText) {
+      autoReadSawBusy = false;
+      return;
+    }
     if (/Response interrupted before completion/i.test(text)) {
       autoReadLastText = text;
+      autoReadSawBusy = false;
       return;
     }
     autoReadLastText = text;
+    autoReadSawBusy = false;
     speakAutoReadReply(text, note);
   }
 
@@ -468,6 +476,7 @@
   async function setAutoReadEnabled(enabled, action, note, persist = true) {
     if (!enabled) {
       autoReadEnabled = false;
+      autoReadSawBusy = false;
       if (autoReadTimer) {
         window.clearTimeout(autoReadTimer);
         autoReadTimer = null;
@@ -482,6 +491,7 @@
     const access = await hasAutoReadAccess();
     if (!access.allowed) {
       autoReadEnabled = false;
+      autoReadSawBusy = false;
       if (persist) saveAutoReadPreference(false);
       updateAutoReadAction(action);
       setNote(note, access.message || 'Auto-read is unavailable.', 5000);
@@ -489,6 +499,7 @@
     }
 
     autoReadEnabled = true;
+    autoReadSawBusy = false;
     if (persist) saveAutoReadPreference(true);
     autoReadLastText = getLastAssistantText();
     updateAutoReadAction(action);
@@ -498,11 +509,15 @@
   }
 
   function startAutoReadObserver(note) {
-    if (autoReadObserver) return;
-    const root = document.querySelector('.messages') || document.body;
-    if (!root) return;
+    if (autoReadObserver || !document.body) return;
     autoReadObserver = new MutationObserver(() => scheduleAutoRead(note));
-    autoReadObserver.observe(root, { childList: true, subtree: true, characterData: true });
+    autoReadObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['disabled']
+    });
   }
 
   function closeVoiceMenu(button, menu) {
