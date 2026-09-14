@@ -22,13 +22,20 @@ try {
 }
 
 if (manifest) {
-  if (manifest.schemaVersion !== 1) failures.push('unexpected bundle manifest schema version');
+  if (manifest.schemaVersion !== 2) failures.push('unexpected bundle manifest schema version');
   if (manifest.releaseReady !== false) failures.push('local UI bundle must not claim store release readiness');
-  if (!String(manifest.transportStatus || '').includes('not yet attested')) {
-    failures.push('manifest must preserve the native API/session transport blocker');
+  if (!String(manifest.transportStatus || '').includes('signed native runtime validation pending')) {
+    failures.push('manifest must preserve the signed-device native transport blocker');
+  }
+  if (manifest.nativeApiTransport?.mode !== 'capacitor-http') {
+    failures.push('manifest must identify CapacitorHttp as the native API transport');
+  }
+  if (manifest.nativeApiTransport?.apiOrigin !== 'https://unbound-ai-app.onrender.com') {
+    failures.push('manifest native API origin must stay pinned to the production HTTPS origin');
   }
 
   const requiredScripts = [
+    'native-api-bridge.js',
     'desktop-voice-input.js',
     'native-mobile-bridge.js',
     'voice-presets.js',
@@ -69,14 +76,29 @@ if (manifest) {
   }
 
   try {
+    const bridgeBytes = await readFile(resolve(wwwDir, 'native-api-bridge.js'));
+    if (sha256(bridgeBytes) !== manifest.nativeApiTransport?.sha256) {
+      failures.push('native API transport hash does not match the generated runtime');
+    }
+  } catch (error) {
+    failures.push(`native API transport validation failed: ${error?.message || error}`);
+  }
+
+  try {
     const homepage = await readFile(resolve(wwwDir, 'index.html'), 'utf8');
     if (!homepage.includes('<meta name="unbound-local-ui-bundle" content="generated" />')) {
       failures.push('generated homepage is missing the local UI bundle marker');
     }
+    if (!homepage.includes('<meta name="unbound-native-api-transport" content="capacitor-http-v1" />')) {
+      failures.push('generated homepage is missing the native API transport marker');
+    }
+    if (!homepage.includes('src="./native-api-bridge.js?v=108"')) {
+      failures.push('generated homepage is missing the synchronous native API transport bridge');
+    }
     if (homepage.includes('<meta name="unbound-production-bundle" content="ready"')) {
       failures.push('local UI bundle must not add the production-ready release marker');
     }
-    for (const script of requiredScripts) {
+    for (const script of requiredScripts.filter((item) => item !== 'native-api-bridge.js')) {
       if (!homepage.includes(`src="./${script}?v=`)) failures.push(`generated homepage is missing local runtime script ${script}`);
       if (homepage.includes(`src="/${script}?v=`)) failures.push(`generated homepage still contains server-root runtime script ${script}`);
     }
@@ -91,6 +113,20 @@ if (manifest) {
   } catch (error) {
     failures.push(`generated homepage validation failed: ${error?.message || error}`);
   }
+
+  for (const page of requiredPages) {
+    try {
+      const html = await readFile(resolve(wwwDir, page), 'utf8');
+      if (!html.includes('<meta name="unbound-native-api-transport" content="capacitor-http-v1" />')) {
+        failures.push(`${page}: missing native API transport marker`);
+      }
+      if (!html.includes('src="./native-api-bridge.js?v=108"')) {
+        failures.push(`${page}: missing native API transport bridge`);
+      }
+    } catch (error) {
+      failures.push(`${page}: transport injection check failed (${error?.message || error})`);
+    }
+  }
 }
 
 if (failures.length) {
@@ -99,4 +135,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('UNBOUND local mobile UI bundle is complete, hash-verified, and intentionally not store-release-ready.');
+console.log('UNBOUND local mobile UI bundle is hash-verified with native API transport packaged and signed-device release validation still pending.');
