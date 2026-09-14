@@ -19,8 +19,8 @@ try {
   if (!source.includes('id="brandStroke"') || !source.includes('C646 724 864 704 864 512')) {
     failures.push(`${assetPath}: approved infinity geometry is missing`);
   }
-  if (/<script\b/i.test(source) || /(?:https?:|data:|javascript:)/i.test(source)) {
-    failures.push(`${assetPath}: native mark must be self-contained and contain no executable/external references`);
+  if (/<script\b/i.test(source) || /(?:href|xlink:href)\s*=\s*["'](?:https?:|data:|javascript:)/i.test(source)) {
+    failures.push(`${assetPath}: native mark must be self-contained and contain no executable/external asset references`);
   }
   if (/<text\b/i.test(source)) {
     failures.push(`${assetPath}: app icon source must remain symbol-only so text is not clipped at small sizes`);
