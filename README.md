@@ -1,2 +1,60 @@
-# unbound-ai
-Adult AI
+# UNBOUND AI
+
+UNBOUND AI is an adults-only (18+) AI/SaaS platform with fast Casual Mode, deeper Work Mode, user-selectable modes, voice/media features, connected-app tooling, native Android/iOS shells, and explicit fail-closed launch controls.
+
+The repository is intentionally conservative about launch claims. Code, mocks, credentials, or a healthy web process do not by themselves make a paid provider, bank, legal review, production backup, or mobile store release ready.
+
+## Repository layout
+
+- `app/` — Node/Express application, web UI, AI/chat, account/session, passkeys, age verification, billing, email, advertising, file/image/voice features, operational readiness and security controls.
+- `mobile/` — Capacitor Android/iOS shell, production-derived local UI bundle, native API/session transport, media/deep-link setup, signed-device validation and evidence-backed store release gate.
+- `docs/` — launch, provider, legal/data-flow, security, recovery and operations runbooks.
+- `.github/workflows/` — production and native-mobile CI.
+
+## Core validation
+
+From `app/`:
+
+```bash
+npm install
+npm run ci
+npm run launch-preflight
+npm run no-spend-complete
+npm run launch-validate
+```
+
+`npm run ci` runs source, security, regression, backup and dependency-audit checks.
+
+`npm run launch-preflight` reports the real commercial prerequisites and remains blocked until external dependencies are genuinely ready.
+
+`npm run no-spend-complete` is the repository-side completion boundary. It fails if required free engineering/preparation artifacts or validation commands are missing. A green result means the remaining known launch blockers are external/provider/paid work; it does **not** mean the product is commercially launch-ready.
+
+See:
+
+- `docs/NO_SPEND_LAUNCH_PREP.md`
+- `docs/NO_SPEND_COMPLETION.md`
+- `docs/PROVIDER_APPLICATION_PACKET.md`
+- `docs/ZERO_COST_LAUNCH_VALIDATION.md`
+- `docs/LAUNCH_READINESS.md`
+- `docs/LAUNCH_REHEARSAL.md`
+
+## Mobile
+
+From `mobile/`:
+
+```bash
+npm install
+npm run build:local-ui
+npm run verify:local-ui
+npm run verify:store-config
+```
+
+The store-safe bundle uses local production-derived assets and native API/session transport. Release remains fail-closed until real signed Android and iOS evidence for the exact generated bundle is present and valid. See `mobile/README.md` and `mobile/release-evidence/README.md`.
+
+## Current launch boundary
+
+Repository-side preparation includes integrations and contract coverage for production infrastructure/recovery, Segpay, Yoti hard-18+ verification, Amazon SES, legal/data-flow review, ClamAV, and native mobile release validation.
+
+The remaining commercial-release blockers must stay truthful: real production infrastructure and backups, business-bank/provider approvals, production credentials/configuration and end-to-end verification, qualified legal/compliance review, private malware-scanning infrastructure, and real signed-device/store evidence.
+
+Do not bypass these gates by hard-coding ready states, inventing timestamps/evidence, committing secrets, weakening age verification, or publishing draft legal text as final.
