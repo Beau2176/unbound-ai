@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const mobileDir = resolve(scriptDir, '..');
 const runtimeDir = resolve(mobileDir, 'runtime');
+const PRODUCTION_API_ORIGIN = 'https://unbound-ai-app.onrender.com';
 
 const [validationSource, launcherSource, pageSource] = await Promise.all([
   readFile(resolve(runtimeDir, 'native-validation.js'), 'utf8'),
@@ -67,7 +68,13 @@ function createLocalStorage() {
   };
 }
 
-function createValidationContext({ signedIn }) {
+function createValidationContext({
+  signedIn,
+  platform = 'android',
+  native = true,
+  transportMode = 'capacitor-http',
+  transportOrigin = PRODUCTION_API_ORIGIN
+}) {
   const calls = [];
   const events = [];
   const localStorage = createLocalStorage();
@@ -87,13 +94,13 @@ function createValidationContext({ signedIn }) {
 
   const window = {
     Capacitor: {
-      isNativePlatform: () => true,
-      getPlatform: () => 'android',
+      isNativePlatform: () => native,
+      getPlatform: () => platform,
       Plugins: {}
     },
     __UNBOUND_NATIVE_API_TRANSPORT__: {
-      mode: 'capacitor-http',
-      apiOrigin: 'https://unbound-ai-app.onrender.com',
+      mode: transportMode,
+      apiOrigin: transportOrigin,
       localOrigin: 'https://localhost'
     },
     dispatchEvent: (event) => {
@@ -140,29 +147,56 @@ function createValidationContext({ signedIn }) {
   return { window, calls, events, localStorage, getAuthCalls: () => authCalls };
 }
 
-for (const signedIn of [true, false]) {
-  const harness = createValidationContext({ signedIn });
-  assert(harness.window.UNBOUND_NATIVE_VALIDATION, 'native validation API must be exported');
+for (const platform of ['android', 'ios']) {
+  for (const signedIn of [true, false]) {
+    const harness = createValidationContext({ signedIn, platform });
+    assert(harness.window.UNBOUND_NATIVE_VALIDATION, 'native validation API must be exported');
 
-  const report = await harness.window.UNBOUND_NATIVE_VALIDATION.run({ reason: 'contract-test' });
-  assert.equal(report.schemaVersion, 1);
-  assert.equal(report.native, true);
-  assert.equal(report.platform, 'android');
-  assert.equal(report.apiOrigin, 'https://unbound-ai-app.onrender.com');
-  assert.equal(report.signedIn, signedIn);
-  assert(harness.calls.some((call) => call.url === '/api/system/status'));
-  assert(harness.calls.filter((call) => call.url === '/api/auth/me').length >= 2);
-  assert(harness.calls.some((call) => call.url === '/api/account/access'));
-  assert(harness.calls.every((call) => call.options.credentials === 'include'), 'every validation request must use credentials include');
+    const report = await harness.window.UNBOUND_NATIVE_VALIDATION.run({ reason: 'contract-test' });
+    assert.equal(report.schemaVersion, 1);
+    assert.equal(report.native, true);
+    assert.equal(report.platform, platform);
+    assert.equal(report.apiOrigin, PRODUCTION_API_ORIGIN);
+    assert.equal(report.signedIn, signedIn);
+    assert(harness.calls.some((call) => call.url === '/api/system/status'));
+    assert(harness.calls.filter((call) => call.url === '/api/auth/me').length >= 2);
+    assert(harness.calls.some((call) => call.url === '/api/account/access'));
+    assert(harness.calls.every((call) => call.options.credentials === 'include'), 'every validation request must use credentials include');
 
-  const serialized = JSON.stringify(report).toLowerCase();
-  for (const forbiddenOutput of ['cookie', 'token', 'email', 'password', 'authorization']) {
-    assert(!serialized.includes(forbiddenOutput), `safe validation report must not expose ${forbiddenOutput}`);
+    const serialized = JSON.stringify(report).toLowerCase();
+    for (const forbiddenOutput of ['cookie', 'token', 'email', 'password', 'authorization']) {
+      assert(!serialized.includes(forbiddenOutput), `safe validation report must not expose ${forbiddenOutput}`);
+    }
+
+    const reportEvent = harness.events.find((event) => event.type === 'unbound:native-validation-report');
+    assert(reportEvent, 'validation must emit a local safe report event');
+    assert.equal(reportEvent.detail.platform, platform);
+    assert.equal(reportEvent.detail.signedIn, signedIn);
   }
+}
 
-  const reportEvent = harness.events.find((event) => event.type === 'unbound:native-validation-report');
-  assert(reportEvent, 'validation must emit a local safe report event');
-  assert.equal(reportEvent.detail.signedIn, signedIn);
+{
+  const harness = createValidationContext({ signedIn: true, native: false, platform: 'web' });
+  const report = await harness.window.UNBOUND_NATIVE_VALIDATION.run({ reason: 'non-native-contract-test' });
+  assert.equal(report.native, false);
+  assert.equal(report.platform, 'web');
+  assert.equal(report.overall, 'fail');
+  assert.equal(report.signedIn, null);
+  assert.equal(harness.calls.length, 0, 'non-native validation must not probe production API routes');
+  assert(report.checks.some((check) => check.id === 'native-platform' && check.status === 'fail'));
+}
+
+for (const misconfigured of [
+  { transportMode: 'fetch', transportOrigin: PRODUCTION_API_ORIGIN },
+  { transportMode: 'capacitor-http', transportOrigin: 'https://example.invalid' }
+]) {
+  const harness = createValidationContext({ signedIn: true, ...misconfigured });
+  const report = await harness.window.UNBOUND_NATIVE_VALIDATION.run({ reason: 'bad-transport-contract-test' });
+  assert.equal(report.native, true);
+  assert.equal(report.overall, 'fail');
+  assert.equal(report.signedIn, null);
+  assert.equal(harness.calls.length, 0, 'misconfigured native transport must fail before probing API routes');
+  assert(report.checks.some((check) => check.id === 'native-api-transport' && check.status === 'fail'));
 }
 
 function executeLauncher({ protocol, hostname, native = true }) {
@@ -228,4 +262,4 @@ assert.equal(
   'ordinary non-native web environments must not expose the validation link'
 );
 
-console.log('UNBOUND native validation privacy, behavior, and local-only launcher checks passed.');
+console.log('UNBOUND native validation Android/iOS privacy, fail-closed behavior, and local-only launcher checks passed.');
