@@ -1,0 +1,44 @@
+{
+  "id": "/",
+  "name": "UNBOUND AI",
+  "short_name": "UNBOUND",
+  "description": "UNBOUND AI — ideas without limits. A more open tomorrow starts today.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#050913",
+  "theme_color": "#050913",
+  "categories": ["productivity", "utilities"],
+  "lang": "en-US",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/unbound-app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/unbound-cosmic.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New UNBOUND Chat",
+      "short_name": "New Chat",
+      "description": "Open UNBOUND AI chat.",
+      "url": "/"
+    },
+    {
+      "name": "Command Center",
+      "short_name": "Command Center",
+      "description": "Open the UNBOUND AI Command Center.",
+      "url": "/command-center.html"
+    }
+  ]
+}
