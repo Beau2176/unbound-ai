@@ -76,6 +76,8 @@ See `release-evidence/README.md` for the evidence schema and privacy rules.
 - the controlled custom scheme is `unbound:` and is configured by `scripts/configure-deep-links.mjs`.
 - native deep-link routing rejects API/admin/external/credential-bearing/unsafe paths.
 
+The camera permission is requested only when the user chooses a camera-dependent feature. The microphone permission is requested only when the user chooses a feature that records audio. UNBOUND must not start recording automatically, and denied/revoked permission paths must fail safely without blocking ordinary chat.
+
 Verified HTTPS Universal Links / Android App Links still require the final production domain association plus final signing identities and real-device verification. That is external/signing work, not a repository shortcut.
 
 ## Native session resume
