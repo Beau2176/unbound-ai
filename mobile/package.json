@@ -1,6 +1,6 @@
 {
   "name": "unbound-ai-mobile",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Native Android and iOS shell for UNBOUND AI",
   "scripts": {
@@ -17,7 +17,8 @@
     "@capacitor/core": "^7.4.3",
     "@capacitor/preferences": "^7.0.2",
     "@capacitor/splash-screen": "^7.0.3",
-    "@capacitor/status-bar": "^7.0.3"
+    "@capacitor/status-bar": "^7.0.3",
+    "@unbound/device-inspector": "file:plugins/device-inspector"
   },
   "devDependencies": {
     "@capacitor/android": "^7.4.3",
