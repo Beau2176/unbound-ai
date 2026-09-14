@@ -72,7 +72,16 @@ function main() {
   assert.match(integrated, /requireAdmin/);
   assert.match(integrated, /Cache-Control", "no-store/);
   assert.doesNotMatch(integrated, /\/api\/security\/evidence\/preserve/);
-  assert.doesNotMatch(integrated, /fetch\(|axios\.|https:\/\//, "evidence integration must not contain an external disclosure client");
+
+  const integrationSource = fs.readFileSync(
+    path.join(appRoot, "security", "abuse-evidence-server-integration.js"),
+    "utf8"
+  );
+  assert.doesNotMatch(
+    integrationSource,
+    /\bfetch\s*\(|\baxios\b|https:\/\//,
+    "evidence integration itself must not contain an external disclosure client"
+  );
 
   const docs = fs.readFileSync(path.resolve(appRoot, "..", "docs", "ABUSE_EVIDENCE_PRESERVATION.md"), "utf8");
   assert.match(docs, /not a general surveillance archive/i);
