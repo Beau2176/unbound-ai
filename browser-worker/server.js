@@ -1,7 +1,8 @@
 const http = require("http");
 const crypto = require("crypto");
 const puppeteer = require("puppeteer-core");
-const chromium = require("@sparticuz/chromium");
+const chromiumModule = require("@sparticuz/chromium");
+const chromium = chromiumModule.default || chromiumModule;
 const { WebSocketServer, WebSocket } = require("ws");
 
 const PORT = Number(process.env.PORT || 10000);
