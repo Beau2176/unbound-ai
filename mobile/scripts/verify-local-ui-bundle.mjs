@@ -22,10 +22,10 @@ try {
 }
 
 if (manifest) {
-  if (manifest.schemaVersion !== 3) failures.push('unexpected bundle manifest schema version');
+  if (manifest.schemaVersion !== 4) failures.push('unexpected bundle manifest schema version');
   if (manifest.releaseReady !== false) failures.push('local UI bundle must not claim store release readiness');
-  if (!String(manifest.transportStatus || '').includes('signed native runtime validation pending')) {
-    failures.push('manifest must preserve the signed-device native transport blocker');
+  if (!String(manifest.transportStatus || '').includes('package-bound signed native runtime validation pending')) {
+    failures.push('manifest must preserve the package-bound signed-device native transport blocker');
   }
   if (manifest.nativeApiTransport?.mode !== 'capacitor-http') {
     failures.push('manifest must identify CapacitorHttp as the native API transport');
@@ -42,7 +42,10 @@ if (manifest) {
   if (manifest.nativeValidation?.launcher !== 'native-validation-link.js') {
     failures.push('manifest must identify the local-only native validation launcher');
   }
-  if (manifest.nativeValidation?.reportSchemaVersion !== 1) {
+  if (manifest.nativeValidation?.expectedAppId !== 'ai.unbound.app') {
+    failures.push('native validation manifest must pin the expected UNBOUND native package ID');
+  }
+  if (manifest.nativeValidation?.reportSchemaVersion !== 2) {
     failures.push('native validation report schema version must remain explicit');
   }
   if (manifest.nativeValidation?.exposesSecrets !== false) {
@@ -125,7 +128,7 @@ if (manifest) {
     if (!homepage.includes('src="./native-validation-link.js?v=109"')) {
       failures.push('generated homepage is missing the local native validation launcher');
     }
-    if (homepage.includes('src="./native-validation.js?v=109"')) {
+    if (homepage.includes('src="./native-validation.js?v=110"')) {
       failures.push('generated homepage must not run the validation probe runtime continuously');
     }
     if (homepage.includes('<meta name="unbound-production-bundle" content="ready"')) {
@@ -166,8 +169,8 @@ if (manifest) {
     if (!validationPage.includes('src="./native-api-bridge.js?v=108"')) {
       failures.push('native validation page must load native API transport before running checks');
     }
-    if (!validationPage.includes('src="./native-validation.js?v=109"')) {
-      failures.push('native validation page must load the validation runtime');
+    if (!validationPage.includes('src="./native-validation.js?v=110"')) {
+      failures.push('native validation page must load the package-bound validation runtime');
     }
     if (!validationPage.includes('id="runValidationButton"')) {
       failures.push('native validation page must expose an explicit rerun control');
@@ -186,4 +189,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('UNBOUND local mobile UI bundle is hash-verified with native transport and a no-secret signed-device validation harness packaged.');
+console.log('UNBOUND local mobile UI bundle is hash-verified with native transport and a package-bound, no-secret signed-device validation harness packaged.');
