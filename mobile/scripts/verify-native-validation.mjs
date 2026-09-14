@@ -8,6 +8,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const mobileDir = resolve(scriptDir, '..');
 const runtimeDir = resolve(mobileDir, 'runtime');
 const PRODUCTION_API_ORIGIN = 'https://unbound-ai-app.onrender.com';
+const EXPECTED_APP_ID = 'ai.unbound.app';
 
 const [validationSource, launcherSource, pageSource] = await Promise.all([
   readFile(resolve(runtimeDir, 'native-validation.js'), 'utf8'),
@@ -40,16 +41,19 @@ for (const required of [
   'credentials: \'include\'',
   'background-resume-session',
   'session-across-launches',
-  'unbound:native-validation-report'
+  'unbound:native-validation-report',
+  "const EXPECTED_APP_ID = 'ai.unbound.app'",
+  'appPlugin.getInfo()'
 ]) {
   assert(validationSource.includes(required), `native validation runtime is missing required check marker: ${required}`);
 }
 
 assert(pageSource.includes('src="./native-api-bridge.js?v=108"'), 'validation page must load native API bridge first');
-assert(pageSource.includes('src="./native-validation.js?v=109"'), 'validation page must load validation runtime');
+assert(pageSource.includes('src="./native-validation.js?v=110"'), 'validation page must load current package-bound validation runtime');
 assert(pageSource.indexOf('native-api-bridge.js') < pageSource.indexOf('native-validation.js'), 'native API bridge must load before validation runtime');
 assert(pageSource.includes('id="runValidationButton"'), 'validation page must provide a manual rerun button');
 assert(pageSource.includes('id="copyValidationButton"'), 'validation page must provide a safe report copy button');
+assert(pageSource.includes('verifies the packaged UNBOUND AI app identity'), 'validation page must explain package identity verification');
 assert(!pageSource.includes('type="password"'), 'validation page must never ask for account credentials');
 
 class TestCustomEvent {
@@ -73,7 +77,11 @@ function createValidationContext({
   platform = 'android',
   native = true,
   transportMode = 'capacitor-http',
-  transportOrigin = PRODUCTION_API_ORIGIN
+  transportOrigin = PRODUCTION_API_ORIGIN,
+  appId = EXPECTED_APP_ID,
+  appName = 'UNBOUND AI',
+  appVersion = '1.11.0',
+  appBuild = '111'
 }) {
   const calls = [];
   const events = [];
@@ -92,11 +100,21 @@ function createValidationContext({
     throw new Error(`Unexpected validation request: ${value}`);
   };
 
+  const appPlugin = {
+    getInfo: async () => ({
+      id: appId,
+      name: appName,
+      version: appVersion,
+      build: appBuild
+    }),
+    addListener: async () => ({ remove: async () => {} })
+  };
+
   const window = {
     Capacitor: {
       isNativePlatform: () => native,
       getPlatform: () => platform,
-      Plugins: {}
+      Plugins: { App: appPlugin }
     },
     __UNBOUND_NATIVE_API_TRANSPORT__: {
       mode: transportMode,
@@ -153,11 +171,16 @@ for (const platform of ['android', 'ios']) {
     assert(harness.window.UNBOUND_NATIVE_VALIDATION, 'native validation API must be exported');
 
     const report = await harness.window.UNBOUND_NATIVE_VALIDATION.run({ reason: 'contract-test' });
-    assert.equal(report.schemaVersion, 1);
+    assert.equal(report.schemaVersion, 2);
     assert.equal(report.native, true);
     assert.equal(report.platform, platform);
     assert.equal(report.apiOrigin, PRODUCTION_API_ORIGIN);
     assert.equal(report.signedIn, signedIn);
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(report.app)),
+      { id: EXPECTED_APP_ID, name: 'UNBOUND AI', version: '1.11.0', build: '111' }
+    );
+    assert(report.checks.some((check) => check.id === 'app-identity' && check.status === 'pass'));
     assert(harness.calls.some((call) => call.url === '/api/system/status'));
     assert(harness.calls.filter((call) => call.url === '/api/auth/me').length >= 2);
     assert(harness.calls.some((call) => call.url === '/api/account/access'));
@@ -172,6 +195,7 @@ for (const platform of ['android', 'ios']) {
     assert(reportEvent, 'validation must emit a local safe report event');
     assert.equal(reportEvent.detail.platform, platform);
     assert.equal(reportEvent.detail.signedIn, signedIn);
+    assert.equal(reportEvent.detail.app.id, EXPECTED_APP_ID);
   }
 }
 
@@ -182,8 +206,21 @@ for (const platform of ['android', 'ios']) {
   assert.equal(report.platform, 'web');
   assert.equal(report.overall, 'fail');
   assert.equal(report.signedIn, null);
+  assert.equal(report.app, null);
   assert.equal(harness.calls.length, 0, 'non-native validation must not probe production API routes');
   assert(report.checks.some((check) => check.id === 'native-platform' && check.status === 'fail'));
+  assert(report.checks.some((check) => check.id === 'app-identity' && check.status === 'fail'));
+}
+
+{
+  const harness = createValidationContext({ signedIn: true, appId: 'com.example.copied-shell' });
+  const report = await harness.window.UNBOUND_NATIVE_VALIDATION.run({ reason: 'wrong-app-contract-test' });
+  assert.equal(report.native, true);
+  assert.equal(report.app.id, 'com.example.copied-shell');
+  assert.equal(report.overall, 'fail');
+  assert.equal(report.signedIn, null);
+  assert.equal(harness.calls.length, 0, 'wrong native package identity must fail before probing production API routes');
+  assert(report.checks.some((check) => check.id === 'app-identity' && check.status === 'fail'));
 }
 
 for (const misconfigured of [
@@ -193,6 +230,7 @@ for (const misconfigured of [
   const harness = createValidationContext({ signedIn: true, ...misconfigured });
   const report = await harness.window.UNBOUND_NATIVE_VALIDATION.run({ reason: 'bad-transport-contract-test' });
   assert.equal(report.native, true);
+  assert.equal(report.app.id, EXPECTED_APP_ID);
   assert.equal(report.overall, 'fail');
   assert.equal(report.signedIn, null);
   assert.equal(harness.calls.length, 0, 'misconfigured native transport must fail before probing API routes');
@@ -262,4 +300,4 @@ assert.equal(
   'ordinary non-native web environments must not expose the validation link'
 );
 
-console.log('UNBOUND native validation Android/iOS privacy, fail-closed behavior, and local-only launcher checks passed.');
+console.log('UNBOUND native validation Android/iOS package identity, privacy, fail-closed behavior, and local-only launcher checks passed.');
