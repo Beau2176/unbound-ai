@@ -19,12 +19,13 @@ function createKnowledgeRouter({ getPool } = {}) {
       const stats = await getAdaptiveKnowledgeStats(getPool());
       return res.json({
         engine: "UNBOUND Adaptive Knowledge Engine",
-        version: "v0.95",
+        version: "v0.96",
         learning: {
           publicWebResearch: true,
           communityLearning: "opt-in",
           rawConversationHarvesting: false,
-          autonomousCodeModification: false
+          autonomousCodeModification: false,
+          directVerifiedCache: true
         },
         stats
       });

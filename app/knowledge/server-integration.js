@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v0.95";
+const INTEGRATION_VERSION = "v0.96";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const first = source.indexOf(marker);
@@ -38,7 +38,7 @@ function integrateAdaptiveKnowledgeServerSource(serverSource) {
   source = replaceExactlyOnce(
     source,
     projectMemoryImport,
-    `${projectMemoryImport}\nconst { buildAdaptiveKnowledgeContext, learnFromResearch } = require("./knowledge/adaptive");\nconst { createKnowledgeRouter, sendKnowledgePage } = require("./knowledge/routes");`,
+    `${projectMemoryImport}\nconst { buildAdaptiveKnowledgeContext, learnFromResearch, selectDirectKnowledgeAnswer } = require("./knowledge/adaptive");\nconst { createKnowledgeRouter, sendKnowledgePage } = require("./knowledge/routes");`,
     "knowledge-imports"
   );
 
@@ -66,6 +66,22 @@ function integrateAdaptiveKnowledgeServerSource(serverSource) {
     `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, styleInstructions, memoryInstructions, adaptiveKnowledgeInstructions, depthInstructions, modeInstructions]`,
     2,
     "knowledge-chat-instructions"
+  );
+
+  const standardAiCall = `    const aiResponse = await generateChat({`;
+  source = replaceExactlyOnce(
+    source,
+    standardAiCall,
+    `    const directKnowledgeAnswer = selectDirectKnowledgeAnswer({\n      query: message,\n      productMode,\n      depthStyle,\n      history,\n      adaptiveKnowledge\n    });\n\n    if (directKnowledgeAnswer) {\n      const cachedResearchMetadata = {\n        sources: directKnowledgeAnswer.sources,\n        citations: [],\n        webSearchCalls: 0\n      };\n\n      if (persistentChat) {\n        await persistAssistantMessage(\n          persistentChat,\n          directKnowledgeAnswer.answer,\n          depthStyle,\n          productMode,\n          cachedResearchMetadata\n        );\n      }\n\n      return res.json({\n        reply: directKnowledgeAnswer.answer,\n        depthStyle,\n        productMode,\n        aiStyle,\n        provider: "unbound-knowledge",\n        model: "adaptive-cache-v1",\n        sources: cachedResearchMetadata.sources,\n        citations: [],\n        webSearchCalls: 0,\n        conversationId: persistentChat?.conversationId || null,\n        knowledgeCacheHit: true,\n        knowledgeVerifiedAt: directKnowledgeAnswer.verifiedAt\n      });\n    }\n\n${standardAiCall}`,
+    "knowledge-direct-standard"
+  );
+
+  const streamingMeta = `    writeEvent({\n      type: "meta",\n      depthStyle,\n      productMode,\n      aiStyle,\n      provider: gatewayStatus.provider,\n      model: gatewayStatus.model,\n      conversationId: persistentChat?.conversationId || null\n    });`;
+  source = replaceExactlyOnce(
+    source,
+    streamingMeta,
+    `    const directKnowledgeAnswer = selectDirectKnowledgeAnswer({\n      query: message,\n      productMode,\n      depthStyle,\n      history,\n      adaptiveKnowledge\n    });\n    const responseProvider = directKnowledgeAnswer ? "unbound-knowledge" : gatewayStatus.provider;\n    const responseModel = directKnowledgeAnswer ? "adaptive-cache-v1" : gatewayStatus.model;\n\n    writeEvent({\n      type: "meta",\n      depthStyle,\n      productMode,\n      aiStyle,\n      provider: responseProvider,\n      model: responseModel,\n      conversationId: persistentChat?.conversationId || null,\n      knowledgeCacheHit: Boolean(directKnowledgeAnswer)\n    });\n\n    if (directKnowledgeAnswer) {\n      const cachedResearchMetadata = {\n        sources: directKnowledgeAnswer.sources,\n        citations: [],\n        webSearchCalls: 0\n      };\n      writeEvent({\n        type: "delta",\n        delta: directKnowledgeAnswer.answer\n      });\n\n      if (persistentChat) {\n        await persistAssistantMessage(\n          persistentChat,\n          directKnowledgeAnswer.answer,\n          depthStyle,\n          productMode,\n          cachedResearchMetadata\n        );\n      }\n\n      writeEvent({\n        type: "done",\n        depthStyle,\n        productMode,\n        aiStyle,\n        provider: responseProvider,\n        model: responseModel,\n        conversationId: persistentChat?.conversationId || null,\n        sources: cachedResearchMetadata.sources,\n        knowledgeCacheHit: true,\n        knowledgeVerifiedAt: directKnowledgeAnswer.verifiedAt\n      });\n      res.end();\n      return;\n    }`,
+    "knowledge-direct-stream"
   );
 
   const researchMetadata = `    const researchMetadata = aiResponse.research || {\n      sources: [],\n      citations: [],\n      webSearchCalls: 0\n    };`;
