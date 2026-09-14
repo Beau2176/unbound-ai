@@ -55,6 +55,14 @@ assert(bridgeSource.includes("['terms', '/terms.html']"), 'custom UNBOUND deep l
 assert(bridgeSource.includes("['privacy', '/privacy.html']"), 'custom UNBOUND deep links should support Privacy');
 assert(bridgeSource.includes("['apps', '/connected-apps.html']"), 'custom UNBOUND deep links should support connected apps');
 
+// Warm and cold native launches must share exactly the same allowlist and navigation path.
+assert(bridgeSource.includes('const navigateAppUrl = (value)'), 'native bridge should centralize safe deep-link navigation');
+assert(bridgeSource.includes("plugins.App.addListener('appUrlOpen', ({ url }) => {\n      navigateAppUrl(url);"), 'warm app URL events must use the shared safe navigator');
+assert(bridgeSource.includes("typeof plugins.App.getLaunchUrl === 'function'"), 'native bridge should support Capacitor cold-start launch URLs');
+assert(bridgeSource.includes('const launch = await plugins.App.getLaunchUrl()'), 'cold-start URL should be read through Capacitor App.getLaunchUrl');
+assert(bridgeSource.includes('if (launch?.url) navigateAppUrl(launch.url)'), 'cold-start URLs must pass through the same safe navigator');
+assert(!bridgeSource.includes('location.assign(launch.url)'), 'cold-start URLs must never bypass normalization');
+
 // Native session resync must react to real account changes without turning transient outages into logouts.
 assert(bridgeSource.includes('let accountSnapshot = null'), 'native bridge should keep a baseline account snapshot');
 assert(bridgeSource.includes('let nativeReloadPending = false'), 'native bridge should prevent duplicate resume reloads');
@@ -79,4 +87,4 @@ assert(
   'initial native startup should establish the account baseline without forcing a reload'
 );
 
-console.log('UNBOUND AI native deep-link and session-resync checks passed.');
+console.log('UNBOUND AI native deep-link registration, cold-start routing, and session-resync checks passed.');
