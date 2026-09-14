@@ -103,13 +103,16 @@ function main() {
   assert.strictEqual(textPart.text, "Summarize the document.");
 
   assert.strictEqual(CAPABILITY_CATALOG.file_analysis.implemented, true);
-  assert.strictEqual(CAPABILITY_CATALOG.file_analysis.minimumPlan, "top");
+  assert.strictEqual(CAPABILITY_CATALOG.file_analysis.minimumPlan, "premium");
   const freeFile = buildCapabilityAccess({ planTier: "free" })
     .find((item) => item.key === "file_analysis");
-  const topFile = buildCapabilityAccess({ planTier: "top" })
+  const premiumFile = buildCapabilityAccess({ planTier: "premium" })
+    .find((item) => item.key === "file_analysis");
+  const legacyTopFile = buildCapabilityAccess({ planTier: "top" })
     .find((item) => item.key === "file_analysis");
   assert.strictEqual(freeFile.usable, false);
-  assert.strictEqual(topFile.usable, true);
+  assert.strictEqual(premiumFile.usable, true);
+  assert.strictEqual(legacyTopFile.usable, true);
 
   const fileRate = getRateLimitPolicy({}).fileAnalysis;
   assert.strictEqual(fileRate.scope, "file_analysis_account");
@@ -123,7 +126,7 @@ function main() {
   assert.strictEqual(count(composedIndex, '<script src="/email-account-ui.js" defer></script>'), 1);
   assert.ok(composedIndex.includes("A more open tomorrow starts today."));
 
-  console.log("UNBOUND AI file-analysis contract checks passed.");
+  console.log("UNBOUND AI file-analysis contract checks passed: Premium entitlement with legacy TOP compatibility.");
 }
 
 main();
