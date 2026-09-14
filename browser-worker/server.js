@@ -10,6 +10,9 @@ const MAX_SESSIONS = Math.min(Math.max(Number(process.env.UNBOUND_BROWSER_MAX_SE
 const IDLE_TIMEOUT_MS = Math.min(Math.max(Number(process.env.UNBOUND_BROWSER_IDLE_TIMEOUT_MS) || 120000, 30000), 300000);
 const PROTOCOL = "unbound-cdp-v1";
 let activeSessions = 0;
+let browserReady = false;
+let browserVersion = null;
+let browserSelfTestError = null;
 
 function safeEqual(left, right) {
   const a = Buffer.from(String(left || ""));
@@ -53,13 +56,39 @@ async function launchBrowser() {
   });
 }
 
+async function runBrowserSelfTest() {
+  if (!AUTH_TOKEN) {
+    browserReady = false;
+    browserSelfTestError = "worker-auth-token-missing";
+    console.error("UNBOUND BROWSER WORKER SELF-TEST: auth token is missing.");
+    return;
+  }
+  let browser = null;
+  try {
+    browser = await launchBrowser();
+    browserVersion = await browser.version();
+    browserReady = true;
+    browserSelfTestError = null;
+    console.log(`UNBOUND browser worker self-test passed: ${browserVersion}.`);
+  } catch (error) {
+    browserReady = false;
+    browserSelfTestError = String(error?.message || error).slice(0, 240);
+    console.error("UNBOUND BROWSER WORKER SELF-TEST FAILED:", browserSelfTestError);
+  } finally {
+    try { await browser?.close(); } catch (_) {}
+  }
+}
+
 const server = http.createServer((req, res) => {
   if (req.url === "/healthz" || req.url === "/") {
     res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
     return res.end(JSON.stringify({
-      ok: true,
+      ok: Boolean(AUTH_TOKEN && browserReady),
       service: "unbound-browser-worker",
       authenticated: Boolean(AUTH_TOKEN),
+      browserReady,
+      browserVersion,
+      browserSelfTestError,
       activeSessions,
       maxSessions: MAX_SESSIONS
     }));
@@ -86,6 +115,11 @@ server.on("upgrade", (request, socket, head) => {
   }
   if (!authorized(request)) {
     socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+  if (!browserReady) {
+    socket.write("HTTP/1.1 503 Service Unavailable\r\nRetry-After: 5\r\nConnection: close\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -158,4 +192,5 @@ process.on("SIGTERM", () => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`UNBOUND browser worker listening on port ${PORT}; max sessions ${MAX_SESSIONS}.`);
+  void runBrowserSelfTest();
 });
