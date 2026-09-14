@@ -10,6 +10,30 @@
     return /\b(latest|current|today|tonight|this week|this month|right now|up[- ]to[- ]date|news|search(?: the)? web|browse(?: the)? web|look (?:it )?up|look online|check online|check the web|research this|find online|verify online|web search|internet search)\b/i.test(text);
   }
 
+  function deviceInspectionSummary() {
+    const snapshot = window.__UNBOUND_DEVICE_INSPECTION__;
+    if (!snapshot || typeof snapshot !== 'object') {
+      return {
+        source: null,
+        browserInspectionAvailable: true,
+        deepInspectionAvailable: false,
+        permissionGranted: false,
+        appCount: 0,
+        processCount: 0,
+        selectedFileCount: 0
+      };
+    }
+    return {
+      source: String(snapshot.source || '').slice(0,40) || null,
+      browserInspectionAvailable: snapshot.browserInspectionAvailable !== false,
+      deepInspectionAvailable: Boolean(snapshot.deepInspectionAvailable),
+      permissionGranted: Boolean(snapshot.permissionGranted),
+      appCount: Array.isArray(snapshot.apps) ? snapshot.apps.length : 0,
+      processCount: Array.isArray(snapshot.processes) ? snapshot.processes.length : 0,
+      selectedFileCount: Array.isArray(snapshot.selectedFiles) ? snapshot.selectedFiles.length : 0
+    };
+  }
+
   async function readMicrophonePermission() {
     if (!navigator.permissions?.query) return microphonePermission;
     try {
@@ -39,7 +63,8 @@
       deviceMemoryGb: Number(navigator.deviceMemory || 0) || null,
       networkType: String(connection?.effectiveType || connection?.type || '').slice(0, 40) || null,
       formsOnPage: Math.min(document.forms?.length || 0, 1000),
-      sameOriginFormInteraction: true
+      sameOriginFormInteraction: true,
+      deviceInspection: deviceInspectionSummary()
     });
     window.__UNBOUND_CLIENT_CAPABILITIES__ = data;
     window.dispatchEvent(new CustomEvent('unbound:client-capabilities', { detail: data }));
@@ -143,6 +168,7 @@
   window.addEventListener('online', snapshot);
   window.addEventListener('offline', snapshot);
   window.addEventListener('resize', snapshot);
+  window.addEventListener('unbound:device-inspection', snapshot);
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => void refresh(), { once: true });
   } else {
