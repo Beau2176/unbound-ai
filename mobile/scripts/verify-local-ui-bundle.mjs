@@ -22,7 +22,7 @@ try {
 }
 
 if (manifest) {
-  if (manifest.schemaVersion !== 2) failures.push('unexpected bundle manifest schema version');
+  if (manifest.schemaVersion !== 3) failures.push('unexpected bundle manifest schema version');
   if (manifest.releaseReady !== false) failures.push('local UI bundle must not claim store release readiness');
   if (!String(manifest.transportStatus || '').includes('signed native runtime validation pending')) {
     failures.push('manifest must preserve the signed-device native transport blocker');
@@ -33,9 +33,23 @@ if (manifest) {
   if (manifest.nativeApiTransport?.apiOrigin !== 'https://unbound-ai-app.onrender.com') {
     failures.push('manifest native API origin must stay pinned to the production HTTPS origin');
   }
+  if (manifest.nativeValidation?.page !== 'native-validation.html') {
+    failures.push('manifest must identify the packaged native validation page');
+  }
+  if (manifest.nativeValidation?.runtime !== 'native-validation.js') {
+    failures.push('manifest must identify the native validation runtime');
+  }
+  if (manifest.nativeValidation?.launcher !== 'native-validation-link.js') {
+    failures.push('manifest must identify the local-only native validation launcher');
+  }
+  if (manifest.nativeValidation?.reportSchemaVersion !== 1) {
+    failures.push('native validation report schema version must remain explicit');
+  }
+  if (manifest.nativeValidation?.exposesSecrets !== false) {
+    failures.push('native validation manifest must explicitly declare that reports expose no secrets');
+  }
 
-  const requiredScripts = [
-    'native-api-bridge.js',
+  const appRuntimeScripts = [
     'desktop-voice-input.js',
     'native-mobile-bridge.js',
     'voice-presets.js',
@@ -49,6 +63,11 @@ if (manifest) {
     'voice-media-shortcuts.js',
     'adult-step-up.js'
   ];
+  const mobileRuntimeScripts = [
+    'native-api-bridge.js',
+    'native-validation-link.js',
+    'native-validation.js'
+  ];
   const requiredPages = [
     'terms.html',
     'privacy.html',
@@ -57,7 +76,15 @@ if (manifest) {
     'images.html',
     'files.html'
   ];
-  const requiredFiles = ['index.html', ...requiredScripts, ...requiredPages, 'unbound-cosmic.png'];
+  const mobilePages = ['native-validation.html'];
+  const requiredFiles = [
+    'index.html',
+    ...mobileRuntimeScripts,
+    ...appRuntimeScripts,
+    ...requiredPages,
+    ...mobilePages,
+    'unbound-cosmic.png'
+  ];
 
   for (const file of requiredFiles) {
     const record = manifest.files?.[file];
@@ -95,10 +122,16 @@ if (manifest) {
     if (!homepage.includes('src="./native-api-bridge.js?v=108"')) {
       failures.push('generated homepage is missing the synchronous native API transport bridge');
     }
+    if (!homepage.includes('src="./native-validation-link.js?v=109"')) {
+      failures.push('generated homepage is missing the local native validation launcher');
+    }
+    if (homepage.includes('src="./native-validation.js?v=109"')) {
+      failures.push('generated homepage must not run the validation probe runtime continuously');
+    }
     if (homepage.includes('<meta name="unbound-production-bundle" content="ready"')) {
       failures.push('local UI bundle must not add the production-ready release marker');
     }
-    for (const script of requiredScripts.filter((item) => item !== 'native-api-bridge.js')) {
+    for (const script of appRuntimeScripts) {
       if (!homepage.includes(`src="./${script}?v=`)) failures.push(`generated homepage is missing local runtime script ${script}`);
       if (homepage.includes(`src="/${script}?v=`)) failures.push(`generated homepage still contains server-root runtime script ${script}`);
     }
@@ -127,6 +160,24 @@ if (manifest) {
       failures.push(`${page}: transport injection check failed (${error?.message || error})`);
     }
   }
+
+  try {
+    const validationPage = await readFile(resolve(wwwDir, 'native-validation.html'), 'utf8');
+    if (!validationPage.includes('src="./native-api-bridge.js?v=108"')) {
+      failures.push('native validation page must load native API transport before running checks');
+    }
+    if (!validationPage.includes('src="./native-validation.js?v=109"')) {
+      failures.push('native validation page must load the validation runtime');
+    }
+    if (!validationPage.includes('id="runValidationButton"')) {
+      failures.push('native validation page must expose an explicit rerun control');
+    }
+    if (!validationPage.includes('id="validationRaw"')) {
+      failures.push('native validation page must expose the safe machine-readable report');
+    }
+  } catch (error) {
+    failures.push(`native validation page verification failed: ${error?.message || error}`);
+  }
 }
 
 if (failures.length) {
@@ -135,4 +186,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('UNBOUND local mobile UI bundle is hash-verified with native API transport packaged and signed-device release validation still pending.');
+console.log('UNBOUND local mobile UI bundle is hash-verified with native transport and a no-secret signed-device validation harness packaged.');

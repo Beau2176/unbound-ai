@@ -6,6 +6,11 @@
 
   let accountSnapshot = null;
   let nativeReloadPending = false;
+  const LOCAL_PROTOCOL = String(location.protocol || '');
+  const LOCAL_HOST = String(location.host || '');
+  const LOCAL_BASE = LOCAL_PROTOCOL && LOCAL_HOST
+    ? `${LOCAL_PROTOCOL}//${LOCAL_HOST}`
+    : String(location.origin || '');
 
   const dispatch = (name, detail) => {
     window.dispatchEvent(new CustomEvent(name, { detail }));
@@ -149,8 +154,9 @@
     if (!raw.startsWith('/') || raw.includes('\\')) return null;
 
     try {
-      const parsed = new URL(raw, location.origin);
-      if (parsed.origin !== location.origin) return null;
+      const parsed = new URL(raw, LOCAL_BASE);
+      if (parsed.protocol !== LOCAL_PROTOCOL || parsed.host !== LOCAL_HOST) return null;
+      if (parsed.username || parsed.password) return null;
       if (parsed.pathname !== raw) return null;
       if (!APP_LINK_ROUTES.has(parsed.pathname)) return null;
       return parsed.pathname;
@@ -188,7 +194,7 @@
       }
 
       if (!route) return null;
-      return `${location.origin}${route}${url.search}${url.hash}`;
+      return `${LOCAL_BASE}${route}${url.search}${url.hash}`;
     } catch {}
     return null;
   };

@@ -33,12 +33,21 @@ assert(bridgeSource.includes("plugins.App.addListener('appUrlOpen'"), 'native br
 assert(bridgeSource.includes("url.protocol === 'https:'"), 'native bridge must explicitly require HTTPS for web links');
 assert(bridgeSource.includes("url.protocol === 'unbound:'"), 'native bridge must support the controlled UNBOUND custom scheme');
 assert(bridgeSource.includes("url.username || url.password || url.port"), 'native bridge must reject credential-bearing or custom-port links');
-assert(bridgeSource.includes("parsed.origin !== location.origin"), 'native bridge must reject cross-origin route normalization');
+assert(bridgeSource.includes("const LOCAL_PROTOCOL = String(location.protocol || '')"), 'native bridge must capture the actual local scheme');
+assert(bridgeSource.includes("const LOCAL_HOST = String(location.host || '')"), 'native bridge must capture the actual local host');
+assert(bridgeSource.includes('parsed.protocol !== LOCAL_PROTOCOL || parsed.host !== LOCAL_HOST'), 'native bridge must compare local scheme and host instead of URL.origin');
+assert(bridgeSource.includes('return `${LOCAL_BASE}${route}${url.search}${url.hash}`'), 'native navigation must build destinations from the custom-scheme-safe local base');
+assert(!bridgeSource.includes('parsed.origin !== location.origin'), 'native bridge must not rely on URL.origin for custom Capacitor schemes');
 assert(bridgeSource.includes("parsed.pathname !== raw"), 'native bridge must reject normalized traversal-style paths');
 assert(bridgeSource.includes("input.length > 2048"), 'native bridge must bound incoming deep-link length');
 assert(bridgeSource.includes("url.search.length > 1024 || url.hash.length > 1024"), 'native bridge must bound query and fragment length');
 assert(bridgeSource.includes("unbound:deep-link-blocked"), 'blocked native links should emit a local diagnostic event without navigating');
 assert(bridgeSource.includes("destination !== location.href"), 'native deep links should avoid pointless same-page reloads');
+
+const iosCustomRoute = new URL('/privacy.html', 'capacitor://localhost');
+assert.strictEqual(iosCustomRoute.origin, 'null', 'standard URL.origin is opaque for the Capacitor iOS custom scheme');
+assert.strictEqual(iosCustomRoute.protocol, 'capacitor:');
+assert.strictEqual(iosCustomRoute.host, 'localhost');
 
 const routeMatch = bridgeSource.match(/const APP_LINK_ROUTES = new Set\(\[([\s\S]*?)\]\);/);
 assert(routeMatch, 'native bridge must define an explicit deep-link route allowlist');
@@ -87,4 +96,4 @@ assert(
   'initial native startup should establish the account baseline without forcing a reload'
 );
 
-console.log('UNBOUND AI native deep-link registration, cold-start routing, and session-resync checks passed.');
+console.log('UNBOUND AI native deep-link registration, custom-scheme routing, cold-start routing, and session-resync checks passed.');
