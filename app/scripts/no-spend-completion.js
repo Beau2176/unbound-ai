@@ -18,7 +18,7 @@ const REQUIRED_ARTIFACTS = [
   "docs/EMAIL_VERIFICATION.md",
   "docs/MALWARE_SCANNING.md",
   "mobile/release-evidence/README.md",
-  "mobile/runtime/native-api-transport.js",
+  "mobile/runtime/native-api-bridge.js",
   "mobile/runtime/native-validation.js",
   "mobile/scripts/verify-native-api-transport.mjs",
   "mobile/scripts/verify-native-validation.mjs",
