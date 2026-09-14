@@ -27,10 +27,23 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Verify official native brand source
         run: npm run verify:assets
-      - name: Generate Android project
-        run: npx cap add android
-      - name: Sync Android project
-        run: npx cap sync android
+      - name: Verify store config is safe and release remains blocked
+        run: npm run verify:store-config
+      - name: Generate Android project with store-safe config
+        run: npm run add:android:store
+      - name: Sync Android store-safe config
+        run: node scripts/run-capacitor.mjs store sync android
+      - name: Verify Android store config has no remote server
+        run: |
+          test -f android/app/src/main/assets/capacitor.config.json
+          if grep -q 'unbound-ai-app.onrender.com' android/app/src/main/assets/capacitor.config.json; then
+            echo 'Store-safe Android config unexpectedly contains the Render development server.'
+            exit 1
+          fi
+      - name: Verify explicit Android remote-development mode
+        run: |
+          node scripts/run-capacitor.mjs remote-dev sync android
+          grep -q 'unbound-ai-app.onrender.com' android/app/src/main/assets/capacitor.config.json
       - name: Generate official Android icons and splash resources
         run: npm run assets:android
       - name: Register UNBOUND Android URL scheme
@@ -69,10 +82,23 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Verify official native brand source
         run: npm run verify:assets
-      - name: Generate iOS project
-        run: npx cap add ios
-      - name: Sync iOS project
-        run: npx cap sync ios
+      - name: Verify store config is safe and release remains blocked
+        run: npm run verify:store-config
+      - name: Generate iOS project with store-safe config
+        run: npm run add:ios:store
+      - name: Sync iOS store-safe config
+        run: node scripts/run-capacitor.mjs store sync ios
+      - name: Verify iOS store config has no remote server
+        run: |
+          test -f ios/App/App/capacitor.config.json
+          if grep -q 'unbound-ai-app.onrender.com' ios/App/App/capacitor.config.json; then
+            echo 'Store-safe iOS config unexpectedly contains the Render development server.'
+            exit 1
+          fi
+      - name: Verify explicit iOS remote-development mode
+        run: |
+          node scripts/run-capacitor.mjs remote-dev sync ios
+          grep -q 'unbound-ai-app.onrender.com' ios/App/App/capacitor.config.json
       - name: Generate official iOS icons and splash resources
         run: npm run assets:ios
       - name: Register UNBOUND iOS URL scheme
