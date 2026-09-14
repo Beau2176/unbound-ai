@@ -61,8 +61,20 @@ The hosted native bridge already listens for Capacitor `appUrlOpen` events. App-
 
 This completes the app-side routing guard. It does **not** register Android intent filters, an iOS URL scheme, Universal Links, or Android App Links. Those platform declarations must be added and verified in the generated native projects before public store submission.
 
+## Native session resume synchronization
+
+The hosted native bridge now takes a non-sensitive snapshot of UI-relevant account state after startup and checks it again when the app returns to the foreground.
+
+- A real `401` from `/api/auth/me` is treated as a confirmed signed-out state, so a session that expired or was revoked on another device is reflected when the app resumes.
+- For signed-in accounts, the snapshot tracks identity/role, effective plan, subscription state, hard-18+ verification state, provider availability, and capability access that materially changes the visible UNBOUND interface.
+- If that verified state changed while the app was backgrounded, the bridge performs one same-origin page reload. The normal UNBOUND page bootstrap then reloads the current user, access level, controls, and conversation scope through the existing web authentication flow.
+- Temporary network failures, database/provider outages, malformed responses, or an unavailable `/api/account/access` response do not create a signed-out snapshot and do not force a reload.
+- The bridge emits a local `unbound:native-session-changed` event containing only a generic reason before resynchronization; it does not place session tokens or account details in the diagnostic event.
+
+This prepares the resume/session behavior in code, but real-device validation is still required for cookie persistence, password sign-in, passkeys, account revocation from another device, background/resume behavior, and provider-return flows on both Android and iOS.
+
 ## Store-readiness work still required
 
-Before public submission, replace the remote-server development configuration with a production mobile bundle or approved native navigation strategy, add final icons and splash assets, register and verify Android/iOS deep-link declarations, verify authentication/session behavior in the native container, complete age-verification and privacy disclosures, configure subscription/payment handling for each store, verify camera/microphone permission prompts on real devices, and run device/store-review testing.
+Before public submission, replace the remote-server development configuration with a production mobile bundle or approved native navigation strategy, add final icons and splash assets, register and verify Android/iOS deep-link declarations, validate authentication/session and passkey behavior on real devices, complete age-verification and privacy disclosures, configure subscription/payment handling for each store, verify camera/microphone permission prompts on real devices, and run device/store-review testing.
 
 The existing web service remains separate from this folder so mobile development does not change Render's current start/build commands.

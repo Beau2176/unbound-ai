@@ -4,6 +4,9 @@
 
   document.documentElement.classList.add('unbound-native-app');
 
+  let accountSnapshot = null;
+  let nativeReloadPending = false;
+
   const dispatch = (name, detail) => {
     window.dispatchEvent(new CustomEvent(name, { detail }));
   };
@@ -19,7 +22,63 @@
     return { ok: response.ok, status: response.status, body };
   };
 
-  const refreshNativeState = async () => {
+  const buildAccountSnapshot = (state) => {
+    const auth = state?.auth;
+    const access = state?.access;
+
+    if (auth?.status === 401) {
+      return JSON.stringify({ signedIn: false });
+    }
+
+    if (!auth?.ok || !auth?.body?.user) return null;
+    if (!access?.ok || !access?.body?.access) return null;
+
+    const user = auth.body.user;
+    const accountAccess = access.body.access;
+    const capabilities = Array.isArray(accountAccess.capabilities)
+      ? accountAccess.capabilities
+          .map((item) => ({
+            key: String(item?.key || ''),
+            usable: Boolean(item?.usable),
+            entitled: Boolean(item?.entitled),
+            available: Boolean(item?.available)
+          }))
+          .filter((item) => item.key)
+          .sort((left, right) => left.key.localeCompare(right.key))
+      : [];
+
+    return JSON.stringify({
+      signedIn: true,
+      user: {
+        id: String(user.id || ''),
+        email: String(user.email || ''),
+        displayName: String(user.displayName || ''),
+        role: String(user.role || ''),
+        planTier: String(user.planTier || ''),
+        complimentaryTopTier: Boolean(user.complimentaryTopTier)
+      },
+      plan: {
+        tier: String(accountAccess.plan?.tier || ''),
+        source: String(accountAccess.plan?.source || '')
+      },
+      subscription: {
+        status: String(accountAccess.subscription?.status || ''),
+        planTier: String(accountAccess.subscription?.planTier || ''),
+        cancelAtPeriodEnd: Boolean(accountAccess.subscription?.cancelAtPeriodEnd)
+      },
+      ageVerification: {
+        status: String(accountAccess.ageVerification?.status || ''),
+        verified: Boolean(accountAccess.ageVerification?.verified)
+      },
+      gateways: {
+        billingConfigured: Boolean(accountAccess.billingGateway?.configured),
+        ageVerificationConfigured: Boolean(accountAccess.ageVerificationGateway?.configured)
+      },
+      capabilities
+    });
+  };
+
+  const refreshNativeState = async ({ synchronizeUi = false } = {}) => {
     const [auth, access] = await Promise.allSettled([
       getJson('/api/auth/me'),
       getJson('/api/account/access')
@@ -32,8 +91,25 @@
       access: access.status === 'fulfilled' ? access.value : { ok: false, status: 0, body: null }
     };
 
+    const previousSnapshot = accountSnapshot;
+    const nextSnapshot = buildAccountSnapshot(state);
+    if (nextSnapshot !== null) accountSnapshot = nextSnapshot;
+
     window.__UNBOUND_NATIVE_STATE__ = state;
     dispatch('unbound:native-state', state);
+
+    if (
+      synchronizeUi &&
+      !nativeReloadPending &&
+      previousSnapshot !== null &&
+      nextSnapshot !== null &&
+      previousSnapshot !== nextSnapshot
+    ) {
+      nativeReloadPending = true;
+      dispatch('unbound:native-session-changed', { reason: 'account-state-changed' });
+      window.setTimeout(() => location.reload(), 0);
+    }
+
     return state;
   };
 
@@ -131,7 +207,7 @@
       if (destination !== location.href) location.assign(destination);
     });
     await plugins.App.addListener('appStateChange', ({ isActive }) => {
-      if (isActive) refreshNativeState().catch(() => {});
+      if (isActive) refreshNativeState({ synchronizeUi: true }).catch(() => {});
     });
   };
 
