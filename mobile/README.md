@@ -45,7 +45,7 @@ The hosted UNBOUND chat exposes PHOTO and VIDEO controls. The web layer requests
 
 `mobile/scripts/configure-media-permissions.mjs` now configures the generated native projects with the minimum capture declarations needed by those user-initiated features:
 
-- Android declares `android.permission.CAMERA` and `android.permission.RECORD_AUDIO`.
+- Android declares the camera permission `android.permission.CAMERA` and the microphone permission `android.permission.RECORD_AUDIO`.
 - Android explicitly marks `android.hardware.camera.any`, `android.hardware.camera`, `android.hardware.camera.autofocus`, and `android.hardware.microphone` as optional so capture hardware is not treated as a requirement for installing or using UNBOUND.
 - Android configuration fails if broad/background capture permissions such as `CAPTURE_AUDIO_OUTPUT`, `CAPTURE_VIDEO_OUTPUT`, `FOREGROUND_SERVICE_CAMERA`, or `FOREGROUND_SERVICE_MICROPHONE` appear.
 - iOS adds `NSCameraUsageDescription` explaining that camera access is used only when the user chooses Photo or Video.
