@@ -1,6 +1,6 @@
 {
   "name": "unbound-ai-mobile",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "description": "Native Android and iOS shell for UNBOUND AI",
   "scripts": {
@@ -16,7 +16,10 @@
     "configure:links:android": "node scripts/configure-deep-links.mjs --android",
     "configure:links:ios": "node scripts/configure-deep-links.mjs --ios",
     "configure:links": "node scripts/configure-deep-links.mjs",
-    "prepare:native": "npm run sync && npm run assets && npm run configure:links"
+    "configure:permissions:android": "node scripts/configure-media-permissions.mjs --android",
+    "configure:permissions:ios": "node scripts/configure-media-permissions.mjs --ios",
+    "configure:permissions": "node scripts/configure-media-permissions.mjs",
+    "prepare:native": "npm run sync && npm run assets && npm run configure:links && npm run configure:permissions"
   },
   "dependencies": {
     "@capacitor/app": "^7.0.2",
