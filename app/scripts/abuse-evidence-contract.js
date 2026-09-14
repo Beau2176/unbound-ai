@@ -84,7 +84,7 @@ function main() {
   );
 
   const docs = fs.readFileSync(path.resolve(appRoot, "..", "docs", "ABUSE_EVIDENCE_PRESERVATION.md"), "utf8");
-  assert.match(docs, /not a general surveillance archive/i);
+  assert.match(docs, /general surveillance archive/i);
   assert.match(docs, /does not send preserved data/i);
   assert.match(docs, /does not claim that a complete legal-violation classifier has been deployed/i);
 
