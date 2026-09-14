@@ -49,8 +49,20 @@ The local `@unbound/device-inspector` Capacitor plugin provides user-authorized 
 
 Run `npm install` and `npm run sync` after plugin changes so Capacitor registers the native plugin.
 
+## Deep-link routing boundary
+
+The hosted native bridge already listens for Capacitor `appUrlOpen` events. App-side routing is intentionally fail-closed:
+
+- HTTPS links are accepted only for the current UNBOUND web host / production UNBOUND host.
+- The controlled `unbound:` custom scheme is accepted only for known aliases or explicitly allowed public routes.
+- Public deep-link routes are limited to `/`, `/index.html`, `/terms.html`, `/privacy.html`, `/advertisers.html`, and `/connected-apps.html`.
+- `/api/*`, admin pages, advertising-admin pages, external hosts, HTTP links, credential-bearing URLs, custom ports, traversal-style paths, and oversized URLs are rejected instead of being loaded inside the native WebView.
+- Blocked links emit a local `unbound:deep-link-blocked` diagnostic event without exposing the rejected URL in the event payload.
+
+This completes the app-side routing guard. It does **not** register Android intent filters, an iOS URL scheme, Universal Links, or Android App Links. Those platform declarations must be added and verified in the generated native projects before public store submission.
+
 ## Store-readiness work still required
 
-Before public submission, replace the remote-server development configuration with a production mobile bundle or approved native navigation strategy, add final icons and splash assets, configure deep links, verify authentication/session behavior in the native container, complete age-verification and privacy disclosures, configure subscription/payment handling for each store, verify camera/microphone permission prompts on real devices, and run device/store-review testing.
+Before public submission, replace the remote-server development configuration with a production mobile bundle or approved native navigation strategy, add final icons and splash assets, register and verify Android/iOS deep-link declarations, verify authentication/session behavior in the native container, complete age-verification and privacy disclosures, configure subscription/payment handling for each store, verify camera/microphone permission prompts on real devices, and run device/store-review testing.
 
 The existing web service remains separate from this folder so mobile development does not change Render's current start/build commands.
