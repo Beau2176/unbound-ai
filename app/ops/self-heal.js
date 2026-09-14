@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const http = require("http");
 
 const LOCKED_POLICY = Object.freeze({
-  version: "v1.2",
+  version: "v1.3",
   enabled: true,
   allowRuntimeDisable: false,
   autonomousSourceMutation: false,
@@ -21,9 +21,17 @@ const LOCKED_POLICY = Object.freeze({
     "ops/diagnostics-server-integration.js",
     "capabilities/runtime.js",
     "capabilities/server-integration.js",
+    "actions/browser-cdp.js",
+    "actions/browser-agent.js",
+    "actions/capability.js",
+    "actions/routes.js",
+    "actions/server-integration.js",
     "ui/native-shell-server-integration.js",
     "health-status.js",
     "runtime-capabilities.js",
+    "device-inspector.js",
+    "action-bridge.js",
+    "control-center.html",
     "project/identity.js",
     "security/http-security.js",
     "memory/server-integration.js",
