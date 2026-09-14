@@ -1,6 +1,6 @@
 {
   "name": "unbound-ai-mobile",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "private": true,
   "description": "Native Android and iOS shell for UNBOUND AI",
   "scripts": {
@@ -13,8 +13,9 @@
     "add:android:store": "npm run build:local-ui && npm run verify:local-ui && node scripts/run-capacitor.mjs store add android",
     "add:ios:store": "npm run build:local-ui && npm run verify:local-ui && node scripts/run-capacitor.mjs store add ios",
     "build:local-ui": "node scripts/build-local-ui-bundle.mjs",
-    "verify:local-ui": "npm run verify:native-transport && node scripts/verify-local-ui-bundle.mjs",
+    "verify:local-ui": "npm run verify:native-transport && npm run verify:native-validation && node scripts/verify-local-ui-bundle.mjs",
     "verify:native-transport": "node scripts/verify-native-api-transport.mjs",
+    "verify:native-validation": "node scripts/verify-native-validation.mjs",
     "verify:assets": "node scripts/verify-brand-assets.mjs",
     "assets:android": "npm run verify:assets && npx capacitor-assets generate --android --iconBackgroundColor '#030810' --iconBackgroundColorDark '#030810' --splashBackgroundColor '#030810' --splashBackgroundColorDark '#030810'",
     "assets:ios": "npm run verify:assets && npx capacitor-assets generate --ios --iconBackgroundColor '#030810' --iconBackgroundColorDark '#030810' --splashBackgroundColor '#030810' --splashBackgroundColorDark '#030810'",
