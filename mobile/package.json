@@ -16,6 +16,7 @@
     "verify:local-ui": "npm run verify:native-transport && npm run verify:native-validation && node scripts/verify-local-ui-bundle.mjs",
     "verify:native-transport": "node scripts/verify-native-api-transport.mjs",
     "verify:native-validation": "node scripts/verify-native-validation.mjs",
+    "verify:release-evidence-contract": "node scripts/verify-release-evidence-contract.mjs",
     "verify:assets": "node scripts/verify-brand-assets.mjs",
     "assets:android": "npm run verify:assets && npx capacitor-assets generate --android --iconBackgroundColor '#030810' --iconBackgroundColorDark '#030810' --splashBackgroundColor '#030810' --splashBackgroundColorDark '#030810'",
     "assets:ios": "npm run verify:assets && npx capacitor-assets generate --ios --iconBackgroundColor '#030810' --iconBackgroundColorDark '#030810' --splashBackgroundColor '#030810' --splashBackgroundColorDark '#030810'",
@@ -26,8 +27,8 @@
     "configure:permissions:android": "node scripts/configure-media-permissions.mjs --android",
     "configure:permissions:ios": "node scripts/configure-media-permissions.mjs --ios",
     "configure:permissions": "node scripts/configure-media-permissions.mjs",
-    "verify:store-config": "node scripts/verify-store-shell.mjs --expect-blocked",
-    "verify:store-shell": "node scripts/verify-store-shell.mjs",
+    "verify:store-config": "npm run verify:release-evidence-contract && node scripts/verify-store-shell.mjs --expect-blocked",
+    "verify:store-shell": "npm run verify:release-evidence-contract && node scripts/verify-store-shell.mjs",
     "prepare:native": "npm run sync && npm run assets && npm run configure:links && npm run configure:permissions",
     "prepare:store": "npm run build:local-ui && npm run verify:local-ui && npm run verify:store-shell && node scripts/run-capacitor.mjs store sync && npm run assets && npm run configure:links && npm run configure:permissions"
   },
