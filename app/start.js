@@ -50,6 +50,9 @@ const {
   integrateLaunchDashboardServerSource
 } = require("./ops/launch-dashboard-server-integration");
 const {
+  integrateDiagnosticsServerSource
+} = require("./ops/diagnostics-server-integration");
+const {
   integrateNativeShellServerSource
 } = require("./ui/native-shell-server-integration");
 const {
@@ -82,6 +85,7 @@ function compileIntegratedServer({
   integratedSource = integrateModelRoutingServerSource(integratedSource);
   integratedSource = integrateConnectedAppsServerSource(integratedSource);
   integratedSource = integrateLaunchDashboardServerSource(integratedSource);
+  integratedSource = integrateDiagnosticsServerSource(integratedSource);
   integratedSource = integrateNativeShellServerSource(integratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
