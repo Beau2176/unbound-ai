@@ -83,7 +83,8 @@ if (manifest) {
     for (const expected of [
       'unbound-mobile-layout-v101',
       'unboundVoiceListenButton',
-      'unbound-stream-recovery'
+      'let streamCompleted = false;',
+      '[Response interrupted before completion.]'
     ]) {
       if (!homepage.includes(expected)) failures.push(`generated homepage is missing transformed production UI marker ${expected}`);
     }
