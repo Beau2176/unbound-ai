@@ -18,12 +18,14 @@ const [bridgeSource, configSource, buildSource] = await Promise.all([
 
 assert.doesNotThrow(() => new vm.Script(bridgeSource), 'native API bridge must parse as JavaScript');
 assert.match(configSource, /CapacitorHttp:\s*\{\s*enabled:\s*true\s*\}/m, 'CapacitorHttp must stay enabled for native transport');
-assert(buildSource.includes('src="./native-api-bridge.js?v=${version}"') || buildSource.includes('src="./${file}?v=${version}"'), 'local bundle must inject the native API bridge');
+assert(buildSource.includes('NATIVE_API_SCRIPT'), 'local bundle must declare the native API bridge');
+assert(buildSource.includes('injectNativeApiTransport'), 'local bundle must inject native API transport before app runtime');
 assert(buildSource.includes('PUBLIC_PAGES'), 'local bundle must transport-enable copied public pages');
 assert(bridgeSource.includes("credentials: 'include'"), 'native API bridge must promote API requests to credentialed native transport');
 assert(bridgeSource.includes("url.pathname.startsWith('/api/')"), 'native API bridge must rewrite only API paths');
-assert(bridgeSource.includes("url.origin !== LOCAL_ORIGIN"), 'native API bridge must not rewrite arbitrary external origins');
-assert(bridgeSource.includes("https://unbound-ai-app.onrender.com"), 'native API bridge must pin the production HTTPS API origin');
+assert(bridgeSource.includes('url.protocol !== LOCAL_PROTOCOL || url.host !== LOCAL_HOST'), 'native API bridge must match local scheme and host instead of URL.origin');
+assert(bridgeSource.includes('url.username || url.password'), 'native API bridge must reject credential-bearing URLs');
+assert(bridgeSource.includes('https://unbound-ai-app.onrender.com'), 'native API bridge must pin the production HTTPS API origin');
 
 class TestCustomEvent {
   constructor(type, init = {}) {
@@ -32,7 +34,19 @@ class TestCustomEvent {
   }
 }
 
-async function exerciseNativeOrigin(origin) {
+function mockLocation(localBase) {
+  const parsed = new URL(localBase);
+  return {
+    origin: localBase,
+    protocol: parsed.protocol,
+    host: parsed.host,
+    hostname: parsed.hostname,
+    port: parsed.port,
+    href: `${localBase}/index.html`
+  };
+}
+
+async function exerciseNativeOrigin(localBase) {
   const calls = [];
   const events = [];
   const window = {
@@ -51,7 +65,7 @@ async function exerciseNativeOrigin(origin) {
 
   const context = vm.createContext({
     window,
-    location: { origin },
+    location: mockLocation(localBase),
     URL,
     Request,
     CustomEvent: TestCustomEvent,
@@ -60,7 +74,7 @@ async function exerciseNativeOrigin(origin) {
   vm.runInContext(bridgeSource, context);
 
   assert.equal(window.__UNBOUND_NATIVE_API_TRANSPORT__?.apiOrigin, 'https://unbound-ai-app.onrender.com');
-  assert.equal(window.__UNBOUND_NATIVE_API_TRANSPORT__?.localOrigin, origin);
+  assert.equal(window.__UNBOUND_NATIVE_API_TRANSPORT__?.localOrigin, localBase);
   assert.equal(window.__UNBOUND_NATIVE_API_TRANSPORT__?.mode, 'capacitor-http');
   assert.equal(events.at(-1)?.type, 'unbound:native-api-ready');
 
@@ -87,6 +101,10 @@ async function exerciseNativeOrigin(origin) {
 
   await window.fetch('https://example.com/api/test', { method: 'GET' });
   assert.equal(calls.at(-1)?.resource, 'https://example.com/api/test', 'external origins must never be rewritten');
+
+  const credentialUrl = `${localBase.replace('://', '://user:secret@')}/api/auth/me`;
+  await window.fetch(credentialUrl, { method: 'GET' });
+  assert.equal(calls.at(-1)?.resource, credentialUrl, 'credential-bearing URLs must never be rewritten');
 }
 
 await exerciseNativeOrigin('https://localhost');
@@ -105,7 +123,7 @@ vm.runInContext(
   bridgeSource,
   vm.createContext({
     window: nonNativeWindow,
-    location: { origin: 'https://localhost' },
+    location: mockLocation('https://localhost'),
     URL,
     Request,
     CustomEvent: TestCustomEvent,
