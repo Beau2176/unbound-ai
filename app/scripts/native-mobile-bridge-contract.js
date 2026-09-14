@@ -55,4 +55,28 @@ assert(bridgeSource.includes("['terms', '/terms.html']"), 'custom UNBOUND deep l
 assert(bridgeSource.includes("['privacy', '/privacy.html']"), 'custom UNBOUND deep links should support Privacy');
 assert(bridgeSource.includes("['apps', '/connected-apps.html']"), 'custom UNBOUND deep links should support connected apps');
 
-console.log('UNBOUND AI native mobile bridge and safe deep-link checks passed.');
+// Native session resync must react to real account changes without turning transient outages into logouts.
+assert(bridgeSource.includes('let accountSnapshot = null'), 'native bridge should keep a baseline account snapshot');
+assert(bridgeSource.includes('let nativeReloadPending = false'), 'native bridge should prevent duplicate resume reloads');
+assert(bridgeSource.includes('const buildAccountSnapshot = (state)'), 'native bridge should normalize UI-relevant account state before comparing it');
+assert(bridgeSource.includes("auth?.status === 401"), 'a verified 401 should become a stable signed-out snapshot');
+assert(bridgeSource.includes('if (!auth?.ok || !auth?.body?.user) return null'), 'transient or malformed auth failures must not look like signed-out state');
+assert(bridgeSource.includes('if (!access?.ok || !access?.body?.access) return null'), 'signed-in access outages must not force UI resync');
+assert(bridgeSource.includes('.sort((left, right) => left.key.localeCompare(right.key))'), 'capabilities should be ordered before snapshot comparison');
+assert(bridgeSource.includes('synchronizeUi = false'), 'native state refresh should be non-disruptive by default');
+assert(bridgeSource.includes('previousSnapshot !== null'), 'initial native state discovery must only establish a baseline');
+assert(bridgeSource.includes('nextSnapshot !== null'), 'unknown/transient state must not trigger navigation');
+assert(bridgeSource.includes('previousSnapshot !== nextSnapshot'), 'native UI resync should happen only after a meaningful account-state change');
+assert(bridgeSource.includes('unbound:native-session-changed'), 'native bridge should emit a local session-change diagnostic before resync');
+assert(bridgeSource.includes("{ reason: 'account-state-changed' }"), 'session-change event should not expose account/session data');
+assert(bridgeSource.includes('window.setTimeout(() => location.reload(), 0)'), 'native account changes should reload once so the existing web bootstrap resyncs all UI state');
+assert(
+  bridgeSource.includes("if (isActive) refreshNativeState({ synchronizeUi: true }).catch(() => {});"),
+  'native app resume should perform guarded UI synchronization'
+);
+assert(
+  bridgeSource.includes('installAppLinkHandler(),\n    refreshNativeState()'),
+  'initial native startup should establish the account baseline without forcing a reload'
+);
+
+console.log('UNBOUND AI native deep-link and session-resync checks passed.');
