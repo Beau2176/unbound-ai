@@ -37,7 +37,8 @@ assert.ok(prompt.includes("Voice generation/playback"));
 assert.ok(prompt.includes("Internet/web research"));
 assert.ok(prompt.includes("Account/server/network health"));
 assert.ok(prompt.includes("Raw passwords"));
-assert.ok(prompt.includes("not currently have unrestricted cross-site browser control"));
+assert.ok(prompt.includes("browser-control engine is built"));
+assert.ok(prompt.includes("deep app/process inspection requires the native/desktop inspector bridge"));
 assert.ok(!prompt.includes("not available in this text chat"));
 
 console.log("UNBOUND runtime capability awareness contract passed.");
