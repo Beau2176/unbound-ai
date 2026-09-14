@@ -35,6 +35,7 @@ function browser(mode, fetch) {
     input: { value: "unsent message", focus() {} },
     sendButton: {},
     goDeeperButton: {},
+    messages: { scrollTop: 0, scrollHeight: 0 },
     bubbles: [],
     saves: 0,
     addMessage(role, content) {
