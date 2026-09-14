@@ -17,7 +17,7 @@ From the `mobile` directory:
 npm install
 npm run add:android
 npm run add:ios
-npm run sync
+npm run prepare:native
 ```
 
 Open the native projects with:
@@ -28,6 +28,16 @@ npm run ios
 ```
 
 Android builds require Android Studio. iOS/App Store builds require Xcode on macOS.
+
+## Official native branding
+
+`assets/logo.svg` is the committed native source mark for UNBOUND AI. It is a small-screen adaptation of the approved blue-and-gold infinity branding: symbol-only, dark-backed, self-contained, and free of small text that would be clipped by Android/iOS icon masks.
+
+The asset workflow uses the recommended `@capacitor/assets` single-logo mode. `npm run assets` verifies the source and generates Android and iOS resources separately on the same `#030810` dark background. Platform-specific commands are also available as `npm run assets:android` and `npm run assets:ios`.
+
+`mobile/scripts/verify-brand-assets.mjs` fails closed if the source is missing, replaced by a tiny placeholder, loses the approved dark/blue/gold identity, contains text, or introduces executable/external SVG references. Mobile Native CI runs this verification before generating either native scaffold.
+
+The source mark is now prepared in-repo. Store submission still requires visual inspection of the generated icon/splash resources on real Android and iOS devices and in the respective store preview tooling.
 
 ## Camera and video capture
 
@@ -75,6 +85,6 @@ This prepares the resume/session behavior in code, but real-device validation is
 
 ## Store-readiness work still required
 
-Before public submission, replace the remote-server development configuration with a production mobile bundle or approved native navigation strategy, add final icons and splash assets, register and verify Android/iOS deep-link declarations, validate authentication/session and passkey behavior on real devices, complete age-verification and privacy disclosures, configure subscription/payment handling for each store, verify camera/microphone permission prompts on real devices, and run device/store-review testing.
+Before public submission, replace the remote-server development configuration with a production mobile bundle or approved native navigation strategy, visually validate the generated native icon/splash resources, register and verify Android/iOS deep-link declarations, validate authentication/session and passkey behavior on real devices, complete age-verification and privacy disclosures, configure subscription/payment handling for each store, verify camera/microphone permission prompts on real devices, and run device/store-review testing.
 
 The existing web service remains separate from this folder so mobile development does not change Render's current start/build commands.
