@@ -4,6 +4,10 @@ const PROVIDER_ID = "segpay";
 const CONSUMER_PORTAL_URL = "https://cs.segpay.com/";
 const CHECKOUT_TTL_SECONDS = 30 * 60;
 const SUBJECT_CHUNK_SIZE = 32;
+const PLAN_PRICES = Object.freeze({
+  premium: "59.99",
+  ultra: "114.99"
+});
 
 const capabilities = Object.freeze({
   checkout: true,
@@ -35,36 +39,70 @@ function normalizePageRef(value) {
   return /^[A-Za-z0-9][A-Za-z0-9_-]{2,99}$/.test(text) ? text : null;
 }
 
+function normalizePaidPlan(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  const normalized = raw === "top" ? "ultra" : raw;
+  return Object.prototype.hasOwnProperty.call(PLAN_PRICES, normalized)
+    ? normalized
+    : null;
+}
+
 function getSegpayConfig(env = process.env) {
-  const payPageRef = normalizePageRef(env.SEGPAY_PAY_PAGE_REF);
+  const premiumPayPageRef = normalizePageRef(env.SEGPAY_PREMIUM_PAY_PAGE_REF);
+  const ultraPayPageRef = normalizePageRef(
+    env.SEGPAY_ULTRA_PAY_PAGE_REF || env.SEGPAY_PAY_PAGE_REF
+  );
   const signingKey = safeText(env.SEGPAY_SIGNING_KEY, 500);
-  const topAmount = normalizeAmount(env.SEGPAY_TOP_AMOUNT);
   const postbackUsername = safeText(env.SEGPAY_POSTBACK_USERNAME, 200);
   const postbackPassword = safeText(env.SEGPAY_POSTBACK_PASSWORD, 300);
   const merchantApprovalVerified = truthy(env.SEGPAY_MERCHANT_APPROVAL_VERIFIED);
   const signedCheckoutFieldsVerified = truthy(env.SEGPAY_SIGNED_CHECKOUT_FIELDS_VERIFIED);
   const postbackAuthVerified = truthy(env.SEGPAY_POSTBACK_AUTH_VERIFIED);
 
+  const plans = Object.freeze({
+    premium: Object.freeze({
+      id: "premium",
+      amount: PLAN_PRICES.premium,
+      payPageRef: premiumPayPageRef,
+      configured: Boolean(premiumPayPageRef)
+    }),
+    ultra: Object.freeze({
+      id: "ultra",
+      amount: PLAN_PRICES.ultra,
+      payPageRef: ultraPayPageRef,
+      configured: Boolean(ultraPayPageRef)
+    })
+  });
+
+  const sharedConfigured = Boolean(
+    signingKey &&
+    postbackUsername &&
+    postbackPassword &&
+    merchantApprovalVerified &&
+    signedCheckoutFieldsVerified &&
+    postbackAuthVerified
+  );
+
   return {
-    payPageRef,
     signingKey,
-    topAmount,
     postbackUsername,
     postbackPassword,
     merchantApprovalVerified,
     signedCheckoutFieldsVerified,
     postbackAuthVerified,
+    plans,
+    sharedConfigured,
     configured: Boolean(
-      payPageRef &&
-      signingKey &&
-      topAmount &&
-      postbackUsername &&
-      postbackPassword &&
-      merchantApprovalVerified &&
-      signedCheckoutFieldsVerified &&
-      postbackAuthVerified
+      sharedConfigured && plans.premium.configured && plans.ultra.configured
     )
   };
+}
+
+function getPlanConfig(planTier, env = process.env) {
+  const plan = normalizePaidPlan(planTier);
+  const config = getSegpayConfig(env);
+  if (!plan) return { plan: null, config, planConfig: null };
+  return { plan, config, planConfig: config.plans[plan] };
 }
 
 function splitSubject(subject) {
@@ -98,13 +136,19 @@ function signJwtHs256({ payload, signingKey }) {
 
 function createCheckoutToken({
   subject,
+  planTier = "ultra",
   env = process.env,
   nowMs = Date.now(),
   jti = crypto.randomUUID()
 } = {}) {
-  const config = getSegpayConfig(env);
-  if (!config.configured) {
-    const error = new Error("Segpay billing is not fully configured.");
+  const { plan, config, planConfig } = getPlanConfig(planTier, env);
+  if (!plan || !planConfig) {
+    const error = new Error("Segpay billing plan is unsupported.");
+    error.code = "SEGPAY_PLAN_UNSUPPORTED";
+    throw error;
+  }
+  if (!config.sharedConfigured || !planConfig.configured) {
+    const error = new Error("Segpay billing is not fully configured for that plan.");
     error.code = "SEGPAY_NOT_CONFIGURED";
     throw error;
   }
@@ -115,15 +159,16 @@ function createCheckoutToken({
     iat,
     exp,
     jti: String(jti),
-    pageref: config.payPageRef,
+    pageref: planConfig.payPageRef,
     fields: {
-      amount: config.topAmount,
+      amount: planConfig.amount,
       REF1: split.part1,
       REF2: split.part2
     }
   };
 
   return {
+    planTier: plan,
     token: signJwtHs256({ payload, signingKey: config.signingKey }),
     payload,
     expiresAt: new Date(exp * 1000).toISOString()
@@ -186,11 +231,17 @@ function reconstructSubject(params) {
   return /^[A-Za-z0-9._~-]{33,64}$/.test(subject) ? subject : null;
 }
 
+function planFromPostback(params) {
+  const amount = normalizeAmount(
+    params.amount || params.transactionamount || params.tranamount || params.price
+  );
+  if (!amount) return null;
+  return Object.entries(PLAN_PRICES).find(([, price]) => price === amount)?.[0] || null;
+}
+
 function parseSegpayTimestamp(value) {
   const text = String(value || "").trim();
   if (!text) return null;
-
-  // Parse the provider's GMT form before Date's host-local string parser.
   const cleaned = text.replace(/\s*\(GMT[^)]*\)\s*$/i, "").trim();
   const match = cleaned.match(
     /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)$/i
@@ -230,14 +281,9 @@ function mapSubscriptionState(params) {
   if (action === "cancel") {
     return { status: "active", cancelAtPeriodEnd: true };
   }
-  if (action === "disable") {
+  if (action === "disable" || action === "void") {
     return { status: "canceled", cancelAtPeriodEnd: false };
   }
-
-  if (action === "void") {
-    return { status: "canceled", cancelAtPeriodEnd: false };
-  }
-
   if (action === "auth") {
     if (["credit", "charge", "revoke", "rdrreversal"].includes(tranType)) {
       return { status: "canceled", cancelAtPeriodEnd: false };
@@ -257,7 +303,6 @@ function mapSubscriptionState(params) {
       }
     }
   }
-
   return { status: "none", cancelAtPeriodEnd: false };
 }
 
@@ -286,19 +331,19 @@ function addDays(timestamp, days) {
 }
 
 async function startCheckout({ subject, planTier, env = process.env } = {}) {
-  if (String(planTier || "").trim().toLowerCase() !== "top") {
-    const error = new Error("Segpay checkout only supports the TOP plan.");
+  const { plan, config, planConfig } = getPlanConfig(planTier, env);
+  if (!plan || !planConfig) {
+    const error = new Error("Segpay checkout only supports Premium and Ultra plans.");
     error.code = "SEGPAY_PLAN_UNSUPPORTED";
     throw error;
   }
-  const config = getSegpayConfig(env);
-  if (!config.configured) {
-    const error = new Error("Segpay billing is not fully configured.");
+  if (!config.sharedConfigured || !planConfig.configured) {
+    const error = new Error("Segpay billing is not fully configured for that plan.");
     error.code = "SEGPAY_NOT_CONFIGURED";
     throw error;
   }
-  const checkout = createCheckoutToken({ subject, env });
-  const checkoutUrl = new URL(`https://pay.segpay.com/${config.payPageRef}`);
+  const checkout = createCheckoutToken({ subject, planTier: plan, env });
+  const checkoutUrl = new URL(`https://pay.segpay.com/${planConfig.payPageRef}`);
   checkoutUrl.searchParams.set("jwt", checkout.token);
   return {
     checkoutUrl: checkoutUrl.toString(),
@@ -332,7 +377,7 @@ async function parseWebhook({ rawBody, query = null, now = new Date() } = {}) {
       eventId: null,
       subject: null,
       status: "none",
-      planTier: "top",
+      planTier: null,
       occurredAt: null
     };
   }
@@ -357,7 +402,7 @@ async function parseWebhook({ rawBody, query = null, now = new Date() } = {}) {
     customerId: safeText(params.paymentaccountid, 300) || purchaseId,
     subscriptionId: purchaseId,
     status: state.status,
-    planTier: "top",
+    planTier: planFromPostback(params),
     currentPeriodStart: state.status === "active" ? eventTimestamp : null,
     currentPeriodEnd,
     cancelAtPeriodEnd: state.cancelAtPeriodEnd,
@@ -382,16 +427,20 @@ module.exports = {
   CONSUMER_PORTAL_URL,
   CHECKOUT_TTL_SECONDS,
   SUBJECT_CHUNK_SIZE,
+  PLAN_PRICES,
   capabilities,
   truthy,
   normalizeAmount,
   normalizePageRef,
+  normalizePaidPlan,
   getSegpayConfig,
+  getPlanConfig,
   splitSubject,
   signJwtHs256,
   createCheckoutToken,
   parsePostbackParameters,
   reconstructSubject,
+  planFromPostback,
   parseSegpayTimestamp,
   mapSubscriptionState,
   stableEventId,
