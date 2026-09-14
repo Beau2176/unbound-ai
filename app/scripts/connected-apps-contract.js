@@ -202,11 +202,15 @@ async function main() {
   assert.ok(revokeAuthorization.startsWith("Basic "));
 
   assert.strictEqual(CAPABILITY_CATALOG.connected_apps.implemented, true);
-  assert.strictEqual(CAPABILITY_CATALOG.connected_apps.minimumPlan, "top");
+  assert.strictEqual(CAPABILITY_CATALOG.connected_apps.minimumPlan, "ultra");
   const free = buildCapabilityAccess({ planTier: "free" }).find((item) => item.key === "connected_apps");
-  const top = buildCapabilityAccess({ planTier: "top" }).find((item) => item.key === "connected_apps");
+  const premium = buildCapabilityAccess({ planTier: "premium" }).find((item) => item.key === "connected_apps");
+  const ultra = buildCapabilityAccess({ planTier: "ultra" }).find((item) => item.key === "connected_apps");
+  const legacyTop = buildCapabilityAccess({ planTier: "top" }).find((item) => item.key === "connected_apps");
   assert.strictEqual(free.usable, false);
-  assert.strictEqual(top.usable, true);
+  assert.strictEqual(premium.usable, false);
+  assert.strictEqual(ultra.usable, true);
+  assert.strictEqual(legacyTop.usable, true);
 
   let integrated = fs.readFileSync(path.join(appRoot, "server.js"), "utf8");
   integrated = integrateEmailVerificationServerSource(integrated);
@@ -264,7 +268,7 @@ async function main() {
     "Connected Apps should integrate after model routing."
   );
 
-  console.log("PASS connected-apps contract: encrypted tokens, one-time state, PKCE, current GitHub API version, refresh/revocation, TOP entitlement, read-only UI, and runtime integration.");
+  console.log("PASS connected-apps contract: encrypted tokens, one-time state, PKCE, current GitHub API version, refresh/revocation, Ultra entitlement with legacy TOP compatibility, read-only UI, and runtime integration.");
 }
 
 main().catch((error) => {
