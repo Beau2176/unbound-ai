@@ -39,6 +39,6 @@ assert.ok(prompt.includes("Account/server/network health"));
 assert.ok(prompt.includes("Raw passwords"));
 assert.ok(prompt.includes("browser-control engine is built"));
 assert.ok(prompt.includes("deep app/process inspection requires the native/desktop inspector bridge"));
-assert.ok(!prompt.includes("not available in this text chat"));
+assert.ok(prompt.includes('Do not answer with blanket statements such as "not available in this text chat"'));
 
 console.log("UNBOUND runtime capability awareness contract passed.");
