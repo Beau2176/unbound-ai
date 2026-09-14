@@ -42,16 +42,16 @@ if (failures.length) {
 
 if (expectBlocked) {
   if (productionBundleReady) {
-    console.error('Expected store preparation to remain blocked, but the production-bundle readiness marker is present. Update the CI expectation as part of the real bundle migration.');
+    console.error('Expected store preparation to remain blocked, but the production-bundle readiness marker is present. Update the CI expectation only when native API/session transport and the remaining release requirements are actually verified.');
     process.exit(1);
   }
-  console.log('UNBOUND store config is remote-free and store preparation is correctly blocked until the real local production bundle is committed.');
+  console.log('UNBOUND store config is remote-free and store preparation remains correctly blocked pending native API/session transport and final release verification.');
   process.exit(0);
 }
 
 if (!productionBundleReady) {
-  console.error('UNBOUND store preparation is blocked: mobile/www is still the placeholder shell, not the complete production application bundle.');
-  console.error('Do not add the readiness marker until the local bundle can provide the full signed-in app and its required API/network strategy without Capacitor server.url.');
+  console.error('UNBOUND store preparation is blocked: the local production-derived UI is not yet attested as a complete store-ready application.');
+  console.error('Native API/session transport must preserve authenticated requests, HttpOnly session behavior, mutation protections, streaming chat, provider returns, and revocation behavior before the readiness marker can be added.');
   process.exit(1);
 }
 
