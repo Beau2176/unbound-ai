@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v1.0";
+const INTEGRATION_VERSION = "v1.1";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const first = source.indexOf(marker);
@@ -77,7 +77,7 @@ function integrateRuntimeCapabilitiesServerSource(serverSource) {
     source,
     researchMarker,
     `      research:\n        (productMode === "research" || autoResearch)\n          ? { enabled: true, maxToolCalls: depthStyle === "work" ? 8 : 4 }\n          : null`,
-    2,
+    1,
     "auto-research-routing"
   );
 

@@ -3,6 +3,13 @@
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   let microphonePermission = 'unknown';
 
+  function wantsWebResearch(message) {
+    const text = String(message || '').trim().toLowerCase();
+    if (!text) return false;
+    if (/\b(do not|don't|dont|without)\s+(search|browse|look up|research|check the web|use the web)\b/i.test(text)) return false;
+    return /\b(latest|current|today|tonight|this week|this month|right now|up[- ]to[- ]date|news|search(?: the)? web|browse(?: the)? web|look (?:it )?up|look online|check online|check the web|research this|find online|verify online|web search|internet search)\b/i.test(text);
+  }
+
   async function readMicrophonePermission() {
     if (!navigator.permissions?.query) return microphonePermission;
     try {
@@ -63,6 +70,40 @@
     return true;
   }
 
+  function syntheticStreamFromJson(data, status = 200) {
+    if (status < 200 || status >= 300) {
+      const line = JSON.stringify({ type: 'error', error: data?.error || 'Web research request failed.' }) + '\n';
+      return new Response(line, { status: 200, headers: { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' } });
+    }
+    const meta = {
+      type: 'meta',
+      depthStyle: data?.depthStyle,
+      productMode: data?.productMode,
+      aiStyle: data?.aiStyle,
+      provider: data?.provider,
+      model: data?.model,
+      conversationId: data?.conversationId || null
+    };
+    const done = {
+      type: 'done',
+      depthStyle: data?.depthStyle,
+      productMode: data?.productMode,
+      aiStyle: data?.aiStyle,
+      provider: data?.provider,
+      model: data?.model,
+      conversationId: data?.conversationId || null,
+      sources: data?.sources || [],
+      citations: data?.citations || [],
+      webSearchCalls: data?.webSearchCalls || 0
+    };
+    const text = [
+      JSON.stringify(meta),
+      JSON.stringify({ type: 'delta', delta: String(data?.reply || '') }),
+      JSON.stringify(done)
+    ].join('\n') + '\n';
+    return new Response(text, { status: 200, headers: { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' } });
+  }
+
   const originalFetch = window.fetch.bind(window);
   window.fetch = async function unboundCapabilityAwareFetch(input, init = {}) {
     try {
@@ -75,6 +116,15 @@
         if (parsed && typeof parsed === 'object') {
           parsed.clientCapabilities = snapshot();
           init = { ...init, body: JSON.stringify(parsed) };
+
+          if (url.pathname === '/api/chat/stream' && wantsWebResearch(parsed.message)) {
+            const researchResponse = await originalFetch('/api/chat', {
+              ...init,
+              headers: { ...(init.headers || {}), 'Content-Type': 'application/json', Accept: 'application/json' }
+            });
+            const data = await researchResponse.json().catch(() => ({ error: 'Web research returned an invalid response.' }));
+            return syntheticStreamFromJson(data, researchResponse.status);
+          }
         }
       }
     } catch (_) {}
@@ -86,6 +136,7 @@
     snapshot,
     requestMicrophone,
     speak,
+    wantsWebResearch,
     get current() { return window.__UNBOUND_CLIENT_CAPABILITIES__ || snapshot(); }
   });
 
