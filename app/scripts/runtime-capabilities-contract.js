@@ -6,7 +6,7 @@ const {
   buildRuntimeCapabilityPrompt
 } = require("../capabilities/runtime");
 
-assert.strictEqual(CAPABILITY_RUNTIME_VERSION, "v1.0");
+assert.strictEqual(CAPABILITY_RUNTIME_VERSION, "v1.1");
 assert.strictEqual(shouldAutoResearch("Search the web for the latest release"), true);
 assert.strictEqual(shouldAutoResearch("What is the news today?"), true);
 assert.strictEqual(shouldAutoResearch("Don't search the web; just brainstorm"), false);
