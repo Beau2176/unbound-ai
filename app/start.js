@@ -59,6 +59,9 @@ const {
   integrateActionControlServerSource
 } = require("./actions/server-integration");
 const {
+  integrateAbuseEvidenceServerSource
+} = require("./security/abuse-evidence-server-integration");
+const {
   integrateNativeShellServerSource
 } = require("./ui/native-shell-server-integration");
 const {
@@ -94,6 +97,7 @@ function compileIntegratedServer({
   integratedSource = integrateDiagnosticsServerSource(integratedSource);
   integratedSource = integrateRuntimeCapabilitiesServerSource(integratedSource);
   integratedSource = integrateActionControlServerSource(integratedSource);
+  integratedSource = integrateAbuseEvidenceServerSource(integratedSource);
   integratedSource = integrateNativeShellServerSource(integratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
