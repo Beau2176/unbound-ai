@@ -62,13 +62,16 @@ function main() {
   });
 
   assert.strictEqual(CAPABILITY_CATALOG.command_center.implemented, true);
-  assert.strictEqual(CAPABILITY_CATALOG.command_center.minimumPlan, "top");
+  assert.strictEqual(CAPABILITY_CATALOG.command_center.minimumPlan, "ultra");
   const freeAccess = buildCapabilityAccess({ planTier: "free" })
     .find((item) => item.key === "command_center");
-  const topAccess = buildCapabilityAccess({ planTier: "top" })
+  const ultraAccess = buildCapabilityAccess({ planTier: "ultra" })
+    .find((item) => item.key === "command_center");
+  const legacyTopAccess = buildCapabilityAccess({ planTier: "top" })
     .find((item) => item.key === "command_center");
   assert.strictEqual(freeAccess.usable, false);
-  assert.strictEqual(topAccess.usable, true);
+  assert.strictEqual(ultraAccess.usable, true);
+  assert.strictEqual(legacyTopAccess.usable, true);
 
   const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   const composed = buildFileAwareIndexHtml(indexSource);
@@ -118,7 +121,7 @@ function main() {
   }
   assert.ok(checked >= 1);
 
-  console.log("UNBOUND AI Command Center contract checks passed.");
+  console.log("UNBOUND AI Command Center contract checks passed: Ultra entitlement with legacy TOP compatibility.");
 }
 
 main();

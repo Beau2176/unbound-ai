@@ -129,11 +129,13 @@ function main() {
   expectCode(() => extractGeneratedImage({ data: [] }), "IMAGE_PROVIDER_EMPTY_OUTPUT");
 
   assert.strictEqual(CAPABILITY_CATALOG.image_tools.implemented, true);
-  assert.strictEqual(CAPABILITY_CATALOG.image_tools.minimumPlan, "top");
+  assert.strictEqual(CAPABILITY_CATALOG.image_tools.minimumPlan, "ultra");
   const free = buildCapabilityAccess({ planTier: "free" }).find((item) => item.key === "image_tools");
-  const top = buildCapabilityAccess({ planTier: "top" }).find((item) => item.key === "image_tools");
+  const ultra = buildCapabilityAccess({ planTier: "ultra" }).find((item) => item.key === "image_tools");
+  const legacyTop = buildCapabilityAccess({ planTier: "top" }).find((item) => item.key === "image_tools");
   assert.strictEqual(free.usable, false);
-  assert.strictEqual(top.usable, true);
+  assert.strictEqual(ultra.usable, true);
+  assert.strictEqual(legacyTop.usable, true);
 
   const rate = getRateLimitPolicy({}).imageTools;
   assert.strictEqual(rate.scope, "image_tools_account");
@@ -155,7 +157,7 @@ function main() {
   assert.ok(routes.includes('eventType: "image_generation"'));
   assert.ok(routes.includes('eventType: "image_edit"'));
 
-  console.log("UNBOUND AI image-tools contract checks passed.");
+  console.log("UNBOUND AI image-tools contract checks passed: Ultra entitlement with legacy TOP compatibility.");
 }
 
 main();
