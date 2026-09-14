@@ -3,7 +3,11 @@
   if (!cap || typeof cap.isNativePlatform !== 'function' || !cap.isNativePlatform()) return;
 
   const API_ORIGIN = 'https://unbound-ai-app.onrender.com';
-  const LOCAL_ORIGIN = String(location.origin || '');
+  const LOCAL_PROTOCOL = String(location.protocol || '');
+  const LOCAL_HOST = String(location.host || '');
+  const LOCAL_BASE = LOCAL_PROTOCOL && LOCAL_HOST
+    ? `${LOCAL_PROTOCOL}//${LOCAL_HOST}`
+    : String(location.origin || '');
   const originalFetch = window.fetch.bind(window);
 
   const normalizeLocalApiUrl = (resource) => {
@@ -15,8 +19,9 @@
     else return null;
 
     try {
-      const url = new URL(raw, LOCAL_ORIGIN);
-      if (url.origin !== LOCAL_ORIGIN) return null;
+      const url = new URL(raw, LOCAL_BASE);
+      if (url.protocol !== LOCAL_PROTOCOL || url.host !== LOCAL_HOST) return null;
+      if (url.username || url.password) return null;
       if (!url.pathname.startsWith('/api/')) return null;
       return `${API_ORIGIN}${url.pathname}${url.search}`;
     } catch {
@@ -59,7 +64,7 @@
 
   window.__UNBOUND_NATIVE_API_TRANSPORT__ = Object.freeze({
     apiOrigin: API_ORIGIN,
-    localOrigin: LOCAL_ORIGIN,
+    localOrigin: LOCAL_BASE,
     mode: 'capacitor-http',
     credentials: 'include'
   });
