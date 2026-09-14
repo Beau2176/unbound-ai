@@ -50,6 +50,12 @@ const {
   integrateLaunchDashboardServerSource
 } = require("./ops/launch-dashboard-server-integration");
 const {
+  integrateAdminThreeTierServerSource
+} = require("./access/admin-three-tier-server-integration");
+const {
+  integrateLaunchRehearsalServerSource
+} = require("./ops/launch-rehearsal-server-integration");
+const {
   integrateDiagnosticsServerSource
 } = require("./ops/diagnostics-server-integration");
 const {
@@ -100,6 +106,8 @@ function compileIntegratedServer({
   integratedSource = integrateModelRoutingServerSource(integratedSource);
   integratedSource = integrateConnectedAppsServerSource(integratedSource);
   integratedSource = integrateLaunchDashboardServerSource(integratedSource);
+  integratedSource = integrateAdminThreeTierServerSource(integratedSource);
+  integratedSource = integrateLaunchRehearsalServerSource(integratedSource);
   integratedSource = integrateDiagnosticsServerSource(integratedSource);
   integratedSource = integrateRuntimeCapabilitiesServerSource(integratedSource);
   integratedSource = integrateActionControlServerSource(integratedSource);
