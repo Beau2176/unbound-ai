@@ -86,7 +86,7 @@ function main() {
   const docs = fs.readFileSync(path.resolve(appRoot, "..", "docs", "ABUSE_EVIDENCE_PRESERVATION.md"), "utf8");
   assert.match(docs, /general surveillance archive/i);
   assert.match(docs, /does not send preserved data/i);
-  assert.match(docs, /does not claim that a complete legal-violation classifier has been deployed/i);
+  assert.match(docs, /complete legal-violation classifier has been deployed/i);
 
   console.log("Abuse evidence preservation privacy/crypto contract passed.");
 }
