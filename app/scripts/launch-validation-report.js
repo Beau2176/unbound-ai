@@ -85,17 +85,16 @@ async function buildLaunchValidationReport({
     });
   }
 
-  const codeAndRuntimeChecksPassed = Boolean(
-    (!smoke || smoke.passed) &&
-      (!load || load.summary.passed)
-  );
+  const codeAndRuntimeChecksPassed = smoke
+    ? Boolean(smoke.passed && (!load || load.summary.passed))
+    : null;
 
   return {
     profile: "zero_cost_launch_validation",
     generatedAt: new Date(nowMs).toISOString(),
     launchReady: Boolean(
       preflight.eligibleToScheduleFinalRehearsal &&
-      codeAndRuntimeChecksPassed &&
+      codeAndRuntimeChecksPassed === true &&
       smoke &&
       smoke.passed &&
       (!requireReady || smoke.checks.every((check) => check.ready !== false))
@@ -111,10 +110,15 @@ async function buildLaunchValidationReport({
 }
 
 function formatText(report) {
+  const runtimeLabel = report.codeAndRuntimeChecksPassed === null
+    ? "NOT RUN"
+    : report.codeAndRuntimeChecksPassed
+      ? "PASS"
+      : "FAIL";
   const lines = [
     "UNBOUND AI — Zero-cost launch validation",
     `Generated: ${report.generatedAt}`,
-    `Code/runtime checks: ${report.codeAndRuntimeChecksPassed ? "PASS" : "BLOCKED/NOT RUN"}`,
+    `Code/runtime checks: ${runtimeLabel}`,
     `External prerequisites: ${report.externalPrerequisitesReady ? "PASS" : "BLOCKED"}`,
     `Commercial launch ready: ${report.launchReady ? "YES" : "NO"}`,
     ""
@@ -145,7 +149,7 @@ if (require.main === module) {
         fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
       }
       process.stdout.write(args.json ? `${JSON.stringify(report, null, 2)}\n` : `${formatText(report)}\n`);
-      if (args.origin && !report.codeAndRuntimeChecksPassed) process.exitCode = 1;
+      if (args.origin && report.codeAndRuntimeChecksPassed === false) process.exitCode = 1;
     })
     .catch((error) => {
       console.error(error?.message || error);
