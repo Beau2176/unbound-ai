@@ -30,6 +30,9 @@ if (!configSource.includes("? { ...baseConfig, server: remoteDevelopmentServer }
 if (/const\s+baseConfig[\s\S]*?server\s*:/m.test(configSource.split('const remoteDevelopmentServer')[0])) {
   failures.push('base/store config must not contain a server override');
 }
+if (!configSource.includes('CapacitorHttp:') || !configSource.includes('enabled: true')) {
+  failures.push('store/native configuration must keep CapacitorHttp enabled for the packaged API transport');
+}
 
 const readyMarker = '<meta name="unbound-production-bundle" content="ready"';
 const productionBundleReady = webIndex.includes(readyMarker);
@@ -42,16 +45,16 @@ if (failures.length) {
 
 if (expectBlocked) {
   if (productionBundleReady) {
-    console.error('Expected store preparation to remain blocked, but the production-bundle readiness marker is present. Update the CI expectation only when native API/session transport and the remaining release requirements are actually verified.');
+    console.error('Expected store preparation to remain blocked, but the production-bundle readiness marker is present. Update the CI expectation only after signed Android/iOS session and provider-flow validation completes.');
     process.exit(1);
   }
-  console.log('UNBOUND store config is remote-free and store preparation remains correctly blocked pending native API/session transport and final release verification.');
+  console.log('UNBOUND store config is remote-free, native API transport is configured, and store preparation remains correctly blocked pending signed-device validation.');
   process.exit(0);
 }
 
 if (!productionBundleReady) {
-  console.error('UNBOUND store preparation is blocked: the local production-derived UI is not yet attested as a complete store-ready application.');
-  console.error('Native API/session transport must preserve authenticated requests, HttpOnly session behavior, mutation protections, streaming chat, provider returns, and revocation behavior before the readiness marker can be added.');
+  console.error('UNBOUND store preparation is blocked: the packaged native API/session transport has not yet completed signed-device release validation.');
+  console.error('Validate sign-in cookie persistence, logout/revocation, chat completion, passkeys, account resume sync, checkout/age-verification provider returns, and failure recovery on signed Android and iOS builds before adding the readiness marker.');
   process.exit(1);
 }
 
