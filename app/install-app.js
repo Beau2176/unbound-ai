@@ -83,7 +83,7 @@
       '.unbound-install-message{position:fixed;z-index:120;right:16px;top:78px;width:min(360px,calc(100vw - 32px));padding:14px;border:1px solid rgba(107,193,255,.35);border-radius:14px;background:rgba(4,10,21,.97);box-shadow:0 18px 55px rgba(0,0,0,.55);color:#eef9ff;font-size:12px;line-height:1.5;}',
       '.unbound-install-message strong{display:block;margin-bottom:5px;color:#fff;}',
       '.unbound-install-message button{margin-top:10px;padding:7px 10px;border-radius:9px;border:1px solid rgba(107,193,255,.34);background:rgba(66,165,255,.12);color:#e7f5ff;font:inherit;font-weight:800;cursor:pointer;}',
-      '@media(max-width:760px){.unbound-install-btn{min-height:34px;padding:7px 9px;font-size:11px}.unbound-install-message{top:66px;right:10px;width:calc(100vw - 20px)}}'
+      '@media(max-width:760px){.unbound-install-btn{width:34px;min-width:34px;min-height:34px;padding:6px;font-size:0}.unbound-install-btn::after{content:"⬇";font-size:16px;line-height:1}.unbound-install-message{top:66px;right:10px;width:calc(100vw - 20px)}}'
     ].join('');
     document.head.appendChild(style);
   }
