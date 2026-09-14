@@ -36,15 +36,32 @@ Android builds require Android Studio. iOS/App Store builds require Xcode on mac
 `capacitor.config.ts` is environment-aware and defaults to `store` when `UNBOUND_MOBILE_ENV` is not set.
 
 - `store` uses the local `www` bundle and contains no `server.url` or `server.allowNavigation` override.
-- `remote-dev` is the only mode that loads `https://unbound-ai-app.onrender.com` inside the Capacitor WebView. It exists to preserve the current development workflow while the real local production bundle is built.
+- `remote-dev` is the only mode that loads `https://unbound-ai-app.onrender.com` inside the Capacitor WebView. It preserves the current development workflow without making the remote server the store default.
 - `scripts/run-capacitor.mjs` launches Capacitor with an explicit `store` or `remote-dev` environment in a cross-platform way.
-- `npm run add:android:store`, `npm run add:ios:store`, and `npm run sync:store` use the store-safe configuration.
-- `npm run verify:store-config` verifies that store/default mode is remote-free and that release remains blocked while the local bundle is incomplete.
+- `npm run add:android:store`, `npm run add:ios:store`, and `npm run sync:store` regenerate and verify the local UI before using the store-safe configuration.
+- `npm run verify:store-config` verifies that store/default mode is remote-free and that release remains blocked until all store-readiness attestations are complete.
 - Mobile Native CI generates store-safe Android and iOS projects, verifies that their copied Capacitor configs contain no Render development origin, then separately proves that explicit `remote-dev` mode does contain the Render origin.
 
-`mobile/www/index.html` is still only the small local placeholder shell. It is **not** the complete production UNBOUND application. Therefore `npm run prepare:store` intentionally fails through `scripts/verify-store-shell.mjs` until a real local production bundle and its API/network strategy are complete. Do not add the `unbound-production-bundle=ready` marker merely to bypass the gate; the marker is an engineering attestation that the full local app is actually ready to replace `server.url`.
-
 This separation prevents an accidental store build from silently shipping the development Render WebView while keeping development usable today.
+
+## Local production-derived UI bundle
+
+`npm run build:local-ui` now builds `mobile/www` from the same production UI sources used by the hosted UNBOUND application instead of relying on the old placeholder page.
+
+The builder:
+
+- starts from `app/index.html`;
+- applies the existing `injectMobileLayoutStyles`, `injectVoiceListenControl`, and `injectInterruptedStreamRecovery` transformations in the same order used by the hosted server;
+- injects local relative copies of the twelve production runtime scripts used by the hosted native shell;
+- copies Terms, Privacy, Advertisers, Connected Apps, Images, Files, and the cosmic artwork into the local bundle;
+- writes `unbound-local-bundle-manifest.json` with SHA-256 hashes and byte counts for every generated output plus hashes of the production sources;
+- marks the bundle as `releaseReady: false` while native API/session transport remains unverified.
+
+`npm run verify:local-ui` recomputes the generated hashes, checks every required page/script/asset, verifies the mobile/voice/stream-recovery transformations, and confirms that runtime scripts use local relative paths rather than hosted root paths.
+
+Mobile Native CI rebuilds this bundle from a clean checkout, verifies it, copies it into freshly generated Android and iOS projects, and checks the local-bundle marker and manifest inside each native project.
+
+The UI-bundling step is therefore code-complete, but **store release remains intentionally blocked**. The generated local page still contains the web application's existing relative `/api/...` requests. Before `npm run prepare:store` can be allowed to succeed, UNBOUND must implement and verify a native-safe API/session transport that preserves the existing HttpOnly session-cookie protections, mutation-origin defenses, account/session behavior, streaming chat, checkout/provider returns, and revocation behavior. Do not add the `unbound-production-bundle=ready` marker merely to bypass this gate.
 
 ## Official native branding
 
@@ -60,7 +77,7 @@ The source mark is now prepared in-repo. Store submission still requires visual 
 
 The hosted UNBOUND chat exposes PHOTO and VIDEO controls. The web layer requests camera/microphone access only after the user chooses a capture feature.
 
-`mobile/scripts/configure-media-permissions.mjs` now configures the generated native projects with the minimum capture declarations needed by those user-initiated features:
+`mobile/scripts/configure-media-permissions.mjs` configures the generated native projects with the minimum capture declarations needed by those user-initiated features:
 
 - Android declares the camera permission `android.permission.CAMERA` and the microphone permission `android.permission.RECORD_AUDIO`.
 - Android explicitly marks `android.hardware.camera.any`, `android.hardware.camera`, `android.hardware.camera.autofocus`, and `android.hardware.microphone` as optional so capture hardware is not treated as a requirement for installing or using UNBOUND.
@@ -74,7 +91,7 @@ Do not add broad background camera/microphone permissions. UNBOUND must not star
 
 Photo capture can fall back to the device/browser image picker when direct camera access is unavailable. Recorded raw video currently remains local to the browser; UNBOUND extracts representative visual frames for Premium image-understanding analysis. Full motion/audio video AI understanding and AI video editing require a separately approved provider and are not yet claimed as active.
 
-The native declarations are now code-complete, but real-device testing is still required to confirm the Android/iOS permission prompts appear at the correct user action, denial/revocation paths remain safe, and WebView capture behaves correctly on supported devices.
+The native declarations are code-complete, but real-device testing is still required to confirm the Android/iOS permission prompts appear at the correct user action, denial/revocation paths remain safe, and WebView capture behaves correctly on supported devices.
 
 ## Device Inspector
 
@@ -117,6 +134,6 @@ This prepares the resume/session behavior in code, but real-device validation is
 
 ## Store-readiness work still required
 
-Before public submission, replace the placeholder `mobile/www` shell with the complete local production application bundle and its approved API/network strategy, visually validate the generated native icon/splash resources, validate the `unbound:` scheme on real devices and later configure verified Universal/App Links when production signing/domain association is available, validate authentication/session and passkey behavior on real devices, complete age-verification and privacy disclosures, configure subscription/payment handling for each store, validate camera/microphone prompts and capture behavior on real devices, and run device/store-review testing.
+Before public submission, implement and verify native API/session transport for the generated local UI bundle; visually validate the generated native icon/splash resources; validate the `unbound:` scheme on real devices and later configure verified Universal/App Links when production signing/domain association is available; validate authentication/session and passkey behavior on real devices; complete age-verification and privacy disclosures; configure subscription/payment handling for each store; validate camera/microphone prompts and capture behavior on real devices; and run device/store-review testing.
 
 The existing hosted web service remains separate from this folder so mobile development does not change Render's current start/build commands.

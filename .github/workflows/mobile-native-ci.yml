@@ -5,10 +5,56 @@ on:
     branches: [main]
     paths:
       - 'mobile/**'
+      - 'app/index.html'
+      - 'app/unbound-cosmic.png'
+      - 'app/terms.html'
+      - 'app/privacy.html'
+      - 'app/advertisers.html'
+      - 'app/connected-apps.html'
+      - 'app/images.html'
+      - 'app/files.html'
+      - 'app/desktop-voice-input.js'
+      - 'app/native-mobile-bridge.js'
+      - 'app/voice-presets.js'
+      - 'app/continuous-voice.js'
+      - 'app/health-status.js'
+      - 'app/runtime-capabilities.js'
+      - 'app/device-inspector.js'
+      - 'app/action-bridge.js'
+      - 'app/tier-controls.js'
+      - 'app/media-capture.js'
+      - 'app/voice-media-shortcuts.js'
+      - 'app/adult-step-up.js'
+      - 'app/ui/mobile-layout.js'
+      - 'app/ui/voice-listen.js'
+      - 'app/ui/chat-stream-recovery.js'
       - '.github/workflows/mobile-native-ci.yml'
   pull_request:
     paths:
       - 'mobile/**'
+      - 'app/index.html'
+      - 'app/unbound-cosmic.png'
+      - 'app/terms.html'
+      - 'app/privacy.html'
+      - 'app/advertisers.html'
+      - 'app/connected-apps.html'
+      - 'app/images.html'
+      - 'app/files.html'
+      - 'app/desktop-voice-input.js'
+      - 'app/native-mobile-bridge.js'
+      - 'app/voice-presets.js'
+      - 'app/continuous-voice.js'
+      - 'app/health-status.js'
+      - 'app/runtime-capabilities.js'
+      - 'app/device-inspector.js'
+      - 'app/action-bridge.js'
+      - 'app/tier-controls.js'
+      - 'app/media-capture.js'
+      - 'app/voice-media-shortcuts.js'
+      - 'app/adult-step-up.js'
+      - 'app/ui/mobile-layout.js'
+      - 'app/ui/voice-listen.js'
+      - 'app/ui/chat-stream-recovery.js'
       - '.github/workflows/mobile-native-ci.yml'
   workflow_dispatch:
 
@@ -27,15 +73,23 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Verify official native brand source
         run: npm run verify:assets
+      - name: Build and verify production-derived local UI
+        run: |
+          npm run build:local-ui
+          npm run verify:local-ui
       - name: Verify store config is safe and release remains blocked
         run: npm run verify:store-config
       - name: Generate Android project with store-safe config
-        run: npm run add:android:store
+        run: node scripts/run-capacitor.mjs store add android
       - name: Sync Android store-safe config
         run: node scripts/run-capacitor.mjs store sync android
-      - name: Verify Android store config has no remote server
+      - name: Verify Android store config and local UI bundle
         run: |
           test -f android/app/src/main/assets/capacitor.config.json
+          test -f android/app/src/main/assets/public/index.html
+          test -f android/app/src/main/assets/public/unbound-local-bundle-manifest.json
+          grep -q 'unbound-local-ui-bundle' android/app/src/main/assets/public/index.html
+          grep -q '"releaseReady": false' android/app/src/main/assets/public/unbound-local-bundle-manifest.json
           if grep -q 'unbound-ai-app.onrender.com' android/app/src/main/assets/capacitor.config.json; then
             echo 'Store-safe Android config unexpectedly contains the Render development server.'
             exit 1
@@ -82,15 +136,23 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Verify official native brand source
         run: npm run verify:assets
+      - name: Build and verify production-derived local UI
+        run: |
+          npm run build:local-ui
+          npm run verify:local-ui
       - name: Verify store config is safe and release remains blocked
         run: npm run verify:store-config
       - name: Generate iOS project with store-safe config
-        run: npm run add:ios:store
+        run: node scripts/run-capacitor.mjs store add ios
       - name: Sync iOS store-safe config
         run: node scripts/run-capacitor.mjs store sync ios
-      - name: Verify iOS store config has no remote server
+      - name: Verify iOS store config and local UI bundle
         run: |
           test -f ios/App/App/capacitor.config.json
+          test -f ios/App/App/public/index.html
+          test -f ios/App/App/public/unbound-local-bundle-manifest.json
+          grep -q 'unbound-local-ui-bundle' ios/App/App/public/index.html
+          grep -q '"releaseReady": false' ios/App/App/public/unbound-local-bundle-manifest.json
           if grep -q 'unbound-ai-app.onrender.com' ios/App/App/capacitor.config.json; then
             echo 'Store-safe iOS config unexpectedly contains the Render development server.'
             exit 1
