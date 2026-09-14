@@ -3,8 +3,9 @@ const { publicHeyGenVoiceStatus } = require("../voice/heygen-tts");
 const { publicOpenAiSpeechStatus } = require("../voice/openai-tts");
 const { getTokenVaultStatus } = require("../connections/token-vault");
 const { publicGitHubStatus } = require("../connections/providers/github");
+const { publicBrowserControlStatus } = require("../actions/browser-cdp");
 
-const CAPABILITY_RUNTIME_VERSION = "v1.0";
+const CAPABILITY_RUNTIME_VERSION = "v1.1";
 
 function cleanString(value, maxLength = 120) {
   const text = String(value || "").trim();
@@ -16,6 +17,19 @@ function normalizePermission(value) {
   return ["granted", "prompt", "denied", "unknown"].includes(normalized)
     ? normalized
     : "unknown";
+}
+
+function normalizeDeviceInspection(value) {
+  const input = value && typeof value === "object" ? value : {};
+  return Object.freeze({
+    source: cleanString(input.source, 40),
+    browserInspectionAvailable: Boolean(input.browserInspectionAvailable),
+    deepInspectionAvailable: Boolean(input.deepInspectionAvailable),
+    permissionGranted: Boolean(input.permissionGranted),
+    appCount: Math.min(Math.max(Number(input.appCount) || 0, 0), 1000),
+    processCount: Math.min(Math.max(Number(input.processCount) || 0, 0), 1000),
+    selectedFileCount: Math.min(Math.max(Number(input.selectedFileCount) || 0, 0), 1000)
+  });
 }
 
 function normalizeClientCapabilities(value) {
@@ -39,7 +53,8 @@ function normalizeClientCapabilities(value) {
     deviceMemoryGb: number(input.deviceMemoryGb, 0.25, 1024),
     networkType: cleanString(input.networkType, 40),
     formsOnPage: number(input.formsOnPage, 0, 1000),
-    sameOriginFormInteraction: Boolean(input.sameOriginFormInteraction)
+    sameOriginFormInteraction: Boolean(input.sameOriginFormInteraction),
+    deviceInspection: normalizeDeviceInspection(input.deviceInspection)
   });
 }
 
@@ -58,6 +73,7 @@ function getRuntimeCapabilityStatus({ env = process.env, diagnostics = null, cli
   const naturalSpeech = publicOpenAiSpeechStatus(env);
   const vault = getTokenVaultStatus(env);
   const github = publicGitHubStatus(env);
+  const browserControl = publicBrowserControlStatus(env);
   const client = normalizeClientCapabilities(clientCapabilities);
 
   const voiceServerConfigured = Boolean(heygen.configured || naturalSpeech.configured);
@@ -84,9 +100,10 @@ function getRuntimeCapabilityStatus({ env = process.env, diagnostics = null, cli
     web: {
       researchAvailable: webResearchAvailable,
       autoResearchRouting: webResearchAvailable,
-      arbitraryThirdPartyBrowserControl: false,
+      arbitraryThirdPartyBrowserControl: Boolean(browserControl.configured),
       sameOriginFormInteraction: client.sameOriginFormInteraction,
-      connectedAppActions: Boolean(github.configured)
+      connectedAppActions: Boolean(github.configured),
+      finalActionConfirmationRequired: true
     },
     device: {
       browserDiagnostics: true,
@@ -95,7 +112,12 @@ function getRuntimeCapabilityStatus({ env = process.env, diagnostics = null, cli
       hardwareConcurrency: client.hardwareConcurrency,
       deviceMemoryGb: client.deviceMemoryGb,
       networkType: client.networkType,
-      arbitraryOtherAppInspection: false
+      deepInspectionAvailable: client.deviceInspection.deepInspectionAvailable,
+      inspectionSource: client.deviceInspection.source,
+      inspectedApps: client.deviceInspection.appCount,
+      inspectedProcesses: client.deviceInspection.processCount,
+      selectedFiles: client.deviceInspection.selectedFileCount,
+      arbitraryOtherAppInspection: client.deviceInspection.deepInspectionAvailable
     },
     health: {
       available: true,
@@ -116,6 +138,12 @@ function buildRuntimeCapabilityPrompt(options = {}) {
   const micState = status.microphoneSpeaker.microphoneAvailable
     ? `available; permission state ${status.microphoneSpeaker.microphonePermission}`
     : "not detected in the current client";
+  const browserControlState = status.web.arbitraryThirdPartyBrowserControl
+    ? "available through UNBOUND's remote browser-control engine for public HTTPS sites"
+    : "the browser-control engine is built but its remote CDP provider is not configured";
+  const deviceState = status.device.deepInspectionAvailable
+    ? `deep user-authorized inspection is available through the ${status.device.inspectionSource || "native"} bridge`
+    : "browser/device diagnostics are available, but deep app/process inspection requires the native/desktop inspector bridge";
 
   return `
 UNBOUND AI runtime capability awareness:
@@ -123,8 +151,8 @@ UNBOUND AI runtime capability awareness:
 - Voice generation/playback: ${status.voice.playback ? "available" : "server voice is not configured and no browser speech fallback was reported"}. Server TTS configured: ${status.voice.generation}. Browser speech fallback: ${status.voice.browserSpeechFallback}.
 - Microphone/speaker: microphone ${micState}; speaker playback ${status.microphoneSpeaker.speakerPlayback ? "available" : "not reported by the current client"}. Never claim microphone permission is granted unless the permission state says granted.
 - Internet/web research: ${status.web.researchAvailable ? "available" : "not configured"}. When the user asks for current/latest information or explicitly asks to search/browse/look something up, the server can automatically enable web research even when another product mode is selected.
-- Web-page interaction/form submission: UNBOUND can interact with its own same-origin page controls and authorized Connected Apps when a provider exposes an action. It does NOT currently have unrestricted cross-site browser control over arbitrary third-party pages. Never pretend a form was submitted unless an actual action endpoint confirmed it.
-- Device/app inspection: current browser/device capability diagnostics are available. Native-app telemetry may be available through the native bridge. A normal web page cannot inspect arbitrary other installed apps or private OS data; do not claim otherwise.
+- Third-party web-page interaction/form submission: ${browserControlState}. Private/local network destinations are blocked. Final or potentially irreversible actions require explicit user confirmation before execution.
+- Device/app inspection: ${deviceState}. A normal web page cannot bypass OS/app sandboxes. Never claim otherwise.
 - Account/server/network health: internal diagnostics are available. Current overall health: ${status.health.overall}.
 - Security/credential handling: ${status.credentials.secureTokenVault ? "the encrypted credential/token vault is configured" : "the secure token vault is not configured"}. Raw passwords, API keys, OAuth tokens, and secrets must never be exposed to the language model or echoed to the user. Authorized provider actions may use encrypted credentials server-side.
 - Do not answer with blanket statements such as "not available in this text chat" or "cannot verify from here" when a listed UNBOUND platform capability exists. State the real capability and any precise permission/configuration limit instead.
@@ -137,6 +165,8 @@ function publicRuntimeCapabilities(options = {}) {
 
 module.exports = {
   CAPABILITY_RUNTIME_VERSION,
+  normalizePermission,
+  normalizeDeviceInspection,
   normalizeClientCapabilities,
   shouldAutoResearch,
   getRuntimeCapabilityStatus,
