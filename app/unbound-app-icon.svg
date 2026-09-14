@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">UNBOUND AI</title>
+  <desc id="desc">Blue and gold infinity mark on a dark cosmic background.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#040812"/>
+      <stop offset="0.55" stop-color="#07172a"/>
+      <stop offset="1" stop-color="#130d19"/>
+    </linearGradient>
+    <linearGradient id="infinity" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6bc1ff"/>
+      <stop offset="0.48" stop-color="#42a5ff"/>
+      <stop offset="0.55" stop-color="#d2a05a"/>
+      <stop offset="1" stop-color="#ffad43"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <radialGradient id="halo">
+      <stop offset="0" stop-color="#238df5" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#238df5" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="110" fill="url(#bg)"/>
+  <circle cx="256" cy="250" r="210" fill="url(#halo)"/>
+  <g fill="none" stroke="url(#infinity)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <path d="M253 257c-37-54-70-88-113-88-55 0-91 37-91 88s36 88 91 88c43 0 77-35 113-88 37-54 71-88 116-88 56 0 94 37 94 88s-38 88-94 88c-45 0-79-34-116-88Z"/>
+  </g>
+  <circle cx="256" cy="257" r="8" fill="#f9fbff" opacity=".9"/>
+</svg>
