@@ -2,8 +2,20 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const {
+  injectInterruptedStreamRecovery
+} = require("../ui/chat-stream-recovery");
 
-const source = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+const rawSource = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+const source = injectInterruptedStreamRecovery(rawSource);
+assert.equal(
+  injectInterruptedStreamRecovery(source),
+  source,
+  "interrupted-stream homepage integration must be idempotent"
+);
+assert.ok(source.includes("let streamCompleted = false;"));
+assert.ok(source.includes("[Response interrupted before completion.]"));
+
 const start = source.indexOf("    async function sendMessage() {");
 const end = source.indexOf("    async function goDeeper()", start);
 assert.ok(start >= 0 && end > start);
