@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UNBOUND AI Control Center</title>
+<style>
+body{margin:0;background:#050913;color:#f7fbff;font-family:system-ui,sans-serif}.wrap{width:min(980px,calc(100% - 28px));margin:30px auto}.card{background:#08101d;border:1px solid #274463;border-radius:18px;padding:18px;margin:14px 0}h1,h2{margin-top:0}input,textarea,button{font:inherit}input,textarea{width:100%;box-sizing:border-box;background:#030812;color:#fff;border:1px solid #365675;border-radius:10px;padding:11px;margin:6px 0 10px}button{border:1px solid #4a8cc4;background:#0d3150;color:#fff;border-radius:10px;padding:10px 14px;font-weight:800;cursor:pointer}pre{white-space:pre-wrap;word-break:break-word;background:#02060c;border-radius:10px;padding:12px;min-height:48px}.note{color:#a9bdd2;font-size:13px;line-height:1.45}.row{display:flex;gap:8px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>UNBOUND AI Control Center</h1>
+<p class="note">Browser actions are restricted to public web destinations. Final or irreversible actions pause for explicit confirmation. Device inspection follows browser and operating-system permission boundaries.</p>
+<section class="card">
+<h2>Web Browser Control</h2>
+<label>Starting URL</label><input id="url" placeholder="https://example.com">
+<label>Goal</label><textarea id="goal" rows="4" placeholder="Find the contact form and fill in the public information I provide."></textarea>
+<div class="row"><button id="run">Run task</button><button id="confirm" hidden>Confirm next final action</button></div>
+<pre id="browserOut">Ready.</pre>
+</section>
+<section class="card">
+<h2>Device Inspection</h2>
+<div class="row"><button id="inspect">Inspect device</button><button id="folder">Inspect selected folder</button></div>
+<textarea id="deviceQuestion" rows="3" placeholder="What is using the most resources, and do you see anything unusual?"></textarea>
+<button id="analyze">Analyze snapshot</button>
+<pre id="deviceOut">Ready.</pre>
+</section>
+</div>
+<script src="/device-inspector.js?v=120"></script>
+<script>
+let taskId=null;const out=document.getElementById('browserOut');const confirm=document.getElementById('confirm');
+document.getElementById('run').onclick=async()=>{confirm.hidden=true;taskId=null;out.textContent='Working…';const r=await fetch('/api/actions/browser/task',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({url:document.getElementById('url').value,goal:document.getElementById('goal').value})});const d=await r.json();out.textContent=JSON.stringify(d,null,2);if(d.confirmationRequired){taskId=d.taskId;confirm.hidden=false;}};
+confirm.onclick=async()=>{if(!taskId)return;out.textContent='Confirming…';const r=await fetch('/api/actions/browser/task/'+encodeURIComponent(taskId)+'/confirm',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:'{}'});const d=await r.json();out.textContent=JSON.stringify(d,null,2);confirm.hidden=!d.confirmationRequired;taskId=d.confirmationRequired?d.taskId:null;};
+document.getElementById('inspect').onclick=async()=>{const d=await UNBOUND_DEVICE_INSPECTOR.inspect();document.getElementById('deviceOut').textContent=JSON.stringify(d,null,2);};
+document.getElementById('folder').onclick=async()=>{try{const d=await UNBOUND_DEVICE_INSPECTOR.inspectSelectedDirectory();document.getElementById('deviceOut').textContent=JSON.stringify(d,null,2);}catch(e){document.getElementById('deviceOut').textContent=e.message;}};
+document.getElementById('analyze').onclick=async()=>{try{const d=await UNBOUND_DEVICE_INSPECTOR.analyze(document.getElementById('deviceQuestion').value);document.getElementById('deviceOut').textContent=d.reply;}catch(e){document.getElementById('deviceOut').textContent=e.message;}};
+</script>
+</body></html>
