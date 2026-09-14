@@ -41,8 +41,8 @@ function integratePlanTierNormalizationServerSource(serverSource) {
 
   source = replaceExactlyOnce(
     source,
-    `    planTier: user.plan_tier,`,
-    `    planTier: normalizePlanTier(user.plan_tier),`,
+    `    role: user.role,\n    planTier: user.plan_tier,\n    complimentaryTopTier: Boolean(user.complimentary_top_tier),`,
+    `    role: user.role,\n    planTier: normalizePlanTier(user.plan_tier),\n    complimentaryTopTier: Boolean(user.complimentary_top_tier),`,
     "public-user-plan-normalization"
   );
 
