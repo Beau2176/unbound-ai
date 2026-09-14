@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v1.0";
+const INTEGRATION_VERSION = "v1.2";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const first = source.indexOf(marker);
@@ -47,7 +47,7 @@ function integrateDiagnosticsServerSource(serverSource) {
   source = replaceExactlyOnce(
     source,
     systemStatusRoute,
-    `app.get("/health/diagnostics", async (req, res) => {\n  try {\n    const payload = await diagnosticsMonitor.getSnapshot();\n    const publicPayload = {\n      version: payload.version,\n      overall: payload.overall,\n      message: payload.message,\n      checkedAt: payload.checkedAt,\n      components: Object.fromEntries(\n        Object.entries(payload.components || {}).map(([name, component]) => [\n          name,\n          { status: component?.status || "yellow" }\n        ])\n      )\n    };\n    return sendStatusJson(res, payload.overall === "red" ? 503 : 200, publicPayload);\n  } catch (error) {\n    return sendStatusJson(res, 503, {\n      version: "${INTEGRATION_VERSION}",\n      overall: "red",\n      message: "Diagnostics are unavailable.",\n      checkedAt: new Date().toISOString(),\n      components: {}\n    });\n  }\n});\n\napp.get("/api/admin/ops/diagnostics", requireDatabase, requireAdmin, async (req, res) => {\n  const payload = await diagnosticsMonitor.getSnapshot({ force: true });\n  return sendStatusJson(res, payload.overall === "red" ? 503 : 200, payload);\n});\n\n${systemStatusRoute}`,
+    `app.get("/health/diagnostics", async (req, res) => {\n  try {\n    const payload = await diagnosticsMonitor.getSnapshot();\n    const publicPayload = {\n      version: payload.version,\n      overall: payload.overall,\n      message: payload.message,\n      checkedAt: payload.checkedAt,\n      components: Object.fromEntries(\n        Object.entries(payload.components || {}).map(([name, component]) => [\n          name,\n          {\n            status: component?.status || "yellow",\n            summary: String(component?.summary || "").slice(0, 240) || null\n          }\n        ])\n      )\n    };\n    return sendStatusJson(res, payload.overall === "red" ? 503 : 200, publicPayload);\n  } catch (error) {\n    return sendStatusJson(res, 503, {\n      version: "${INTEGRATION_VERSION}",\n      overall: "red",\n      message: "Diagnostics are unavailable.",\n      checkedAt: new Date().toISOString(),\n      components: {}\n    });\n  }\n});\n\napp.get("/api/admin/ops/diagnostics", requireDatabase, requireAdmin, async (req, res) => {\n  const payload = await diagnosticsMonitor.getSnapshot({ force: true });\n  return sendStatusJson(res, payload.overall === "red" ? 503 : 200, payload);\n});\n\n${systemStatusRoute}`,
     "diagnostics-routes"
   );
 

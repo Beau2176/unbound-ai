@@ -9,21 +9,21 @@
   let noSpeechRetries = 0;
   let retryTimer = null;
 
-  function getMessageBox() {
-    return document.getElementById('message');
+  function markMicrophoneWorking(detail = {}) {
+    window.__UNBOUND_MICROPHONE_WORKING__ = true;
+    window.dispatchEvent(new CustomEvent('unbound:microphone-state', {
+      detail: { working: true, ...detail }
+    }));
   }
 
-  function getVoiceButton() {
-    return document.getElementById('unboundVoiceListenButton');
-  }
+  function getMessageBox() { return document.getElementById('message'); }
+  function getVoiceButton() { return document.getElementById('unboundVoiceListenButton'); }
 
   function getStatusNode() {
     let node = document.getElementById('desktopVoiceStatus');
     if (node) return node;
-
     const form = document.getElementById('chatForm');
     if (!form || !form.parentNode) return null;
-
     node = document.createElement('div');
     node.id = 'desktopVoiceStatus';
     node.setAttribute('role', 'status');
@@ -63,15 +63,9 @@
 
   function submitMessage() {
     const send = document.getElementById('sendButton');
-    if (send && !send.disabled) {
-      send.click();
-      return true;
-    }
+    if (send && !send.disabled) { send.click(); return true; }
     const form = document.getElementById('chatForm');
-    if (form && typeof form.requestSubmit === 'function') {
-      form.requestSubmit();
-      return true;
-    }
+    if (form && typeof form.requestSubmit === 'function') { form.requestSubmit(); return true; }
     return false;
   }
 
@@ -79,28 +73,19 @@
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
       throw new Error('This browser cannot directly access the desktop microphone.');
     }
-
     setStatus('Checking desktop microphone permission and audio device…');
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      }
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
     });
-
     try {
       const track = stream.getAudioTracks()[0];
-      if (!track || track.readyState !== 'live') {
-        throw new Error('Chrome did not return a live microphone audio track.');
-      }
+      if (!track || track.readyState !== 'live') throw new Error('Chrome did not return a live microphone audio track.');
       const label = String(track.label || '').trim();
+      markMicrophoneWorking({ source: 'getUserMedia', label: label || null });
       setStatus(label ? `Microphone connected: ${label}` : 'Microphone connected and permission granted.');
       return label;
     } finally {
-      stream.getTracks().forEach((track) => {
-        try { track.stop(); } catch (_) {}
-      });
+      stream.getTracks().forEach((track) => { try { track.stop(); } catch (_) {} });
     }
   }
 
@@ -109,20 +94,12 @@
     const button = getVoiceButton();
     if (!textarea || !button) return;
 
-    if (!retry) {
-      noSpeechRetries = 0;
-      clearRetryTimer();
-    }
-
-    if (recognition) {
-      try { recognition.stop(); } catch (_) {}
-      return;
-    }
+    if (!retry) { noSpeechRetries = 0; clearRetryTimer(); }
+    if (recognition) { try { recognition.stop(); } catch (_) {} return; }
 
     if (!skipPreflight) {
       button.textContent = 'Checking mic…';
       button.title = 'Checking desktop microphone permission';
-
       try {
         await microphonePreflight();
       } catch (error) {
@@ -160,6 +137,7 @@
 
     recognition.onstart = () => {
       started = true;
+      markMicrophoneWorking({ source: 'speech-recognition' });
       button.dataset.listening = 'true';
       button.textContent = retry ? '● Still listening…' : '● Listening…';
       button.title = 'Microphone is active';
@@ -171,11 +149,13 @@
     recognition.onspeechstart = () => {
       speechDetected = true;
       noSpeechRetries = 0;
+      markMicrophoneWorking({ source: 'speech-detected' });
       button.textContent = '● Hearing you…';
       setStatus('Voice detected. Converting speech to text…');
     };
 
     recognition.onaudiostart = () => {
+      markMicrophoneWorking({ source: 'audio-start' });
       if (!speechDetected) setStatus('Microphone audio is reaching Chrome. Waiting for speech…');
     };
 
@@ -187,7 +167,7 @@
       }
       transcript = combined.trim();
       if (!transcript) return;
-
+      markMicrophoneWorking({ source: 'transcript' });
       textarea.value = [original, transcript].filter(Boolean).join(' ').trim();
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
       textarea.dispatchEvent(new Event('change', { bubbles: true }));
@@ -207,7 +187,6 @@
         setStatus('The microphone is open but no speech was detected yet. UNBOUND AI will keep listening…');
         return;
       }
-
       failed = true;
       const messages = {
         'not-allowed': 'Chrome blocked microphone or speech-recognition permission for this site.',
@@ -221,7 +200,6 @@
     recognition.onend = () => {
       recognition = null;
       const finalText = textarea.value.trim();
-
       if (retryNoSpeech && !transcript && !failed) {
         if (noSpeechRetries < MAX_NO_SPEECH_RETRIES) {
           noSpeechRetries += 1;
@@ -234,15 +212,14 @@
           }, 350);
           return;
         }
-
         noSpeechRetries = 0;
         resetButton('The microphone is open, but Chrome still is not detecting your voice. Check the Windows input microphone, make sure it is not muted, and raise its input volume.', 'error');
         textarea.focus();
         return;
       }
-
       if (!failed && started && transcript && finalText) {
         noSpeechRetries = 0;
+        markMicrophoneWorking({ source: 'recognized-question' });
         resetButton('Voice question recognized. Sending it to UNBOUND AI…', 'success');
         window.setTimeout(() => {
           if (!submitMessage()) {
@@ -252,7 +229,6 @@
         }, 120);
         return;
       }
-
       if (!failed) {
         noSpeechRetries = 0;
         if (started && speechDetected) {
@@ -266,9 +242,8 @@
       textarea.focus();
     };
 
-    try {
-      recognition.start();
-    } catch (error) {
+    try { recognition.start(); }
+    catch (error) {
       recognition = null;
       noSpeechRetries = 0;
       resetButton(error?.message || 'Could not start Chrome speech recognition.', 'error');
@@ -281,7 +256,6 @@
     if (!target || !String(target.textContent || '').includes('Voice input')) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-
     const menu = target.closest('.voice-listen-menu');
     if (menu) menu.hidden = true;
     const button = getVoiceButton();
@@ -289,9 +263,6 @@
     void startDesktopRecognition();
   }, true);
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', getStatusNode, { once: true });
-  } else {
-    getStatusNode();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', getStatusNode, { once: true });
+  else getStatusNode();
 })();

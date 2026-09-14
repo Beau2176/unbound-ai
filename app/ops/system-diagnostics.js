@@ -5,7 +5,7 @@ const net = require("net");
 const path = require("path");
 
 const DIAGNOSTIC_POLICY = Object.freeze({
-  version: "v1.0",
+  version: "v1.2",
   intervalMs: 30000,
   networkTimeoutMs: 2500,
   eventLoopSampleMs: 40,
@@ -33,7 +33,62 @@ function worstStatus(values) {
 function safeProbeHost(env = process.env) {
   const configured = String(env.UNBOUND_DIAGNOSTIC_HOST || "").trim().toLowerCase();
   const candidate = configured || DIAGNOSTIC_POLICY.defaultProbeHost;
-  return /^[a-z0-9.-]+$/.test(candidate) && !candidate.startsWith(".") ? candidate : DIAGNOSTIC_POLICY.defaultProbeHost;
+  return /^[a-z0-9.-]+$/.test(candidate) && !candidate.startsWith(".")
+    ? candidate
+    : DIAGNOSTIC_POLICY.defaultProbeHost;
+}
+
+function readFiniteNumber(filePath) {
+  try {
+    const text = fs.readFileSync(filePath, "utf8").trim();
+    if (!text || text === "max") return null;
+    const value = Number(text);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function cgroupMemorySnapshot() {
+  const candidates = [
+    {
+      source: "cgroup-v2",
+      current: "/sys/fs/cgroup/memory.current",
+      limit: "/sys/fs/cgroup/memory.max"
+    },
+    {
+      source: "cgroup-v1",
+      current: "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+      limit: "/sys/fs/cgroup/memory/memory.limit_in_bytes"
+    }
+  ];
+
+  for (const item of candidates) {
+    const usedBytes = readFiniteNumber(item.current);
+    const limitBytes = readFiniteNumber(item.limit);
+    if (
+      Number.isFinite(usedBytes) &&
+      Number.isFinite(limitBytes) &&
+      limitBytes > 0 &&
+      limitBytes < Number.MAX_SAFE_INTEGER
+    ) {
+      return {
+        available: true,
+        source: item.source,
+        usedBytes,
+        limitBytes,
+        usedRatio: Math.min(Math.max(usedBytes / limitBytes, 0), 1)
+      };
+    }
+  }
+
+  return {
+    available: false,
+    source: "process-heap",
+    usedBytes: null,
+    limitBytes: null,
+    usedRatio: null
+  };
 }
 
 function hardwareSnapshot(rootDir = path.resolve(__dirname, "..")) {
@@ -41,47 +96,74 @@ function hardwareSnapshot(rootDir = path.resolve(__dirname, "..")) {
   const cpuCount = Math.max(cpus.length, 1);
   const load1 = Number((os.loadavg() || [0])[0] || 0);
   const loadRatio = load1 / cpuCount;
-  const totalMemory = Number(os.totalmem() || 0);
-  const freeMemory = Number(os.freemem() || 0);
-  const usedMemoryRatio = totalMemory > 0 ? 1 - freeMemory / totalMemory : 0;
   const processMemory = process.memoryUsage();
-  const heapRatio = processMemory.heapTotal > 0 ? processMemory.heapUsed / processMemory.heapTotal : 0;
+  const heapRatio = processMemory.heapTotal > 0
+    ? processMemory.heapUsed / processMemory.heapTotal
+    : 0;
+  const cgroup = cgroupMemorySnapshot();
 
-  let disk = { available: false, freeRatio: null, status: "yellow" };
+  // On hosted/container platforms os.totalmem()/freemem() can describe the host,
+  // not this service. Use cgroup memory when available, otherwise the Node heap.
+  const memoryRatio = cgroup.available ? cgroup.usedRatio : heapRatio;
+  const memoryStatus = memoryRatio >= 0.95
+    ? "red"
+    : memoryRatio >= 0.88
+      ? "yellow"
+      : "green";
+
+  // Host load averages are not reliable container CPU telemetry. Event-loop lag
+  // is monitored separately and is a much better signal of whether UNBOUND is
+  // actually CPU-starved. Keep host load informational when cgroups are present.
+  const cpuStatus = cgroup.available
+    ? "green"
+    : statusFromRatio(loadRatio, 0.85, 1.50);
+
+  let disk = {
+    available: false,
+    freeRatio: null,
+    status: "green",
+    summary: "Disk telemetry unavailable; no disk failure detected."
+  };
   try {
     if (typeof fs.statfsSync === "function") {
       const stat = fs.statfsSync(rootDir);
       const blocks = Number(stat.blocks || 0);
       const availableBlocks = Number(stat.bavail || stat.bfree || 0);
-      const freeRatio = blocks > 0 ? availableBlocks / blocks : 0;
+      const freeRatio = blocks > 0 ? availableBlocks / blocks : 1;
+      const status = freeRatio <= 0.03 ? "red" : freeRatio <= 0.10 ? "yellow" : "green";
       disk = {
         available: true,
         freeRatio: Number(freeRatio.toFixed(4)),
-        status: freeRatio <= 0.03 ? "red" : freeRatio <= 0.10 ? "yellow" : "green"
+        status,
+        summary: `Disk free ${Math.round(freeRatio * 100)}%.`
       };
     }
   } catch (_) {}
 
-  const cpuStatus = statusFromRatio(loadRatio, 0.85, 1.50);
-  const memoryStatus = usedMemoryRatio >= 0.95 || heapRatio >= 0.97
-    ? "red"
-    : usedMemoryRatio >= 0.88 || heapRatio >= 0.90
-      ? "yellow"
-      : "green";
+  const status = worstStatus([cpuStatus, memoryStatus, disk.status]);
+  const memoryPercent = Number((memoryRatio * 100).toFixed(1));
+  const summaryParts = [];
+  if (memoryStatus !== "green") summaryParts.push(`memory ${memoryPercent}% (${cgroup.source})`);
+  if (disk.status !== "green") summaryParts.push(disk.summary);
+  if (cpuStatus !== "green") summaryParts.push(`host load ${Number(loadRatio.toFixed(2))} per core`);
 
   return {
-    status: worstStatus([cpuStatus, memoryStatus, disk.status]),
+    status,
+    summary: summaryParts.length ? summaryParts.join("; ") : "Container resources are healthy.",
     cpu: {
       status: cpuStatus,
       logicalCores: cpuCount,
       load1: Number(load1.toFixed(2)),
-      normalizedLoad: Number(loadRatio.toFixed(3))
+      normalizedLoad: Number(loadRatio.toFixed(3)),
+      source: cgroup.available ? "host-load-informational" : "host-load"
     },
     memory: {
       status: memoryStatus,
-      systemUsedPercent: Number((usedMemoryRatio * 100).toFixed(1)),
+      source: cgroup.source,
+      usedPercent: memoryPercent,
       processRssMb: Number((processMemory.rss / 1048576).toFixed(1)),
-      heapUsedPercent: Number((heapRatio * 100).toFixed(1))
+      heapUsedPercent: Number((heapRatio * 100).toFixed(1)),
+      limitMb: cgroup.limitBytes ? Number((cgroup.limitBytes / 1048576).toFixed(1)) : null
     },
     disk
   };
@@ -110,7 +192,11 @@ function tcpProbe(host, port = 443, timeoutMs = DIAGNOSTIC_POLICY.networkTimeout
       if (settled) return;
       settled = true;
       socket.destroy();
-      resolve({ ok, latencyMs: Date.now() - started, error: error ? String(error.message || error) : null });
+      resolve({
+        ok,
+        latencyMs: Date.now() - started,
+        error: error ? String(error.message || error) : null
+      });
     };
     socket.setTimeout(timeoutMs, () => finish(false, "timeout"));
     socket.once("connect", () => finish(true));
@@ -131,17 +217,32 @@ async function networkSnapshot(host = safeProbeHost()) {
   try {
     await Promise.race([
       dns.lookup(host),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), DIAGNOSTIC_POLICY.networkTimeoutMs))
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), DIAGNOSTIC_POLICY.networkTimeoutMs)
+      )
     ]);
     dnsResult = { ok: true, latencyMs: Date.now() - started, error: null };
   } catch (error) {
-    dnsResult = { ok: false, latencyMs: Date.now() - started, error: String(error?.message || error) };
+    dnsResult = {
+      ok: false,
+      latencyMs: Date.now() - started,
+      error: String(error?.message || error)
+    };
   }
 
   const tcp = await tcpProbe(host);
-  const status = dnsResult.ok && tcp.ok ? "green" : dnsResult.ok || tcp.ok ? "yellow" : "red";
+  const status = dnsResult.ok && tcp.ok
+    ? "green"
+    : dnsResult.ok || tcp.ok
+      ? "yellow"
+      : "red";
+  const summary = status === "green"
+    ? `DNS and outbound HTTPS connectivity to ${host} are healthy.`
+    : `Network probe warning: DNS ${dnsResult.ok ? "ok" : "failed"}; HTTPS ${tcp.ok ? "ok" : "failed"}.`;
+
   return {
     status,
+    summary,
     activeInterfaces,
     probeHost: host,
     dns: dnsResult,
@@ -171,6 +272,11 @@ async function runDiagnostics({ rootDir, stateProvider = () => ({}) } = {}) {
   const components = {
     server: {
       status: serverStatus,
+      summary: state.shuttingDown
+        ? "Server shutdown is in progress."
+        : eventLoop.status === "green"
+          ? "Server event loop is responsive."
+          : `Server event-loop lag is ${eventLoop.lagMs} ms.`,
       uptimeSeconds: Math.max(0, Math.floor(process.uptime())),
       eventLoopLagMs: eventLoop.lagMs,
       shuttingDown: Boolean(state.shuttingDown)
@@ -179,18 +285,31 @@ async function runDiagnostics({ rootDir, stateProvider = () => ({}) } = {}) {
     network,
     database: {
       status: databaseStatus,
+      summary: databaseStatus === "green"
+        ? "Database connection is ready."
+        : state.databaseConfigured
+          ? "Database is configured but not ready."
+          : "Database is not configured.",
       configured: Boolean(state.databaseConfigured),
       ready: Boolean(state.databaseReady),
       error: state.databaseError ? String(state.databaseError).slice(0, 160) : null
     },
     ai: {
       status: aiStatus,
+      summary: aiStatus === "green"
+        ? "AI provider is configured."
+        : "AI provider is not fully configured.",
       configured: Boolean(state.aiStatus?.configured),
       provider: state.aiStatus?.provider || null,
       model: state.aiStatus?.model || null
     },
     selfHeal: {
       status: selfHealStatus,
+      summary: selfHealStatus === "green"
+        ? "Self-heal supervisor is locked and active."
+        : selfHealStatus === "red"
+          ? "Self-heal has scheduled a restart."
+          : "Self-heal supervisor has not finished arming yet.",
       locked: Boolean(state.selfHeal?.locked),
       repairs: Number(state.selfHeal?.repairs || 0),
       restartScheduled: Boolean(state.selfHeal?.restartScheduled)
@@ -198,14 +317,18 @@ async function runDiagnostics({ rootDir, stateProvider = () => ({}) } = {}) {
   };
 
   const overall = worstStatus(Object.values(components).map((component) => component.status));
+  const unhealthy = Object.entries(components)
+    .filter(([, component]) => component.status !== "green")
+    .map(([name, component]) => `${name}: ${component.summary}`);
+
   return {
     version: DIAGNOSTIC_POLICY.version,
     overall,
     message: overall === "green"
       ? "All monitored systems are healthy."
       : overall === "yellow"
-        ? "UNBOUND AI is operating with a warning."
-        : "UNBOUND AI detected a system problem.",
+        ? `UNBOUND AI is operating with a warning${unhealthy.length ? ` — ${unhealthy.join(" | ")}` : "."}`
+        : `UNBOUND AI detected a system problem${unhealthy.length ? ` — ${unhealthy.join(" | ")}` : "."}`,
     checkedAt: new Date().toISOString(),
     components
   };
@@ -226,7 +349,13 @@ function createDiagnosticsMonitor({
     inFlight = runDiagnostics({ rootDir, stateProvider })
       .then((next) => {
         snapshot = next;
-        if (next.overall !== "green") logger.warn(`[UNBOUND DIAGNOSTICS] Health is ${next.overall}.`);
+        if (next.overall !== "green") {
+          const details = Object.entries(next.components || {})
+            .filter(([, component]) => component?.status !== "green")
+            .map(([name, component]) => `${name}=${component?.status}:${component?.summary || "no summary"}`)
+            .join(" | ");
+          logger.warn(`[UNBOUND DIAGNOSTICS] Health is ${next.overall}. ${details}`);
+        }
         return next;
       })
       .catch((error) => {
@@ -266,9 +395,10 @@ function createDiagnosticsMonitor({
 
 module.exports = {
   DIAGNOSTIC_POLICY,
+  cgroupMemorySnapshot,
   hardwareSnapshot,
   networkSnapshot,
-  runDiagnostics,
+  runDiagostics,
   createDiagnosticsMonitor,
   worstStatus
 };

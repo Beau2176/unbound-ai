@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const http = require("http");
 
 const LOCKED_POLICY = Object.freeze({
-  version: "v1.3",
+  version: "v1.4",
   enabled: true,
   allowRuntimeDisable: false,
   autonomousSourceMutation: false,
@@ -13,6 +13,7 @@ const LOCKED_POLICY = Object.freeze({
   startupGraceMs: 45000,
   healthTimeoutMs: 3500,
   consecutiveHealthFailuresBeforeRestart: 3,
+  consecutiveCriticalDiagnosticFailuresBeforeRestart: 3,
   criticalFiles: Object.freeze([
     "start.js",
     "server.js",
@@ -29,6 +30,7 @@ const LOCKED_POLICY = Object.freeze({
     "ui/native-shell-server-integration.js",
     "health-status.js",
     "runtime-capabilities.js",
+    "desktop-voice-input.js",
     "device-inspector.js",
     "action-bridge.js",
     "control-center.html",
@@ -128,43 +130,42 @@ function verifyAndRepairBaseline(baseline, { makeFilesReadOnly = true } = {}) {
     try {
       atomicRestore(entry, { makeFilesReadOnly });
       const restoredHash = sha256(fs.readFileSync(entry.filePath));
-      if (restoredHash !== entry.hash) {
-        throw new Error("restored hash mismatch");
-      }
+      if (restoredHash !== entry.hash) throw new Error("restored hash mismatch");
       repaired.push(entry.relativePath);
     } catch (error) {
-      failed.push({
-        file: entry.relativePath,
-        error: String(error?.message || error)
-      });
+      failed.push({ file: entry.relativePath, error: String(error?.message || error) });
     }
   }
 
-  return {
-    ok: drifted.length === 0,
-    drifted,
-    repaired,
-    failed
-  };
+  return { ok: drifted.length === 0, drifted, repaired, failed };
 }
 
-function localHealthCheck(port, timeoutMs = LOCKED_POLICY.healthTimeoutMs) {
+function localJsonCheck(port, routePath, timeoutMs = LOCKED_POLICY.healthTimeoutMs) {
   return new Promise((resolve) => {
     const startedAt = Date.now();
     const request = http.get(
       {
         host: "127.0.0.1",
         port,
-        path: "/healthz",
+        path: routePath,
         timeout: timeoutMs,
-        headers: { "User-Agent": "UNBOUND-Self-Heal/1.0" }
+        headers: { "User-Agent": "UNBOUND-Self-Heal/1.4", Accept: "application/json" }
       },
       (response) => {
-        response.resume();
-        resolve({
-          ok: response.statusCode >= 200 && response.statusCode < 300,
-          statusCode: response.statusCode,
-          latencyMs: Date.now() - startedAt
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          if (body.length < 65536) body += chunk;
+        });
+        response.on("end", () => {
+          let json = null;
+          try { json = body ? JSON.parse(body) : null; } catch (_) {}
+          resolve({
+            ok: response.statusCode >= 200 && response.statusCode < 300,
+            statusCode: response.statusCode,
+            latencyMs: Date.now() - startedAt,
+            json
+          });
         });
       }
     );
@@ -174,10 +175,21 @@ function localHealthCheck(port, timeoutMs = LOCKED_POLICY.healthTimeoutMs) {
         ok: false,
         statusCode: null,
         latencyMs: Date.now() - startedAt,
-        error: String(error?.message || error)
+        error: String(error?.message || error),
+        json: null
       });
     });
   });
+}
+
+function localHealthCheck(port, timeoutMs = LOCKED_POLICY.healthTimeoutMs) {
+  return localJsonCheck(port, "/healthz", timeoutMs);
+}
+
+function criticalDiagnosticFailure(payload) {
+  if (!payload || payload.overall !== "red") return false;
+  const components = payload.components || {};
+  return ["server", "database", "selfHeal"].some((name) => components[name]?.status === "red");
 }
 
 function startSelfHealingSupervisor({
@@ -196,7 +208,11 @@ function startSelfHealingSupervisor({
     lastHealthyAt: null,
     lastRepairAt: null,
     lastRepairReason: null,
+    lastDiagnosticAt: null,
+    lastDiagnosticStatus: null,
+    lastDiagnosticMessage: null,
     consecutiveHealthFailures: 0,
+    consecutiveCriticalDiagnosticFailures: 0,
     repairs: 0,
     restartScheduled: false,
     checking: false
@@ -234,21 +250,38 @@ function startSelfHealingSupervisor({
       }
 
       const health = await localHealthCheck(port);
-      if (health.ok) {
-        state.consecutiveHealthFailures = 0;
-        state.lastHealthyAt = new Date().toISOString();
+      if (!health.ok) {
+        state.consecutiveHealthFailures += 1;
+        logger.warn(
+          `[UNBOUND SELF-HEAL] Local liveness check failed (${state.consecutiveHealthFailures}/${LOCKED_POLICY.consecutiveHealthFailuresBeforeRestart}): ${health.error || health.statusCode || "unknown"}`
+        );
+        if (state.consecutiveHealthFailures >= LOCKED_POLICY.consecutiveHealthFailuresBeforeRestart) {
+          scheduleRestart("repeated-local-liveness-failure", 70);
+        }
         return;
       }
 
-      state.consecutiveHealthFailures += 1;
-      logger.warn(
-        `[UNBOUND SELF-HEAL] Local liveness check failed (${state.consecutiveHealthFailures}/${LOCKED_POLICY.consecutiveHealthFailuresBeforeRestart}): ${health.error || health.statusCode || "unknown"}`
-      );
-      if (
-        state.consecutiveHealthFailures >=
-        LOCKED_POLICY.consecutiveHealthFailuresBeforeRestart
-      ) {
-        scheduleRestart("repeated-local-liveness-failure", 70);
+      state.consecutiveHealthFailures = 0;
+      state.lastHealthyAt = new Date().toISOString();
+
+      const diagnostics = await localJsonCheck(port, "/health/diagnostics");
+      state.lastDiagnosticAt = new Date().toISOString();
+      state.lastDiagnosticStatus = diagnostics.json?.overall || (diagnostics.ok ? "unknown" : "unreachable");
+      state.lastDiagnosticMessage = String(diagnostics.json?.message || diagnostics.error || "").slice(0, 240) || null;
+
+      if (criticalDiagnosticFailure(diagnostics.json)) {
+        state.consecutiveCriticalDiagnosticFailures += 1;
+        logger.warn(
+          `[UNBOUND SELF-HEAL] Critical diagnostics remain red (${state.consecutiveCriticalDiagnosticFailures}/${LOCKED_POLICY.consecutiveCriticalDiagnosticFailuresBeforeRestart}): ${state.lastDiagnosticMessage || "no message"}`
+        );
+        if (
+          state.consecutiveCriticalDiagnosticFailures >=
+          LOCKED_POLICY.consecutiveCriticalDiagnosticFailuresBeforeRestart
+        ) {
+          scheduleRestart("persistent-critical-diagnostic-failure", 70);
+        }
+      } else {
+        state.consecutiveCriticalDiagnosticFailures = 0;
       }
     } catch (error) {
       logger.error("[UNBOUND SELF-HEAL] Supervisor check failed:", error);
@@ -282,7 +315,7 @@ function startSelfHealingSupervisor({
   });
 
   logger.log(
-    `[UNBOUND SELF-HEAL] Locked supervisor ${LOCKED_POLICY.version} armed for ${baseline.entries.length} critical files.`
+    `[UNBOUND SELF-HEAL] Locked supervisor ${LOCKED_POLICY.version} armed for ${baseline.entries.length} critical files and diagnostics-aware recovery.`
   );
   return activeSupervisor;
 }
@@ -297,6 +330,8 @@ module.exports = {
   captureBaseline,
   verifyAndRepairBaseline,
   localHealthCheck,
+  localJsonCheck,
+  criticalDiagnosticFailure,
   startSelfHealingSupervisor,
   getSelfHealSupervisor
 };

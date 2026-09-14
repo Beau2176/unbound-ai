@@ -1,5 +1,5 @@
 (() => {
-  const STYLE_ID = 'unbound-health-status-style-v110';
+  const STYLE_ID = 'unbound-health-status-style-v121';
   const BAR_ID = 'unboundHealthStatusBar';
   const DETAILS_ID = 'unboundHealthStatusDetails';
   const ENDPOINT = '/health/diagnostics';
@@ -16,8 +16,8 @@
       .unbound-health-left{display:flex;align-items:center;gap:9px;min-width:0}.unbound-health-dot{width:10px;height:10px;border-radius:50%;background:#7CFF8A;box-shadow:0 0 12px rgba(124,255,138,.85);flex:0 0 auto}
       .unbound-health-bar[data-state="yellow"] .unbound-health-dot{background:#ffe36e;box-shadow:0 0 12px rgba(255,227,110,.85)}.unbound-health-bar[data-state="red"] .unbound-health-dot{background:#ff7d7d;box-shadow:0 0 12px rgba(255,125,125,.85)}.unbound-health-bar[data-state="checking"] .unbound-health-dot{background:#8ed0ff}
       .unbound-health-title{font-size:12px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}.unbound-health-message{font-size:11px;font-weight:700;opacity:.92;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.unbound-health-time{font-size:10px;opacity:.8;white-space:nowrap}
-      .unbound-health-details{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:8px;background:rgba(3,8,16,.96)}.unbound-health-item{display:flex;justify-content:space-between;gap:8px;padding:7px 8px;border:1px solid rgba(255,255,255,.09);border-radius:9px;color:#dbeaff;font-size:10px;font-weight:800}.unbound-health-item span:last-child{text-transform:uppercase}.unbound-health-item[data-state="green"] span:last-child{color:#7CFF8A}.unbound-health-item[data-state="yellow"] span:last-child{color:#ffe36e}.unbound-health-item[data-state="red"] span:last-child{color:#ff8d8d}
-      @media(max-width:760px){.unbound-health-bar{width:100%;margin:0 0 8px}.unbound-health-main{padding:8px 9px}.unbound-health-message{display:none}.unbound-health-details{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      .unbound-health-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:8px;background:rgba(3,8,16,.96)}.unbound-health-item{display:grid;grid-template-columns:auto auto;gap:3px 8px;padding:7px 8px;border:1px solid rgba(255,255,255,.09);border-radius:9px;color:#dbeaff;font-size:10px;font-weight:800}.unbound-health-item .state{text-transform:uppercase;text-align:right}.unbound-health-item .summary{grid-column:1/-1;color:#9fb2c8;font-weight:650;line-height:1.35}.unbound-health-item[data-state="green"] .state{color:#7CFF8A}.unbound-health-item[data-state="yellow"] .state{color:#ffe36e}.unbound-health-item[data-state="red"] .state{color:#ff8d8d}
+      @media(max-width:760px){.unbound-health-bar{width:100%;margin:0 0 8px}.unbound-health-main{padding:8px 9px}.unbound-health-message{display:none}.unbound-health-details{grid-template-columns:1fr}}
     `;
     document.head.appendChild(style);
   }
@@ -52,11 +52,12 @@
   }
 
   function updateTopStatus(state) {
+    // Do not overwrite the top service-status pill. The homepage owns that pill
+    // (LIVE / MAINTENANCE / STATUS UNKNOWN). The dedicated health bar owns health.
     const top = document.querySelector('.status');
     if (!top) return;
-    const mapped = state === 'green' ? 'online' : state === 'yellow' ? 'maintenance' : 'degraded';
-    top.dataset.state = mapped;
-    top.innerHTML = `<span class="status-dot"></span>${state === 'green' ? 'SYSTEMS HEALTHY' : state === 'yellow' ? 'SYSTEM WARNING' : 'SYSTEM ISSUE'}`;
+    top.dataset.healthState = state;
+    top.title = `System health: ${state}`;
   }
 
   function render(payload) {
@@ -84,8 +85,12 @@
       const label = document.createElement('span');
       label.textContent = componentLabel(name);
       const value = document.createElement('span');
+      value.className = 'state';
       value.textContent = componentState;
-      item.append(label, value);
+      const summary = document.createElement('span');
+      summary.className = 'summary';
+      summary.textContent = component.summary || 'No additional detail reported.';
+      item.append(label, value, summary);
       details.appendChild(item);
     }
     updateTopStatus(state);
