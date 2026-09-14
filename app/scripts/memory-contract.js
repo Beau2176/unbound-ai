@@ -11,6 +11,16 @@ const {
   loadEnabledMemories,
   buildMemoryPrompt
 } = require("../memory/context");
+const {
+  UNBOUND_PROJECT_START_DATE,
+  UNBOUND_PROJECT_START_DATE_DISPLAY,
+  UNBOUND_PROJECT_START_TIME_ZONE,
+  UNBOUND_PROJECT_STARTED_AT_UTC,
+  UNBOUND_BRAND_LINE,
+  CORE_PROJECT_MEMORY,
+  buildProjectCoreMemoryPrompt,
+  getProjectIdentity
+} = require("../project/identity");
 const { CAPABILITY_CATALOG, buildCapabilityAccess } = require("../access/entitlements");
 const { buildFileAwareIndexHtml, MEMORY_NAV_LINK } = require("../files/routes");
 
@@ -19,6 +29,26 @@ async function main() {
   assert.strictEqual(MAX_MEMORY_CHARS, 800);
   assert.strictEqual(validMemoryId("123"), true);
   assert.strictEqual(validMemoryId("abc"), false);
+
+  assert.strictEqual(UNBOUND_PROJECT_START_DATE, "2026-09-08");
+  assert.strictEqual(UNBOUND_PROJECT_START_DATE_DISPLAY, "September 8, 2026");
+  assert.strictEqual(UNBOUND_PROJECT_START_TIME_ZONE, "America/Denver");
+  assert.strictEqual(UNBOUND_PROJECT_STARTED_AT_UTC, "2026-09-09T04:57:34Z");
+  assert.strictEqual(UNBOUND_BRAND_LINE, "A more open tomorrow starts today.");
+  assert.ok(Object.isFrozen(CORE_PROJECT_MEMORY));
+  const projectPrompt = buildProjectCoreMemoryPrompt();
+  assert.ok(projectPrompt.includes("UNBOUND AI core persistent project memory"));
+  assert.ok(projectPrompt.includes("September 8, 2026"));
+  assert.ok(projectPrompt.includes("not an individual user's signup date"));
+  assert.ok(projectPrompt.includes(UNBOUND_BRAND_LINE));
+  assert.deepStrictEqual(getProjectIdentity(), {
+    name: "UNBOUND AI",
+    startDate: "2026-09-08",
+    startDateDisplay: "September 8, 2026",
+    startTimeZone: "America/Denver",
+    startedAtUtc: "2026-09-09T04:57:34Z",
+    brandLine: "A more open tomorrow starts today."
+  });
 
   assert.deepStrictEqual(normalizeMemoryInput({ content: "  Prefers concise answers.  " }), {
     content: "Prefers concise answers.",
@@ -109,7 +139,7 @@ async function main() {
   }
   assert.ok(checked >= 1);
 
-  console.log("UNBOUND AI user-controlled Memory contract checks passed.");
+  console.log("UNBOUND AI persistent project and user-controlled Memory contract checks passed.");
 }
 
 main().catch((error) => {

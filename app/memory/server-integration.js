@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v0.77";
+const INTEGRATION_VERSION = "v0.94";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const first = source.indexOf(marker);
@@ -38,7 +38,7 @@ function integrateMemoryServerSource(serverSource) {
   source = replaceExactlyOnce(
     source,
     agentImports,
-    `${agentImports}\nconst { createMemoryRouter, sendMemoryPage } = require("./memory/routes");\nconst { buildMemoryPrompt } = require("./memory/context");`,
+    `${agentImports}\nconst { createMemoryRouter, sendMemoryPage } = require("./memory/routes");\nconst { buildMemoryPrompt } = require("./memory/context");\nconst { buildProjectCoreMemoryPrompt, getProjectIdentity } = require("./project/identity");`,
     "memory-imports"
   );
 
@@ -62,7 +62,7 @@ function integrateMemoryServerSource(serverSource) {
   source = replaceExpectedCount(
     source,
     styleMarker,
-    `${styleMarker}\n    const memoryInstructions = persistentChat?.user\n      ? await buildMemoryPrompt(pool, persistentChat.user.id)\n      : "";`,
+    `${styleMarker}\n    const projectMemoryInstructions = buildProjectCoreMemoryPrompt();\n    const memoryInstructions = persistentChat?.user\n      ? await buildMemoryPrompt(pool, persistentChat.user.id)\n      : "";`,
     2,
     "memory-chat-load"
   );
@@ -71,7 +71,7 @@ function integrateMemoryServerSource(serverSource) {
   source = replaceExpectedCount(
     source,
     instructionArray,
-    `[UNBOUND_SYSTEM_PROMPT, styleInstructions, memoryInstructions, depthInstructions, modeInstructions]`,
+    `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, styleInstructions, memoryInstructions, depthInstructions, modeInstructions]`,
     2,
     "memory-chat-instructions"
   );
@@ -80,7 +80,7 @@ function integrateMemoryServerSource(serverSource) {
   source = replaceExactlyOnce(
     source,
     healthRoute,
-    `app.use(\n  "/api/memory",\n  requireDatabase,\n  requireSignedIn,\n  requireCapability("memory"),\n  createMemoryRouter({\n    getPool: () => pool\n  })\n);\n\n${healthRoute}`,
+    `app.get("/api/project/identity", (req, res) => {\n  return sendStatusJson(res, 200, getProjectIdentity());\n});\n\napp.use(\n  "/api/memory",\n  requireDatabase,\n  requireSignedIn,\n  requireCapability("memory"),\n  createMemoryRouter({\n    getPool: () => pool\n  })\n);\n\n${healthRoute}`,
     "memory-api-mount"
   );
 
