@@ -398,7 +398,7 @@ module.exports = {
   cgroupMemorySnapshot,
   hardwareSnapshot,
   networkSnapshot,
-  runDiagostics,
+  runDiagnostics,
   createDiagnosticsMonitor,
   worstStatus
 };
