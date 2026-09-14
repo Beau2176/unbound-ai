@@ -25,6 +25,8 @@ jobs:
           node-version: '24'
       - name: Install mobile dependencies
         run: npm install --no-audit --no-fund
+      - name: Verify official native brand sources
+        run: node scripts/verify-brand-assets.mjs
       - name: Generate Android project
         run: npx cap add android
       - name: Sync Android project
@@ -44,6 +46,8 @@ jobs:
           node-version: '24'
       - name: Install mobile dependencies
         run: npm install --no-audit --no-fund
+      - name: Verify official native brand sources
+        run: node scripts/verify-brand-assets.mjs
       - name: Generate iOS project
         run: npx cap add ios
       - name: Sync iOS project
