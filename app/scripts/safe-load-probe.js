@@ -123,12 +123,13 @@ async function runSafeLoadProbe({
           fetchImpl
         });
         await response.arrayBuffer();
+        const passed = response.status >= 200 && response.status < 400;
         results[index] = {
           index: index + 1,
           status: response.status,
           latencyMs,
-          passed: response.status >= 200 && response.status < 500,
-          error: null
+          passed,
+          error: passed ? null : `unhealthy HTTP status ${response.status}`
         };
       } catch (error) {
         results[index] = {
@@ -164,6 +165,7 @@ async function runSafeLoadProbe({
     finishedAt: new Date().toISOString(),
     policy: {
       method: "GET",
+      successfulHttpStatuses: "200-399",
       safePaths: SAFE_PATHS,
       remoteRequiresExplicitAllow: true,
       maxRequests: MAX_REQUESTS,
