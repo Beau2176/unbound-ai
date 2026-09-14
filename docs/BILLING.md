@@ -1,33 +1,46 @@
 # UNBOUND AI commercial billing
 
-UNBOUND AI uses a provider-neutral billing gateway. The production target selected for the adults-only commercial product is **Segpay**, subject to Segpay underwriting and approval of the actual UNBOUND AI business, content, policies, and launch configuration.
+UNBOUND AI has three customer tiers:
 
-Selecting Segpay in code does not create a Segpay merchant account, approve UNBOUND AI for processing, or turn commercial billing on by itself.
+- **Tier 1 — Free:** $0/month.
+- **Tier 2 — Premium:** **$59.99/month**.
+- **Tier 3 — Ultra:** **$114.99/month**.
 
-## Why Segpay
+Adult Mode is **Ultra-only** and payment never bypasses the separate hard 18+ verification gate.
 
-The product includes an adults-only mode, so a mainstream processor that prohibits adult services or AI-generated adult content is not an appropriate launch dependency. Segpay publishes adult-merchant compliance guidance, supports recurring subscription businesses, provides hosted payment pages, lifecycle postbacks, and a consumer self-service portal, and discusses underwriting AI-driven adult-content businesses.
+UNBOUND uses a provider-neutral billing gateway. The production target is **Segpay**, subject to Segpay underwriting and approval of the actual UNBOUND AI business, content, policies, and launch configuration. Selecting Segpay in code does not create a merchant account, approve UNBOUND for processing, or turn billing on by itself.
 
-External provider approval remains mandatory. The code must never treat technical credentials as evidence that Segpay approved UNBOUND AI.
+## Tier boundaries
 
-## Production configuration
+Premium adds the paid productivity/understanding layer above Free, including web research, citations, file analysis, image understanding, voice, and user-controlled Memory.
+
+Ultra includes Premium and adds the advanced tool layer, including image generation/editing, agents, scheduled monitoring, multi-model routing, connected apps, Command Center, and verified-18+ Adult Mode.
+
+Legacy internal/database plan value `top` is accepted only as a backwards-compatibility alias for **Ultra**. New checkout and entitlement responses use `premium` or `ultra`.
+
+## Production Segpay configuration
 
 Set `BILLING_PROVIDER=segpay` only after the merchant setup is ready.
 
-Required Segpay values:
+Required values:
 
-- `SEGPAY_PAY_PAGE_REF` — hosted pay-page reference configured for the UNBOUND AI TOP subscription.
-- `SEGPAY_SIGNING_KEY` — hosted-pay-page HS256 signing key issued by Segpay Merchant Services. Use the string exactly as issued; do not base64-decode it before HMAC signing.
-- `SEGPAY_TOP_AMOUNT` — TOP-plan recurring amount in the pay-page's configured currency. No price is hard-coded in the repository.
+- `SEGPAY_PREMIUM_PAY_PAGE_REF` — hosted pay page for the **$59.99 Premium** recurring package.
+- `SEGPAY_ULTRA_PAY_PAGE_REF` — hosted pay page for the **$114.99 Ultra** recurring package. `SEGPAY_PAY_PAGE_REF` remains a temporary backwards-compatible Ultra alias during migration.
+- `SEGPAY_SIGNING_KEY` — hosted-pay-page HS256 signing key issued by Segpay Merchant Services. Use the string exactly as issued.
 - `SEGPAY_POSTBACK_USERNAME`
 - `SEGPAY_POSTBACK_PASSWORD`
-- `SEGPAY_MERCHANT_APPROVAL_VERIFIED=true` — set only after Segpay has actually approved the intended UNBOUND AI business model for production processing.
-- `SEGPAY_SIGNED_CHECKOUT_FIELDS_VERIFIED=true` — set only after Merchant Services has confirmed Require Signing for `amount`, `REF1`, and `REF2` on the production pay page.
-- `SEGPAY_POSTBACK_AUTH_VERIFIED=true` — set only after the production postback configuration has been tested with the configured Basic Auth credentials.
+- `SEGPAY_MERCHANT_APPROVAL_VERIFIED=true` — only after Segpay actually approves the intended UNBOUND business model.
+- `SEGPAY_SIGNED_CHECKOUT_FIELDS_VERIFIED=true` — only after Merchant Services confirms Require Signing for `amount`, `REF1`, and `REF2` on both production pay pages.
+- `SEGPAY_POSTBACK_AUTH_VERIFIED=true` — only after production postback authentication is tested.
 
-UNBOUND AI should also keep `BILLING_SUBJECT_SECRET` outside the repository. Existing billing success/cancel URL settings remain provider-neutral.
+The exact prices are enforced server-side in the adapter:
 
-The Segpay adapter intentionally reports `configured: false` until every required value and verification attestation above is present.
+- Premium: `59.99`
+- Ultra: `114.99`
+
+The browser cannot choose an arbitrary price. Both paid pay-page references plus shared credentials/attestations must be present before the Segpay adapter reports fully configured.
+
+Keep `BILLING_SUBJECT_SECRET`, signing keys, and postback passwords outside the repository.
 
 ## Checkout security
 
@@ -36,25 +49,22 @@ Checkout uses Segpay's signed hosted-pay-page flow:
 - HS256 JWT.
 - Maximum 30-minute token lifetime.
 - Unique `jti` for each checkout.
-- The Segpay signing key is used literally as issued.
-- `amount` is signed.
-- The opaque UNBOUND billing subject is split into `REF1` and `REF2`, each no longer than 32 characters, and signed.
+- Exact server-selected plan amount is signed.
+- The opaque UNBOUND billing subject is split into signed `REF1` and `REF2` values, each no longer than 32 characters.
 - Account email is not embedded in the checkout JWT or checkout URL.
-- The checkout URL uses `https://pay.segpay.com/<pageref>?jwt=...`.
+- Checkout uses `https://pay.segpay.com/<pageref>?jwt=...`.
 
-The billing subject is already an HMAC-derived opaque server identifier. It is not a user ID, email address, or session token.
+The billing subject is an HMAC-derived opaque server identifier; it is not a user ID, email, or session token.
+
+A customer with an already active/trialing paid subscription is not allowed to start a second direct checkout merely to change plan access. They are sent to **Manage Billing** so UNBOUND does not change entitlement before the billing provider confirms the plan change.
 
 ## Postbacks
 
-Production postback endpoint:
+Production endpoint:
 
 `/api/webhooks/billing`
 
-UNBOUND accepts both GET and POST for this endpoint because Segpay documents both transport forms. POST bodies remain raw for provider verification/parsing; GET query values are passed through the same authenticated normalization path.
-
-Configure Segpay postbacks with HTTPS and the Basic Auth username/password stored in Render. The adapter performs a timing-safe comparison of the `Authorization` header before parsing the payload.
-
-For custom postback URLs, include the fields needed by the lifecycle parser. At minimum, configure the relevant placeholders for:
+UNBOUND accepts authenticated GET and POST delivery. Configure the relevant Segpay placeholders for:
 
 - `action`
 - `purchaseid`
@@ -62,17 +72,18 @@ For custom postback URLs, include the fields needed by the lifecycle parser. At 
 - `stage`
 - `approved`
 - `trantype`
+- `amount` (or the confirmed Segpay transaction-amount field)
 - `paymentaccountid` where available
 - `transtime` where available
 - `rint` where available
 - `ref1=<REF1>`
 - `ref2=<REF2>`
 
-The two merchant-reference fields originate in the signed checkout request and are used to reconnect lifecycle events to the existing server-side subscription record. Confirm the exact Segpay postback placeholder names with Merchant Services during production setup, then verify that the received parameters normalize to `ref1` and `ref2` before enabling the production attestation.
+For sale/rebill events where a trustworthy amount is present, UNBOUND maps `59.99 -> premium` and `114.99 -> ultra`. Lifecycle events such as cancel/disable/reactivate that do not contain a reliable plan amount return no new plan value; the database keeps the existing tier rather than guessing or accidentally upgrading a customer.
 
-Successful billing webhook acknowledgements return plain text `OK`. This is compatible with Segpay member-management postbacks that require a configured expected response, while transaction postbacks also receive a normal 2xx HTTP status.
+Successful webhook acknowledgements return plain text `OK`. Authentication is timing-safe and provider retries remain idempotent through deterministic event identifiers.
 
-Normalized lifecycle mapping includes:
+Lifecycle mapping includes:
 
 - approved initial/rebill sale -> `active`
 - declined initial -> `incomplete`
@@ -82,27 +93,21 @@ Normalized lifecycle mapping includes:
 - refund/chargeback/revoke/void -> `canceled`
 - reactivation -> `active`
 
-Provider event identifiers are deterministic so Segpay retries remain idempotent in the existing billing-webhook event table.
-
 ## Customer portal
 
-Subscription-management handoff uses Segpay's consumer self-service portal:
-
-`https://cs.segpay.com/`
-
-UNBOUND does not place provider customer IDs, account emails, card data, or billing secrets in the returned portal URL.
+Subscription management hands off to Segpay's consumer self-service portal at `https://cs.segpay.com/`. UNBOUND does not put provider customer IDs, account emails, card data, or billing secrets in the returned portal URL.
 
 ## Remaining external launch work
 
-The adapter is code, not provider approval. Before billing can truthfully pass commercial launch readiness:
+The code does not equal provider approval. Before live paid launch:
 
-1. Apply to Segpay and obtain explicit production approval for UNBOUND AI's actual adults-only/AI business model.
-2. Complete Segpay/card-brand compliance requirements for the approved site and content model.
-3. Create the TOP recurring price/package and hosted pay page.
-4. Have Merchant Services enable/verify signed `amount`, `REF1`, and `REF2`.
-5. Configure authenticated transaction/member-management postbacks and test GET/POST delivery as applicable, including the `REF1`/`REF2` round trip.
-6. Set the production price and secrets only in Render environment variables.
-7. Run real checkout, rebill, cancellation, disable/expiry, refund/chargeback, reactivation, portal, retry/idempotency, and failure tests.
-8. Only then set the three Segpay verification attestations to true.
+1. Obtain explicit Segpay approval for UNBOUND's actual AI/adults-only business model.
+2. Complete Segpay/card-brand compliance requirements.
+3. Create **two recurring packages/pay pages**: Premium $59.99 and Ultra $114.99.
+4. Confirm signed `amount`, `REF1`, and `REF2` on both packages.
+5. Configure authenticated transaction/member-management postbacks and verify the `REF1`/`REF2` round trip.
+6. Verify initial Premium sale, initial Ultra sale, recurring billing, cancellation, disable/expiry, refund/chargeback, reactivation, and failure paths.
+7. Verify provider-supported Premium↔Ultra subscription changes before enabling an in-app direct plan-change workflow.
+8. Only then set the three Segpay production attestations to true.
 
 Never commit Segpay signing keys, postback passwords, cardholder data, or merchant credentials. UNBOUND must not collect or store card numbers or CVV data.

@@ -114,11 +114,15 @@ function main() {
   assert.strictEqual(status.browserSuppliedModelIdsAccepted, false);
 
   assert.strictEqual(CAPABILITY_CATALOG.multi_model.implemented, true);
-  assert.strictEqual(CAPABILITY_CATALOG.multi_model.minimumPlan, "top");
+  assert.strictEqual(CAPABILITY_CATALOG.multi_model.minimumPlan, "ultra");
   const free = buildCapabilityAccess({ planTier: "free" }).find((item) => item.key === "multi_model");
-  const top = buildCapabilityAccess({ planTier: "top" }).find((item) => item.key === "multi_model");
+  const premium = buildCapabilityAccess({ planTier: "premium" }).find((item) => item.key === "multi_model");
+  const ultra = buildCapabilityAccess({ planTier: "ultra" }).find((item) => item.key === "multi_model");
+  const legacyTop = buildCapabilityAccess({ planTier: "top" }).find((item) => item.key === "multi_model");
   assert.strictEqual(free.usable, false);
-  assert.strictEqual(top.usable, true);
+  assert.strictEqual(premium.usable, false);
+  assert.strictEqual(ultra.usable, true);
+  assert.strictEqual(legacyTop.usable, true);
 
   const serverSource = fs.readFileSync(path.join(appRoot, "server.js"), "utf8");
   const integratedServer = integrateModelRoutingServerSource(serverSource);
@@ -134,9 +138,11 @@ function main() {
   assert.strictEqual(count(routedHtml, 'id="modelProfileSelect"'), 1);
   assert.strictEqual(count(routedHtml, "let modelProfile = \"auto\";"), 1);
   assert.strictEqual(count(routedHtml, "modelProfile,"), 2);
-  assert.ok(routedHtml.includes('option value="fast">FAST · TOP'));
-  assert.ok(routedHtml.includes('option value="deep">DEEP · TOP'));
+  assert.ok(routedHtml.includes('option value="fast">FAST · ULTRA'));
+  assert.ok(routedHtml.includes('option value="deep">DEEP · ULTRA'));
+  assert.ok(routedHtml.includes('option value="research">RESEARCH · ULTRA'));
   assert.ok(routedHtml.includes('canUseCapability("multi_model")'));
+  assert.ok(routedHtml.includes("Multi-model routing requires Ultra access."));
   assert.ok(!routedHtml.includes('name="model"'));
 
   const fullyComposedHtml = injectEmailAccountUi(indexSource);
@@ -152,7 +158,7 @@ function main() {
     "Model routing should be applied after the existing production integration chain."
   );
 
-  console.log("PASS model-routing contract: TOP entitlement, server-only model IDs, automatic/profile routing, fallback behavior, UI composition, and production integration.");
+  console.log("PASS model-routing contract: Ultra entitlement, legacy TOP compatibility, server-only model IDs, automatic/profile routing, fallback behavior, UI composition, and production integration.");
 }
 
 main();

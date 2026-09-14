@@ -95,12 +95,14 @@ function main() {
   assert.strictEqual(textPart.text, "Read the visible error and explain it.");
 
   assert.strictEqual(CAPABILITY_CATALOG.image_understanding.implemented, true);
-  assert.strictEqual(CAPABILITY_CATALOG.image_understanding.minimumPlan, "top");
+  assert.strictEqual(CAPABILITY_CATALOG.image_understanding.minimumPlan, "premium");
   assert.strictEqual(CAPABILITY_CATALOG.image_tools.implemented, true);
   const freeImage = buildCapabilityAccess({ planTier: "free" }).find((item) => item.key === "image_understanding");
-  const topImage = buildCapabilityAccess({ planTier: "top" }).find((item) => item.key === "image_understanding");
+  const premiumImage = buildCapabilityAccess({ planTier: "premium" }).find((item) => item.key === "image_understanding");
+  const legacyTopImage = buildCapabilityAccess({ planTier: "top" }).find((item) => item.key === "image_understanding");
   assert.strictEqual(freeImage.usable, false);
-  assert.strictEqual(topImage.usable, true);
+  assert.strictEqual(premiumImage.usable, true);
+  assert.strictEqual(legacyTopImage.usable, true);
 
   const rate = getRateLimitPolicy({}).imageUnderstanding;
   assert.strictEqual(rate.scope, "image_understanding_account");
@@ -112,7 +114,7 @@ function main() {
   assert.strictEqual(count(composed, IMAGES_NAV_LINK), 1);
   assert.strictEqual(count(composed, '<script src="/email-account-ui.js" defer></script>'), 1);
 
-  console.log("UNBOUND AI image-understanding contract checks passed.");
+  console.log("UNBOUND AI image-understanding contract checks passed: Premium entitlement with legacy TOP compatibility.");
 }
 
 main();

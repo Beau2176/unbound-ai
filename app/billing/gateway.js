@@ -14,6 +14,7 @@ const BILLING_STATUSES = Object.freeze([
   "unpaid"
 ]);
 
+const PAID_PLAN_TIERS = Object.freeze(["premium", "ultra"]);
 const adapters = new Map();
 
 function normalizeBillingProvider(value) {
@@ -29,6 +30,12 @@ function normalizeSubscriptionStatus(value) {
 
 function subscriptionStatusAllowsAccess(status) {
   return ["active", "trialing"].includes(normalizeSubscriptionStatus(status));
+}
+
+function normalizePaidPlanTier(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  const normalized = raw === "top" ? "ultra" : raw;
+  return PAID_PLAN_TIERS.includes(normalized) ? normalized : null;
 }
 
 function registerBillingAdapter(name, adapter) {
@@ -57,6 +64,7 @@ function getBillingGatewayStatus(env = process.env) {
       checkout: false,
       customerPortal: false,
       webhooks: false,
+      paidPlans: [...PAID_PLAN_TIERS],
       state: "provider-not-selected"
     };
   }
@@ -70,6 +78,7 @@ function getBillingGatewayStatus(env = process.env) {
       checkout: false,
       customerPortal: false,
       webhooks: false,
+      paidPlans: [...PAID_PLAN_TIERS],
       state: "adapter-not-installed"
     };
   }
@@ -94,6 +103,7 @@ function getBillingGatewayStatus(env = process.env) {
       Boolean(capabilities.webhooks) &&
       typeof adapter.verifyWebhook === "function" &&
       typeof adapter.parseWebhook === "function",
+    paidPlans: [...PAID_PLAN_TIERS],
     state: configured ? "ready" : "adapter-not-configured"
   };
 }
@@ -143,15 +153,10 @@ function cleanTimestamp(value) {
   return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
 }
 
-function normalizePlanTier(value) {
-  const plan = String(value || "").trim().toLowerCase();
-  return ["free", "top"].includes(plan) ? plan : null;
-}
-
 async function startBillingCheckoutSession({
   subject,
   email,
-  planTier = "top",
+  planTier = "ultra",
   successUrl = null,
   cancelUrl = null,
   requestId = null,
@@ -168,11 +173,11 @@ async function startBillingCheckoutSession({
 
   const normalizedSubject = cleanOpaqueIdentifier(subject, 200);
   const normalizedEmail = cleanEmail(email);
-  const normalizedPlan = String(planTier || "").trim().toLowerCase();
-  if (!normalizedSubject || !normalizedEmail || normalizedPlan !== "top") {
+  const normalizedPlan = normalizePaidPlanTier(planTier);
+  if (!normalizedSubject || !normalizedEmail || !normalizedPlan) {
     throw billingGatewayError(
       "BILLING_CHECKOUT_INPUT_INVALID",
-      "Subscription checkout request is invalid.",
+      "Choose a valid Premium or Ultra subscription.",
       400
     );
   }
@@ -199,6 +204,7 @@ async function startBillingCheckoutSession({
 
   return {
     provider: gateway.provider,
+    planTier: normalizedPlan,
     checkoutUrl,
     expiresAt: cleanFutureTimestamp(result?.expiresAt)
   };
@@ -316,7 +322,7 @@ async function processBillingWebhook({
     300
   );
   const status = normalizeSubscriptionStatus(parsed?.status);
-  const planTier = normalizePlanTier(parsed?.planTier);
+  const planTier = parsed?.planTier ? normalizePaidPlanTier(parsed.planTier) : null;
   const occurredAt = cleanTimestamp(parsed?.occurredAt || parsed?.createdAt);
   const currentPeriodStart = cleanTimestamp(parsed?.currentPeriodStart);
   const currentPeriodEnd = cleanTimestamp(parsed?.currentPeriodEnd);
@@ -327,7 +333,7 @@ async function processBillingWebhook({
     !subject ||
     !eventType ||
     status === "none" ||
-    !planTier ||
+    (parsed?.planTier && !planTier) ||
     !occurredAt
   ) {
     throw billingGatewayError(
@@ -355,9 +361,11 @@ async function processBillingWebhook({
 
 module.exports = {
   BILLING_STATUSES,
+  PAID_PLAN_TIERS,
   normalizeBillingProvider,
   normalizeSubscriptionStatus,
   subscriptionStatusAllowsAccess,
+  normalizePaidPlanTier,
   registerBillingAdapter,
   getBillingAdapter,
   getBillingGatewayStatus,

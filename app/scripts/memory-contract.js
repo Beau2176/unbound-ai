@@ -106,11 +106,13 @@ async function main() {
   assert.strictEqual(await buildMemoryPrompt(null, "42"), "");
 
   assert.strictEqual(CAPABILITY_CATALOG.memory.implemented, true);
-  assert.strictEqual(CAPABILITY_CATALOG.memory.minimumPlan, "top");
+  assert.strictEqual(CAPABILITY_CATALOG.memory.minimumPlan, "premium");
   const free = buildCapabilityAccess({ planTier: "free" }).find((item) => item.key === "memory");
-  const top = buildCapabilityAccess({ planTier: "top" }).find((item) => item.key === "memory");
+  const premium = buildCapabilityAccess({ planTier: "premium" }).find((item) => item.key === "memory");
+  const legacyTop = buildCapabilityAccess({ planTier: "top" }).find((item) => item.key === "memory");
   assert.strictEqual(free.usable, false);
-  assert.strictEqual(top.usable, true);
+  assert.strictEqual(premium.usable, true);
+  assert.strictEqual(legacyTop.usable, true);
 
   const routesSource = fs.readFileSync(path.join(__dirname, "..", "memory", "routes.js"), "utf8");
   assert.ok(routesSource.includes("WHERE id = $3 AND user_id = $4"));
@@ -139,7 +141,7 @@ async function main() {
   }
   assert.ok(checked >= 1);
 
-  console.log("UNBOUND AI persistent project and user-controlled Memory contract checks passed.");
+  console.log("UNBOUND AI persistent project and user-controlled Memory contract checks passed: Premium entitlement with legacy TOP compatibility.");
 }
 
 main().catch((error) => {

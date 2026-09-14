@@ -1,0 +1,26 @@
+function integrateLawEnforcementServerSource(serverSource) {
+  const source = String(serverSource || "");
+  if (!source.trim()) {
+    const error = new Error("UNBOUND AI server source is empty.");
+    error.code = "LAW_ENFORCEMENT_SERVER_INTEGRATION_SOURCE_EMPTY";
+    throw error;
+  }
+
+  if (source.includes('"/api/admin/law-enforcement/requests"')) return source;
+
+  const marker = "/* ----------------------------- ADMIN API ----------------------------- */";
+  const index = source.indexOf(marker);
+  if (index === -1) {
+    const error = new Error("UNBOUND AI admin API integration anchor is missing.");
+    error.code = "LAW_ENFORCEMENT_SERVER_INTEGRATION_MARKER_MISSING";
+    throw error;
+  }
+
+  const block = `const {\n  createLawEnforcementRequest,\n  listLawEnforcementRequests,\n  searchEvidenceForLawEnforcementRequest,\n  buildLawEnforcementExport,\n  safeExportFilename\n} = require("./security/law-enforcement");\nconst { buildCompanyLegalResponseHtml } = require("./security/law-enforcement-ui");\n\n// Dedicated owner/admin workspace for manually responding to a specific\n// legal or law-enforcement request. Nothing in this module transmits evidence externally.\napp.get(\n  "/law-enforcement",\n  requireDatabase,\n  requireAdmin,\n  (req, res) => {\n    res.setHeader("Cache-Control", "no-store");\n    const rawHtml = require("fs").readFileSync(path.join(__dirname, "law-enforcement.html"), "utf8");\n    return res.type("html").send(buildCompanyLegalResponseHtml(rawHtml));\n  }\n);\n\napp.get(\n  "/api/admin/law-enforcement/requests",\n  requireDatabase,\n  requireAdmin,\n  async (req, res) => {\n    try {\n      const requests = await listLawEnforcementRequests({ pool, limit: req.query?.limit });\n      return res.json({ requests });\n    } catch (error) {\n      console.error("UNBOUND AI LAW ENFORCEMENT REQUEST LIST ERROR:", error?.code || error?.message || "unknown");\n      return res.status(500).json({ error: "Could not load law-enforcement request records." });\n    }\n  }\n);\n\napp.post(\n  "/api/admin/law-enforcement/requests",\n  requireDatabase,\n  requireAdmin,\n  securityActionRateLimit,\n  async (req, res) => {\n    try {\n      const requestRecord = await createLawEnforcementRequest({\n        pool,\n        agencyName: req.body?.agencyName,\n        requesterName: req.body?.requesterName,\n        requestReference: req.body?.requestReference,\n        subjectName: req.body?.subjectName,\n        approximateOccurredAt: req.body?.approximateOccurredAt,\n        searchWindowMinutes: req.body?.searchWindowMinutes,\n        actorUserId: req.user.id\n      });\n      return res.status(201).json({ request: requestRecord });\n    } catch (error) {\n      return res.status(400).json({\n        error: "Agency/requester, request reference, subject name, and approximate date/time are required."\n      });\n    }\n  }\n);\n\napp.post(\n  "/api/admin/law-enforcement/requests/:id/search",\n  requireDatabase,\n  requireAdmin,\n  securityActionRateLimit,\n  async (req, res) => {\n    try {\n      const result = await searchEvidenceForLawEnforcementRequest({\n        pool,\n        requestId: req.params.id\n      });\n      if (!result) return res.status(404).json({ error: "Law-enforcement request not found." });\n      return res.json(result);\n    } catch (error) {\n      console.error("UNBOUND AI LAW ENFORCEMENT SEARCH ERROR:", error?.code || error?.message || "unknown");\n      return res.status(500).json({ error: "Could not search preserved evidence for that request." });\n    }\n  }\n);\n\napp.post(\n  "/api/admin/law-enforcement/requests/:id/export",\n  requireDatabase,\n  requireAdmin,\n  securityActionRateLimit,\n  async (req, res) => {\n    try {\n      const result = await buildLawEnforcementExport({\n        pool,\n        requestId: req.params.id,\n        evidenceIds: req.body?.evidenceIds,\n        actorUserId: req.user.id,\n        reviewReason: req.body?.reviewReason,\n        auditRequestId: req.requestId,\n        env: process.env\n      });\n      if (!result) return res.status(404).json({ error: "Law-enforcement request not found." });\n      res.setHeader("Cache-Control", "no-store");\n      res.setHeader("Content-Type", "application/json; charset=utf-8");\n      res.setHeader(\n        "Content-Disposition",\n        'attachment; filename="' + safeExportFilename(result.requestReference) + '"'\n      );\n      return res.status(200).send(JSON.stringify(result.evidencePackage, null, 2));\n    } catch (error) {\n      const code = String(error?.code || "");\n      const status = code === "ABUSE_EVIDENCE_NOT_CONFIGURED" ? 503 : 400;\n      return res.status(status).json({\n        error: code === "ABUSE_EVIDENCE_NOT_CONFIGURED"\n          ? "Evidence decryption is not configured."\n          : "Could not create that law-enforcement evidence export."\n      });\n    }\n  }\n);\n\n`;
+
+  return source.slice(0, index) + block + source.slice(index);
+}
+
+module.exports = {
+  integrateLawEnforcementServerSource
+};

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#050913" />
+  <title>UNBOUND AI · Law Enforcement</title>
+  <style>
+    :root {
+      --bg: #050913;
+      --panel: rgba(5, 10, 20, 0.93);
+      --line: rgba(88, 179, 255, 0.34);
+      --text: #f7fbff;
+      --muted: #aab8c9;
+      --blue: #5bb7ff;
+      --gold: #ffb04a;
+      --danger: #ff8585;
+      --success: #68e4a5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        linear-gradient(180deg, rgba(2, 6, 14, 0.55), rgba(2, 6, 14, 0.94)),
+        url("/unbound-cosmic.png") center top / cover fixed no-repeat;
+    }
+    button, input, select, textarea { font: inherit; }
+    .topbar {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 13px 18px; border-bottom: 1px solid rgba(255,255,255,.08);
+      background: rgba(3,8,16,.90); backdrop-filter: blur(16px);
+    }
+    .brand { font-weight: 900; letter-spacing: .14em; }
+    .brand span { color: var(--blue); }
+    .top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn, .link-btn {
+      border: 1px solid rgba(91,183,255,.42); border-radius: 10px;
+      background: rgba(91,183,255,.11); color: var(--text);
+      padding: 9px 12px; font-weight: 800; text-decoration: none; cursor: pointer;
+    }
+    .btn:hover, .link-btn:hover { background: rgba(91,183,255,.20); }
+    .btn.gold { border-color: rgba(255,176,74,.48); background: rgba(255,176,74,.13); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .page { width: min(1180px, calc(100% - 24px)); margin: 0 auto; padding: 24px 0 56px; }
+    h1 { margin: 0; font-size: clamp(29px, 5vw, 44px); }
+    .subtitle { color: var(--muted); margin: 7px 0 20px; }
+    .notice {
+      border: 1px solid rgba(255,176,74,.42); border-radius: 15px;
+      background: rgba(82,50,8,.25); padding: 14px 16px; line-height: 1.5; margin-bottom: 18px;
+    }
+    .notice strong { color: #ffd79f; }
+    .card {
+      border: 1px solid var(--line); border-radius: 18px; background: var(--panel);
+      padding: 18px; margin-top: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.45);
+    }
+    .card h2 { margin: 0 0 5px; font-size: 21px; }
+    .hint { color: var(--muted); font-size: 13px; margin-bottom: 15px; line-height: 1.45; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+    .field label { display: block; color: #c5d7e7; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 6px; }
+    input, select, textarea {
+      width: 100%; border: 1px solid rgba(91,183,255,.34); border-radius: 10px;
+      background: rgba(2,8,18,.91); color: white; padding: 10px 11px; outline: none;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(91,183,255,.10); }
+    textarea { min-height: 92px; resize: vertical; }
+    .actions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 14px; }
+    .feedback { min-height: 21px; margin-top: 10px; font-size: 13px; }
+    .feedback.ok { color: var(--success); }
+    .feedback.error { color: #ffb4b4; }
+    .summary { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 9px; margin: 13px 0; }
+    .summary > div { padding: 11px; border: 1px solid rgba(255,255,255,.08); border-radius: 12px; background: rgba(255,255,255,.025); }
+    .summary .label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+    .summary .value { margin-top: 4px; font-weight: 800; word-break: break-word; }
+    .table-wrap { overflow-x: auto; border: 1px solid rgba(255,255,255,.08); border-radius: 13px; }
+    table { width: 100%; border-collapse: collapse; min-width: 920px; }
+    th, td { padding: 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,.07); vertical-align: top; font-size: 12px; }
+    th { color: #bfd1e1; background: rgba(255,255,255,.025); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+    tr:last-child td { border-bottom: 0; }
+    .hash { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; max-width: 220px; word-break: break-all; color: #9dc6e6; }
+    .badge { display: inline-flex; padding: 4px 7px; border-radius: 999px; border: 1px solid rgba(91,183,255,.28); color: #d8efff; font-size: 10px; font-weight: 800; }
+    .badge.hold { border-color: rgba(255,176,74,.45); color: #ffd79f; }
+    .request-list { display: grid; gap: 8px; }
+    .request-item { display: flex; justify-content: space-between; gap: 12px; align-items: center; border: 1px solid rgba(255,255,255,.08); border-radius: 11px; padding: 10px 11px; }
+    .request-item small { color: var(--muted); }
+    .empty { color: var(--muted); padding: 18px 4px; }
+    @media (max-width: 760px) {
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .grid { grid-template-columns: 1fr; }
+      .summary { grid-template-columns: 1fr 1fr; }
+      .card { padding: 14px; }
+    }
+    @media (max-width: 460px) {
+      .page { width: min(100% - 14px, 1180px); }
+      .summary { grid-template-columns: 1fr; }
+      .top-actions { width: 100%; }
+      .link-btn { flex: 1; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">UNBOUND <span>AI</span> · LAW ENFORCEMENT</div>
+    <div class="top-actions">
+      <a class="link-btn" href="/admin.html">Admin</a>
+      <a class="link-btn" href="/">Chat</a>
+    </div>
+  </header>
+
+  <main class="page">
+    <h1>Law Enforcement Evidence Response</h1>
+    <p class="subtitle">Admin-only search and manual export of previously preserved high-risk safety evidence.</p>
+
+    <div class="notice">
+      <strong>Manual disclosure only.</strong> This workspace does not decide that a person committed a crime, does not record every conversation, and does not send anything to police or any other outside party. Use it only after a specific law-enforcement request has been received. Every export is audited and selected records are placed on legal hold.
+    </div>
+
+    <section class="card">
+      <h2>1. Log the Request</h2>
+      <div class="hint">Enter exactly what law enforcement supplied. A name, approximate date, and approximate time are required before the preserved-evidence search can run.</div>
+      <div class="grid">
+        <div class="field"><label for="agencyName">Agency</label><input id="agencyName" autocomplete="off" placeholder="Example: Sterling Police Department" /></div>
+        <div class="field"><label for="requesterName">Requesting officer / representative</label><input id="requesterName" autocomplete="off" placeholder="Name or badge/contact identifier" /></div>
+        <div class="field"><label for="requestReference">Case / request reference</label><input id="requestReference" autocomplete="off" placeholder="Case number, request ID, subpoena/warrant reference, etc." /></div>
+        <div class="field"><label for="subjectName">Person / account name</label><input id="subjectName" autocomplete="off" placeholder="Exact name to search" /></div>
+        <div class="field"><label for="approxDate">Approximate date</label><input id="approxDate" type="date" /></div>
+        <div class="field"><label for="approxTime">Approximate time</label><input id="approxTime" type="time" /></div>
+        <div class="field"><label for="windowMinutes">Search window on each side</label>
+          <select id="windowMinutes">
+            <option value="60">± 1 hour</option>
+            <option value="180" selected>± 3 hours</option>
+            <option value="360">± 6 hours</option>
+            <option value="720">± 12 hours</option>
+            <option value="1440">± 24 hours</option>
+          </select>
+        </div>
+      </div>
+      <div class="actions"><button class="btn gold" id="createSearchBtn" type="button">Create Request & Search</button></div>
+      <div class="feedback" id="requestFeedback"></div>
+    </section>
+
+    <section class="card" id="resultsCard" hidden>
+      <h2>2. Matching Preserved Records</h2>
+      <div class="hint">Results are metadata only until you deliberately export selected records. The search is restricted to the request’s exact account display name and approximate time window.</div>
+      <div class="summary" id="requestSummary"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Select</th><th>Occurred</th><th>Name</th><th>Category</th><th>Preservation reason</th><th>Integrity hash</th><th>Hold</th></tr></thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="noResults" hidden>No preserved records matched this exact name and time window.</div>
+      <div class="field" style="margin-top:14px">
+        <label for="reviewReason">Disclosure review note</label>
+        <textarea id="reviewReason" placeholder="Document why this specific request is being fulfilled and any internal review performed."></textarea>
+      </div>
+      <div class="actions">
+        <button class="btn gold" id="downloadBtn" type="button">Download Selected Evidence Package</button>
+      </div>
+      <div class="feedback" id="exportFeedback"></div>
+    </section>
+
+    <section class="card">
+      <h2>Recent Law-Enforcement Requests</h2>
+      <div class="hint">These records are an internal audit trail of specific requests. They are not automatically sent anywhere.</div>
+      <div class="request-list" id="requestList"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
+
+  <script>
+    let activeRequestId = null;
+
+    function setFeedback(id, message, kind = "") {
+      const el = document.getElementById(id);
+      el.textContent = message || "";
+      el.className = `feedback ${kind}`.trim();
+    }
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, {
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        ...options
+      });
+      if (!response.ok) {
+        let message = `Request failed (${response.status}).`;
+        try { message = (await response.json()).error || message; } catch (_) {}
+        throw new Error(message);
+      }
+      return response;
+    }
+
+    function localApproximateIso() {
+      const date = document.getElementById("approxDate").value;
+      const time = document.getElementById("approxTime").value;
+      if (!date || !time) return null;
+      const local = new Date(`${date}T${time}:00`);
+      return Number.isFinite(local.getTime()) ? local.toISOString() : null;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatDate(value) {
+      const date = new Date(value);
+      return Number.isFinite(date.getTime()) ? date.toLocaleString() : String(value || "—");
+    }
+
+    function renderSearch(result) {
+      activeRequestId = result.request.id;
+      document.getElementById("resultsCard").hidden = false;
+      document.getElementById("requestSummary").innerHTML = `
+        <div><div class="label">Agency</div><div class="value">${escapeHtml(result.request.agencyName)}</div></div>
+        <div><div class="label">Reference</div><div class="value">${escapeHtml(result.request.requestReference)}</div></div>
+        <div><div class="label">Subject</div><div class="value">${escapeHtml(result.request.subjectName)}</div></div>
+        <div><div class="label">Search window</div><div class="value">${escapeHtml(formatDate(result.searchBounds.start))}<br>to<br>${escapeHtml(formatDate(result.searchBounds.end))}</div></div>`;
+
+      const body = document.getElementById("resultsBody");
+      body.innerHTML = "";
+      const records = Array.isArray(result.records) ? result.records : [];
+      document.getElementById("noResults").hidden = records.length !== 0;
+      for (const record of records) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><input type="checkbox" class="evidence-check" value="${escapeHtml(record.id)}" aria-label="Select evidence ${escapeHtml(record.id)}"></td>
+          <td>${escapeHtml(formatDate(record.occurredAt))}</td>
+          <td>${escapeHtml(record.displayName)}<br><small>${escapeHtml(record.maskedEmail)}</small></td>
+          <td><span class="badge">${escapeHtml(record.category)}</span></td>
+          <td>${escapeHtml(record.preservationReason)}</td>
+          <td class="hash">${escapeHtml(record.payloadSha256)}</td>
+          <td>${record.legalHold ? '<span class="badge hold">LEGAL HOLD</span>' : 'No'}</td>`;
+        body.appendChild(tr);
+      }
+      document.getElementById("resultsCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    async function searchRequest(requestId) {
+      const response = await api(`/api/admin/law-enforcement/requests/${encodeURIComponent(requestId)}/search`, {
+        method: "POST",
+        body: "{}"
+      });
+      const result = await response.json();
+      renderSearch(result);
+      return result;
+    }
+
+    document.getElementById("createSearchBtn").addEventListener("click", async () => {
+      setFeedback("requestFeedback", "");
+      const approximateOccurredAt = localApproximateIso();
+      const payload = {
+        agencyName: document.getElementById("agencyName").value,
+        requesterName: document.getElementById("requesterName").value,
+        requestReference: document.getElementById("requestReference").value,
+        subjectName: document.getElementById("subjectName").value,
+        approximateOccurredAt,
+        searchWindowMinutes: Number(document.getElementById("windowMinutes").value)
+      };
+      if (!approximateOccurredAt) {
+        setFeedback("requestFeedback", "Approximate date and time are required.", "error");
+        return;
+      }
+      try {
+        const response = await api("/api/admin/law-enforcement/requests", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        const created = await response.json();
+        await searchRequest(created.request.id);
+        setFeedback("requestFeedback", "Request logged. Search completed without disclosing or sending any evidence.", "ok");
+        await loadRecentRequests();
+      } catch (error) {
+        setFeedback("requestFeedback", error.message, "error");
+      }
+    });
+
+    document.getElementById("downloadBtn").addEventListener("click", async () => {
+      setFeedback("exportFeedback", "");
+      if (!activeRequestId) return;
+      const evidenceIds = Array.from(document.querySelectorAll(".evidence-check:checked")).map((el) => el.value);
+      const reviewReason = document.getElementById("reviewReason").value.trim();
+      if (!evidenceIds.length) {
+        setFeedback("exportFeedback", "Select at least one matching preserved record.", "error");
+        return;
+      }
+      if (!reviewReason) {
+        setFeedback("exportFeedback", "A disclosure review note is required before download.", "error");
+        return;
+      }
+      try {
+        const response = await api(`/api/admin/law-enforcement/requests/${encodeURIComponent(activeRequestId)}/export`, {
+          method: "POST",
+          body: JSON.stringify({ evidenceIds, reviewReason })
+        });
+        const blob = await response.blob();
+        const disposition = response.headers.get("Content-Disposition") || "";
+        const match = disposition.match(/filename="([^"]+)"/i);
+        const filename = match ? match[1] : "unbound-law-enforcement-evidence.json";
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        setFeedback("exportFeedback", "Evidence package downloaded locally. Nothing was automatically transmitted.", "ok");
+        await searchRequest(activeRequestId);
+        await loadRecentRequests();
+      } catch (error) {
+        setFeedback("exportFeedback", error.message, "error");
+      }
+    });
+
+    async function loadRecentRequests() {
+      const list = document.getElementById("requestList");
+      try {
+        const response = await api("/api/admin/law-enforcement/requests?limit=25");
+        const data = await response.json();
+        const requests = Array.isArray(data.requests) ? data.requests : [];
+        if (!requests.length) {
+          list.innerHTML = '<div class="empty">No law-enforcement requests have been logged.</div>';
+          return;
+        }
+        list.innerHTML = "";
+        for (const item of requests) {
+          const row = document.createElement("div");
+          row.className = "request-item";
+          row.innerHTML = `<div><strong>${escapeHtml(item.subject_name)}</strong><br><small>${escapeHtml(item.agency_name)} · ${escapeHtml(item.request_reference)} · ${escapeHtml(formatDate(item.created_at))} · ${escapeHtml(item.status)}</small></div>`;
+          const button = document.createElement("button");
+          button.className = "btn";
+          button.type = "button";
+          button.textContent = "Open Search";
+          button.addEventListener("click", async () => {
+            try { await searchRequest(item.id); } catch (error) { setFeedback("requestFeedback", error.message, "error"); }
+          });
+          row.appendChild(button);
+          list.appendChild(row);
+        }
+      } catch (error) {
+        list.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    loadRecentRequests();
+  </script>
+</body>
+</html>
