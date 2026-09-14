@@ -66,6 +66,38 @@ for (const sentinel of secretSentinels) {
   assert.strictEqual(serialized.includes(sentinel), false, `secret leaked into report: ${sentinel}`);
   assert.strictEqual(text.includes(sentinel), false, `secret leaked into text output: ${sentinel}`);
 }
-assert.strictEqual(secretReport.stages.find((stage) => stage.key === "clamav").ready, true);
+assert.strictEqual(
+  secretReport.stages.find((stage) => stage.key === "clamav").ready,
+  false,
+  "configuration alone must not mark ClamAV launch-ready"
+);
+
+const operationalClamav = buildNoSpendLaunchPreflight({
+  env: {
+    CLAMAV_HOST: "private-clamav.internal",
+    UPLOAD_MALWARE_SCAN_MODE: "required",
+    CLAMAV_OPERATIONAL_VERIFIED: "true",
+    CLAMAV_OPERATIONAL_REVIEWED_AT: "2026-09-14T11:30:00.000Z"
+  },
+  nowMs: NOW
+});
+const clamavStage = operationalClamav.stages.find((stage) => stage.key === "clamav");
+assert.strictEqual(clamavStage.ready, true);
+assert.strictEqual(clamavStage.operationalReview.verified, true);
+assert.strictEqual(clamavStage.operationalReview.fresh, true);
+
+const staleClamav = buildNoSpendLaunchPreflight({
+  env: {
+    CLAMAV_HOST: "private-clamav.internal",
+    UPLOAD_MALWARE_SCAN_MODE: "required",
+    CLAMAV_OPERATIONAL_VERIFIED: "true",
+    CLAMAV_OPERATIONAL_REVIEWED_AT: "2026-01-01T00:00:00.000Z"
+  },
+  nowMs: NOW
+});
+assert.strictEqual(
+  staleClamav.stages.find((stage) => stage.key === "clamav").ready,
+  false
+);
 
 console.log("No-spend launch preflight contract passed.");
