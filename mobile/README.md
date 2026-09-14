@@ -41,17 +41,23 @@ The source mark is now prepared in-repo. Store submission still requires visual 
 
 ## Camera and video capture
 
-The hosted UNBOUND chat now exposes PHOTO and VIDEO controls. The web layer requests camera/microphone access only after the user taps one of those controls.
+The hosted UNBOUND chat exposes PHOTO and VIDEO controls. The web layer requests camera/microphone access only after the user chooses a capture feature.
 
-The current hosted/remote shell relies on normal browser/WebView media permission handling. When Capacitor generates the real native Android and iOS projects, verify the generated native applications explicitly include and correctly request the permissions needed for the features that are actually enabled:
+`mobile/scripts/configure-media-permissions.mjs` now configures the generated native projects with the minimum capture declarations needed by those user-initiated features:
 
-- Android: camera permission for photo/video capture and microphone permission for video recording with audio.
-- iOS: camera-use and microphone-use purpose strings that accurately describe UNBOUND's user-initiated capture feature.
-- WebView/native container: permission prompts must be tied to a user action and denied permissions must fail safely without blocking normal chat.
+- Android declares the camera permission `android.permission.CAMERA` and the microphone permission `android.permission.RECORD_AUDIO`.
+- Android explicitly marks `android.hardware.camera.any`, `android.hardware.camera`, `android.hardware.camera.autofocus`, and `android.hardware.microphone` as optional so capture hardware is not treated as a requirement for installing or using UNBOUND.
+- Android configuration fails if broad/background capture permissions such as `CAPTURE_AUDIO_OUTPUT`, `CAPTURE_VIDEO_OUTPUT`, `FOREGROUND_SERVICE_CAMERA`, or `FOREGROUND_SERVICE_MICROPHONE` appear.
+- iOS adds `NSCameraUsageDescription` explaining that camera access is used only when the user chooses Photo or Video.
+- iOS adds `NSMicrophoneUsageDescription` explaining that microphone access is used only when the user chooses a feature that records audio, such as video capture.
+- `npm run configure:permissions:android`, `npm run configure:permissions:ios`, and `npm run configure:permissions` apply the declarations after the native projects are generated/synced.
+- Mobile Native CI applies and verifies these declarations on freshly generated Android and iOS projects.
 
-Do not add broad background camera/microphone permissions. UNBOUND must not start recording automatically or while the capture UI is closed.
+Do not add broad background camera/microphone permissions. UNBOUND must not start recording automatically or while the capture UI is closed. Denied permissions must fail safely without blocking normal chat.
 
 Photo capture can fall back to the device/browser image picker when direct camera access is unavailable. Recorded raw video currently remains local to the browser; UNBOUND extracts representative visual frames for Premium image-understanding analysis. Full motion/audio video AI understanding and AI video editing require a separately approved provider and are not yet claimed as active.
+
+The native declarations are now code-complete, but real-device testing is still required to confirm the Android/iOS permission prompts appear at the correct user action, denial/revocation paths remain safe, and WebView capture behaves correctly on supported devices.
 
 ## Device Inspector
 
@@ -94,6 +100,6 @@ This prepares the resume/session behavior in code, but real-device validation is
 
 ## Store-readiness work still required
 
-Before public submission, replace the remote-server development configuration with a production mobile bundle or approved native navigation strategy, visually validate the generated native icon/splash resources, validate the `unbound:` scheme on real devices and later configure verified Universal/App Links when production signing/domain association is available, validate authentication/session and passkey behavior on real devices, complete age-verification and privacy disclosures, configure subscription/payment handling for each store, verify camera/microphone permission prompts on real devices, and run device/store-review testing.
+Before public submission, replace the remote-server development configuration with a production mobile bundle or approved native navigation strategy, visually validate the generated native icon/splash resources, validate the `unbound:` scheme on real devices and later configure verified Universal/App Links when production signing/domain association is available, validate authentication/session and passkey behavior on real devices, complete age-verification and privacy disclosures, configure subscription/payment handling for each store, validate camera/microphone prompts and capture behavior on real devices, and run device/store-review testing.
 
 The existing web service remains separate from this folder so mobile development does not change Render's current start/build commands.

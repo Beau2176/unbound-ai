@@ -35,6 +35,8 @@ jobs:
         run: npm run assets:android
       - name: Register UNBOUND Android URL scheme
         run: npm run configure:links:android
+      - name: Configure Android camera and microphone permissions
+        run: npm run configure:permissions:android
       - name: Verify Android package
         run: |
           test -f android/app/src/main/AndroidManifest.xml
@@ -42,6 +44,16 @@ jobs:
           grep -q 'android.intent.action.VIEW' android/app/src/main/AndroidManifest.xml
           grep -q '@string/custom_url_scheme' android/app/src/main/AndroidManifest.xml
           grep -q '<string name="custom_url_scheme">unbound</string>' android/app/src/main/res/values/strings.xml
+          grep -q 'android.permission.CAMERA' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.RECORD_AUDIO' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.hardware.camera.any" android:required="false"' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.hardware.camera" android:required="false"' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.hardware.camera.autofocus" android:required="false"' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.hardware.microphone" android:required="false"' android/app/src/main/AndroidManifest.xml
+          if grep -Eq 'CAPTURE_AUDIO_OUTPUT|CAPTURE_VIDEO_OUTPUT|FOREGROUND_SERVICE_CAMERA|FOREGROUND_SERVICE_MICROPHONE' android/app/src/main/AndroidManifest.xml; then
+            echo 'Unexpected broad/background media permission found.'
+            exit 1
+          fi
 
   ios-scaffold:
     runs-on: macos-latest
@@ -65,6 +77,8 @@ jobs:
         run: npm run assets:ios
       - name: Register UNBOUND iOS URL scheme
         run: npm run configure:links:ios
+      - name: Configure iOS camera and microphone usage descriptions
+        run: npm run configure:permissions:ios
       - name: Verify iOS project
         run: |
           test -f ios/App/App/Info.plist
@@ -72,3 +86,7 @@ jobs:
           grep -q '<key>CFBundleURLTypes</key>' ios/App/App/Info.plist
           grep -q '<string>ai.unbound.app</string>' ios/App/App/Info.plist
           grep -q '<string>unbound</string>' ios/App/App/Info.plist
+          grep -q '<key>NSCameraUsageDescription</key>' ios/App/App/Info.plist
+          grep -q 'UNBOUND AI uses the camera only when you choose Photo or Video to capture media for chat.' ios/App/App/Info.plist
+          grep -q '<key>NSMicrophoneUsageDescription</key>' ios/App/App/Info.plist
+          grep -q 'UNBOUND AI uses the microphone only when you choose a feature that records audio, such as video capture.' ios/App/App/Info.plist
