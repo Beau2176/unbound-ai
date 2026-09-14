@@ -1,0 +1,183 @@
+name: One-time interrupted stream fix
+
+on:
+  push:
+    branches:
+      - fix/interrupted-stream-completion
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch interrupted-stream completion handling
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/index.html")
+          text = path.read_text()
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              r'''      goDeeperButton.hidden = !(
+        depthStyle === "casual" &&
+        lastItem &&
+        lastItem.role === "assistant"
+      );''',
+              r'''      goDeeperButton.hidden = !(
+        depthStyle === "casual" &&
+        lastItem &&
+        lastItem.role === "assistant" &&
+        lastItem.interrupted !== true
+      );''',
+              "go deeper completion guard",
+          )
+
+          replace_once(
+              r'''          return {
+            role: item.role,
+            content,
+            sources,
+            citations
+          };''',
+              r'''          return {
+            role: item.role,
+            content,
+            sources,
+            citations,
+            interrupted: item.role === "assistant" && item.interrupted === true
+          };''',
+              "history interruption state",
+          )
+
+          replace_once(
+              r'''        addMessage(
+          item.role,
+          item.content,
+          "",
+          item.sources || [],
+          item.citations || []
+        );''',
+              r'''        addMessage(
+          item.role,
+          item.content,
+          item.interrupted ? "error" : "",
+          item.sources || [],
+          item.citations || []
+        );''',
+              "interrupted history rendering",
+          )
+
+          replace_once(
+              r'''        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        const handleStreamLine = (line) => {''',
+              r'''        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let streamCompleted = false;
+
+        const handleStreamLine = (line) => {''',
+              "stream completion state",
+          )
+
+          replace_once(
+              r'''          if ((event.type === "meta" || event.type === "done") && event.conversationId) {
+            activeConversationId = String(event.conversationId);
+          }
+
+          if (event.type === "delta" && typeof event.delta === "string") {''',
+              r'''          if (event.type === "done") {
+            streamCompleted = true;
+          }
+
+          if ((event.type === "meta" || event.type === "done") && event.conversationId) {
+            activeConversationId = String(event.conversationId);
+          }
+
+          if (event.type === "delta" && typeof event.delta === "string") {''',
+              "done event tracking",
+          )
+
+          replace_once(
+              r'''        if (buffer.trim()) {
+          handleStreamLine(buffer);
+        }
+
+        typingBubble.remove();
+
+        if (!reply) {''',
+              r'''        if (buffer.trim()) {
+          handleStreamLine(buffer);
+        }
+
+        if (!streamCompleted) {
+          throw new Error("Response stream ended before completion.");
+        }
+
+        typingBubble.remove();
+
+        if (!reply) {''',
+              "early eof detection",
+          )
+
+          replace_once(
+              r'''        if (assistantBubble && reply && requestMode !== "research") {
+          assistantBubble.classList.add("error");
+          assistantBubble.innerHTML = renderMarkdown(
+            reply + "\n\n[Stream interrupted: " + (error.message || "unknown error") + "]"
+          );
+        } else {''',
+              r'''        if (assistantBubble && reply && requestMode !== "research") {
+          const interruptedReply =
+            reply + "\n\n[Response interrupted before completion.]";
+          assistantBubble.classList.add("error");
+          assistantBubble.innerHTML = renderMarkdown(interruptedReply);
+          conversationHistory.push({
+            role: "assistant",
+            content: interruptedReply,
+            interrupted: true
+          });
+          saveConversation();
+          updateGoDeeperVisibility();
+          console.warn("UNBOUND AI response stream interrupted:", error);
+        } else {''',
+              "durable interrupted reply",
+          )
+
+          path.write_text(text)
+          PY
+
+          git diff --check
+          cd app
+          npm run check
+          node scripts/chat-recovery-contract.js
+
+      - name: Commit verified fix and remove one-time workflow
+        shell: bash
+        run: |
+          rm .github/workflows/one-time-interrupted-stream-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/index.html .github/workflows/one-time-interrupted-stream-fix.yml
+          git diff --cached --check
+          git commit -m "Fix interrupted stream completion handling"
+          git push origin HEAD:fix/interrupted-stream-completion
