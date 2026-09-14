@@ -7,7 +7,7 @@ This directory contains the native mobile shell for UNBOUND AI using Capacitor.
 - Android package ID: `ai.unbound.app`
 - iOS bundle ID: `ai.unbound.app`
 - App name: `UNBOUND AI`
-- Production web origin: `https://unbound-ai-app.onrender.com`
+- Production web origin / current hosted service: `https://unbound-ai-app.onrender.com`
 
 ## First local setup
 
@@ -20,7 +20,9 @@ npm run add:ios
 npm run prepare:native
 ```
 
-Open the native projects with:
+The ordinary `add:*`, `sync`, `prepare:native`, `android`, and `ios` commands are explicitly **remote-development** commands. They keep the existing Render-backed development shell available without making that remote server the store default.
+
+Open the development native projects with:
 
 ```bash
 npm run android
@@ -28,6 +30,21 @@ npm run ios
 ```
 
 Android builds require Android Studio. iOS/App Store builds require Xcode on macOS.
+
+## Mobile environments and store gate
+
+`capacitor.config.ts` is environment-aware and defaults to `store` when `UNBOUND_MOBILE_ENV` is not set.
+
+- `store` uses the local `www` bundle and contains no `server.url` or `server.allowNavigation` override.
+- `remote-dev` is the only mode that loads `https://unbound-ai-app.onrender.com` inside the Capacitor WebView. It exists to preserve the current development workflow while the real local production bundle is built.
+- `scripts/run-capacitor.mjs` launches Capacitor with an explicit `store` or `remote-dev` environment in a cross-platform way.
+- `npm run add:android:store`, `npm run add:ios:store`, and `npm run sync:store` use the store-safe configuration.
+- `npm run verify:store-config` verifies that store/default mode is remote-free and that release remains blocked while the local bundle is incomplete.
+- Mobile Native CI generates store-safe Android and iOS projects, verifies that their copied Capacitor configs contain no Render development origin, then separately proves that explicit `remote-dev` mode does contain the Render origin.
+
+`mobile/www/index.html` is still only the small local placeholder shell. It is **not** the complete production UNBOUND application. Therefore `npm run prepare:store` intentionally fails through `scripts/verify-store-shell.mjs` until a real local production bundle and its API/network strategy are complete. Do not add the `unbound-production-bundle=ready` marker merely to bypass the gate; the marker is an engineering attestation that the full local app is actually ready to replace `server.url`.
+
+This separation prevents an accidental store build from silently shipping the development Render WebView while keeping development usable today.
 
 ## Official native branding
 
@@ -63,7 +80,7 @@ The native declarations are now code-complete, but real-device testing is still 
 
 The local `@unbound/device-inspector` Capacitor plugin provides user-authorized Android device diagnostics to the web shell. It reports system resource totals, visible launcher apps, and processes Android allows the app to see. It does not request `QUERY_ALL_PACKAGES`, does not bypass Android sandboxing, and does not read another app's private files, passwords, tokens, cookies, or credentials.
 
-Run `npm install` and `npm run sync` after plugin changes so Capacitor registers the native plugin.
+Run `npm install` and `npm run sync` after plugin changes so Capacitor registers the native plugin in the remote-development shell. Store preparation uses the separate fail-closed path above.
 
 ## Native deep links
 
@@ -100,6 +117,6 @@ This prepares the resume/session behavior in code, but real-device validation is
 
 ## Store-readiness work still required
 
-Before public submission, replace the remote-server development configuration with a production mobile bundle or approved native navigation strategy, visually validate the generated native icon/splash resources, validate the `unbound:` scheme on real devices and later configure verified Universal/App Links when production signing/domain association is available, validate authentication/session and passkey behavior on real devices, complete age-verification and privacy disclosures, configure subscription/payment handling for each store, validate camera/microphone prompts and capture behavior on real devices, and run device/store-review testing.
+Before public submission, replace the placeholder `mobile/www` shell with the complete local production application bundle and its approved API/network strategy, visually validate the generated native icon/splash resources, validate the `unbound:` scheme on real devices and later configure verified Universal/App Links when production signing/domain association is available, validate authentication/session and passkey behavior on real devices, complete age-verification and privacy disclosures, configure subscription/payment handling for each store, validate camera/microphone prompts and capture behavior on real devices, and run device/store-review testing.
 
-The existing web service remains separate from this folder so mobile development does not change Render's current start/build commands.
+The existing hosted web service remains separate from this folder so mobile development does not change Render's current start/build commands.
