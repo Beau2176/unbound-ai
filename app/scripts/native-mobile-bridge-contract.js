@@ -9,6 +9,10 @@ assert(integrated.includes('native-mobile-bridge.js'), 'native bridge script mus
 assert(integrated.includes('req.path !== "/"'), 'homepage route must be intercepted');
 assert(integrated.includes('req.path !== "/index.html"'), 'index route must be intercepted');
 assert(integrated.includes('Cache-Control'), 'native homepage response must control caching');
+assert(
+  integrated.includes('injectInterruptedStreamRecovery'),
+  'homepage runtime must apply interrupted-stream recovery before serving the page'
+);
 assert.strictEqual(
   integrateNativeShellServerSource(integrated),
   integrated,
