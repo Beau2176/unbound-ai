@@ -24,7 +24,7 @@ Use the explicit commands in `package.json`; do not turn the Render-backed remot
 
 `npm run build:local-ui` builds `mobile/www` from the production web sources and writes a hashed manifest. `npm run verify:local-ui` verifies the generated pages, runtime scripts, mobile transformations, manifest hashes, native transport contract and native validation contract.
 
-The local UI no longer depends on the old hosted-WebView shortcut for release. Native API/session transport is implemented by `runtime/native-api-transport.js` and validated by `scripts/verify-native-api-transport.mjs`.
+The local UI no longer depends on the old hosted-WebView shortcut for release. Native API/session transport is implemented by `runtime/native-api-bridge.js` and validated by `scripts/verify-native-api-transport.mjs`.
 
 The transport contract preserves the existing authentication/session boundary instead of moving long-lived credentials into JavaScript-visible storage. Store release still requires real signed-device evidence proving the behavior works on actual Android and iOS builds.
 
