@@ -9,6 +9,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const mobileDir = resolve(scriptDir, '..');
 const repoRoot = resolve(mobileDir, '..');
 const appDir = resolve(repoRoot, 'app');
+const runtimeDir = resolve(mobileDir, 'runtime');
 const wwwDir = resolve(mobileDir, 'www');
 
 const { injectMobileLayoutStyles } = require(resolve(appDir, 'ui/mobile-layout.js'));
@@ -16,6 +17,8 @@ const { injectVoiceListenControl } = require(resolve(appDir, 'ui/voice-listen.js
 const { injectInterruptedStreamRecovery } = require(resolve(appDir, 'ui/chat-stream-recovery.js'));
 
 const LOCAL_BUNDLE_MARKER = '<meta name="unbound-local-ui-bundle" content="generated" />';
+const NATIVE_API_MARKER = '<meta name="unbound-native-api-transport" content="capacitor-http-v1" />';
+const NATIVE_API_SCRIPT = ['native-api-bridge.js', '108'];
 const RUNTIME_SCRIPTS = [
   ['desktop-voice-input.js', '121'],
   ['native-mobile-bridge.js', '102'],
@@ -42,6 +45,21 @@ const STATIC_ASSETS = ['unbound-cosmic.png'];
 
 function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
+}
+
+function injectNativeApiTransport(html) {
+  const source = String(html || '');
+  const headMarker = '</head>';
+  if (source.indexOf(headMarker) < 0 || source.indexOf(headMarker) !== source.lastIndexOf(headMarker)) {
+    throw new Error('UNBOUND native API transport head marker is missing or ambiguous.');
+  }
+  if (source.includes('src="./native-api-bridge.js')) return source;
+
+  const [file, version] = NATIVE_API_SCRIPT;
+  return source.replace(
+    headMarker,
+    `  ${NATIVE_API_MARKER}\n  <script src="./${file}?v=${version}"></script>\n${headMarker}`
+  );
 }
 
 function injectLocalRuntime(html) {
@@ -79,11 +97,30 @@ async function buildHomepage() {
   const mobile = injectMobileLayoutStyles(raw);
   const voice = injectVoiceListenControl(mobile);
   const recovered = injectInterruptedStreamRecovery(voice);
-  return injectLocalRuntime(recovered);
+  const transported = injectNativeApiTransport(recovered);
+  return injectLocalRuntime(transported);
 }
 
-async function copyRequired(relativePath) {
+async function writePublicPage(relativePath) {
   const sourcePath = resolve(appDir, relativePath);
+  const destinationPath = resolve(wwwDir, relativePath);
+  const raw = await readFile(sourcePath, 'utf8');
+  const transported = injectNativeApiTransport(raw);
+  await mkdir(dirname(destinationPath), { recursive: true });
+  await writeFile(destinationPath, transported, 'utf8');
+  return destinationPath;
+}
+
+async function copyAppRequired(relativePath) {
+  const sourcePath = resolve(appDir, relativePath);
+  const destinationPath = resolve(wwwDir, relativePath);
+  await mkdir(dirname(destinationPath), { recursive: true });
+  await copyFile(sourcePath, destinationPath);
+  return destinationPath;
+}
+
+async function copyNativeRuntime(relativePath) {
+  const sourcePath = resolve(runtimeDir, relativePath);
   const destinationPath = resolve(wwwDir, relativePath);
   await mkdir(dirname(destinationPath), { recursive: true });
   await copyFile(sourcePath, destinationPath);
@@ -96,12 +133,14 @@ await mkdir(wwwDir, { recursive: true });
 const homepage = await buildHomepage();
 await writeFile(resolve(wwwDir, 'index.html'), homepage, 'utf8');
 
-for (const [file] of RUNTIME_SCRIPTS) await copyRequired(file);
-for (const page of PUBLIC_PAGES) await copyRequired(page);
-for (const asset of STATIC_ASSETS) await copyRequired(asset);
+await copyNativeRuntime(NATIVE_API_SCRIPT[0]);
+for (const [file] of RUNTIME_SCRIPTS) await copyAppRequired(file);
+for (const page of PUBLIC_PAGES) await writePublicPage(page);
+for (const asset of STATIC_ASSETS) await copyAppRequired(asset);
 
 const outputFiles = [
   'index.html',
+  NATIVE_API_SCRIPT[0],
   ...RUNTIME_SCRIPTS.map(([file]) => file),
   ...PUBLIC_PAGES,
   ...STATIC_ASSETS
@@ -131,13 +170,21 @@ for (const file of sourceFiles) {
   sourceHashes[file] = sha256(bytes);
 }
 
+const nativeApiBytes = await readFile(resolve(runtimeDir, NATIVE_API_SCRIPT[0]));
+
 await writeFile(
   resolve(wwwDir, 'unbound-local-bundle-manifest.json'),
   `${JSON.stringify({
-    schemaVersion: 1,
-    generatedFrom: 'app production UI sources',
+    schemaVersion: 2,
+    generatedFrom: 'app production UI sources plus mobile native transport runtime',
     releaseReady: false,
-    transportStatus: 'native API/session transport not yet attested',
+    transportStatus: 'capacitor-http bridge implemented; signed native runtime validation pending',
+    nativeApiTransport: {
+      mode: 'capacitor-http',
+      apiOrigin: 'https://unbound-ai-app.onrender.com',
+      runtime: NATIVE_API_SCRIPT[0],
+      sha256: sha256(nativeApiBytes)
+    },
     runtimeScripts: RUNTIME_SCRIPTS.map(([file]) => file),
     publicPages: PUBLIC_PAGES,
     files: manifestFiles,
@@ -147,4 +194,4 @@ await writeFile(
 );
 
 console.log(`UNBOUND local mobile UI bundle generated with ${outputFiles.length} verified output files.`);
-console.log('Store release remains blocked until native API/session transport is separately verified.');
+console.log('Native API transport is packaged; store release remains blocked pending signed-device session validation.');
