@@ -59,21 +59,30 @@ The local `@unbound/device-inspector` Capacitor plugin provides user-authorized 
 
 Run `npm install` and `npm run sync` after plugin changes so Capacitor registers the native plugin.
 
-## Deep-link routing boundary
+## Native deep links
 
-The hosted native bridge already listens for Capacitor `appUrlOpen` events. App-side routing is intentionally fail-closed:
+UNBOUND uses the controlled custom URL scheme `unbound:` for native routing. `mobile/scripts/configure-deep-links.mjs` registers that scheme in freshly generated native projects:
+
+- Android: adds/normalizes `custom_url_scheme=unbound` and a `VIEW` + `DEFAULT` + `BROWSABLE` intent filter on `MainActivity`.
+- iOS: adds `CFBundleURLTypes` for bundle ID `ai.unbound.app` with the `unbound` scheme.
+- `npm run configure:links:android`, `npm run configure:links:ios`, and `npm run configure:links` apply the declarations after Capacitor project generation/sync.
+- Mobile Native CI generates fresh Android and iOS projects, applies the declarations, and verifies the resulting manifest/plist rather than trusting committed platform output.
+
+The hosted native bridge handles both warm launches (`appUrlOpen`) and cold launches (`App.getLaunchUrl()`) through the same fail-closed route normalizer. Examples of supported aliases include `unbound://home`, `unbound://chat`, `unbound://terms`, `unbound://privacy`, `unbound://advertise`, `unbound://advertisers`, and `unbound://apps`.
+
+Routing remains intentionally narrow:
 
 - HTTPS links are accepted only for the current UNBOUND web host / production UNBOUND host.
-- The controlled `unbound:` custom scheme is accepted only for known aliases or explicitly allowed public routes.
-- Public deep-link routes are limited to `/`, `/index.html`, `/terms.html`, `/privacy.html`, `/advertisers.html`, and `/connected-apps.html`.
+- The `unbound:` custom scheme is accepted only for known aliases or explicitly allowed public routes.
+- Public routes are limited to `/`, `/index.html`, `/terms.html`, `/privacy.html`, `/advertisers.html`, and `/connected-apps.html`.
 - `/api/*`, admin pages, advertising-admin pages, external hosts, HTTP links, credential-bearing URLs, custom ports, traversal-style paths, and oversized URLs are rejected instead of being loaded inside the native WebView.
 - Blocked links emit a local `unbound:deep-link-blocked` diagnostic event without exposing the rejected URL in the event payload.
 
-This completes the app-side routing guard. It does **not** register Android intent filters, an iOS URL scheme, Universal Links, or Android App Links. Those platform declarations must be added and verified in the generated native projects before public store submission.
+This completes the code-side custom-scheme registration and routing guard. It does **not** claim verified HTTPS Universal Links / Android App Links. Those require production domain-association files plus the final iOS/Android signing identities and real-device verification before they can be truthfully marked ready.
 
 ## Native session resume synchronization
 
-The hosted native bridge now takes a non-sensitive snapshot of UI-relevant account state after startup and checks it again when the app returns to the foreground.
+The hosted native bridge takes a non-sensitive snapshot of UI-relevant account state after startup and checks it again when the app returns to the foreground.
 
 - A real `401` from `/api/auth/me` is treated as a confirmed signed-out state, so a session that expired or was revoked on another device is reflected when the app resumes.
 - For signed-in accounts, the snapshot tracks identity/role, effective plan, subscription state, hard-18+ verification state, provider availability, and capability access that materially changes the visible UNBOUND interface.
@@ -85,6 +94,6 @@ This prepares the resume/session behavior in code, but real-device validation is
 
 ## Store-readiness work still required
 
-Before public submission, replace the remote-server development configuration with a production mobile bundle or approved native navigation strategy, visually validate the generated native icon/splash resources, register and verify Android/iOS deep-link declarations, validate authentication/session and passkey behavior on real devices, complete age-verification and privacy disclosures, configure subscription/payment handling for each store, verify camera/microphone permission prompts on real devices, and run device/store-review testing.
+Before public submission, replace the remote-server development configuration with a production mobile bundle or approved native navigation strategy, visually validate the generated native icon/splash resources, validate the `unbound:` scheme on real devices and later configure verified Universal/App Links when production signing/domain association is available, validate authentication/session and passkey behavior on real devices, complete age-verification and privacy disclosures, configure subscription/payment handling for each store, verify camera/microphone permission prompts on real devices, and run device/store-review testing.
 
 The existing web service remains separate from this folder so mobile development does not change Render's current start/build commands.

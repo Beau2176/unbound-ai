@@ -26,10 +26,7 @@
     const auth = state?.auth;
     const access = state?.access;
 
-    if (auth?.status === 401) {
-      return JSON.stringify({ signedIn: false });
-    }
-
+    if (auth?.status === 401) return JSON.stringify({ signedIn: false });
     if (!auth?.ok || !auth?.body?.user) return null;
     if (!access?.ok || !access?.body?.access) return null;
 
@@ -196,19 +193,33 @@
     return null;
   };
 
+  const navigateAppUrl = (value) => {
+    const destination = normalizeAppUrl(value);
+    if (!destination) {
+      dispatch('unbound:deep-link-blocked', { reason: 'not-allowed' });
+      return false;
+    }
+    if (destination !== location.href) location.assign(destination);
+    return true;
+  };
+
   const installAppLinkHandler = async () => {
     if (!plugins.App?.addListener) return;
+
     await plugins.App.addListener('appUrlOpen', ({ url }) => {
-      const destination = normalizeAppUrl(url);
-      if (!destination) {
-        dispatch('unbound:deep-link-blocked', { reason: 'not-allowed' });
-        return;
-      }
-      if (destination !== location.href) location.assign(destination);
+      navigateAppUrl(url);
     });
+
     await plugins.App.addListener('appStateChange', ({ isActive }) => {
       if (isActive) refreshNativeState({ synchronizeUi: true }).catch(() => {});
     });
+
+    if (typeof plugins.App.getLaunchUrl === 'function') {
+      try {
+        const launch = await plugins.App.getLaunchUrl();
+        if (launch?.url) navigateAppUrl(launch.url);
+      } catch {}
+    }
   };
 
   window.UNBOUND_NATIVE = {

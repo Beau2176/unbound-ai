@@ -33,10 +33,15 @@ jobs:
         run: npx cap sync android
       - name: Generate official Android icons and splash resources
         run: npm run assets:android
+      - name: Register UNBOUND Android URL scheme
+        run: npm run configure:links:android
       - name: Verify Android package
         run: |
           test -f android/app/src/main/AndroidManifest.xml
           test -d android/app/src/main/res
+          grep -q 'android.intent.action.VIEW' android/app/src/main/AndroidManifest.xml
+          grep -q '@string/custom_url_scheme' android/app/src/main/AndroidManifest.xml
+          grep -q '<string name="custom_url_scheme">unbound</string>' android/app/src/main/res/values/strings.xml
 
   ios-scaffold:
     runs-on: macos-latest
@@ -58,7 +63,12 @@ jobs:
         run: npx cap sync ios
       - name: Generate official iOS icons and splash resources
         run: npm run assets:ios
+      - name: Register UNBOUND iOS URL scheme
+        run: npm run configure:links:ios
       - name: Verify iOS project
         run: |
           test -f ios/App/App/Info.plist
           test -d ios/App/App/Assets.xcassets
+          grep -q '<key>CFBundleURLTypes</key>' ios/App/App/Info.plist
+          grep -q '<string>ai.unbound.app</string>' ios/App/App/Info.plist
+          grep -q '<string>unbound</string>' ios/App/App/Info.plist
