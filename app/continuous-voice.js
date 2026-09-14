@@ -94,6 +94,7 @@
     const current = recognition;
     recognition = null;
     if (!current) return;
+    current.__unboundIntentionalStop = true;
     try { current.abort(); } catch (_) {
       try { current.stop(); } catch (_) {}
     }
@@ -402,6 +403,7 @@
     };
 
     current.onerror = (event) => {
+      if (current.__unboundIntentionalStop) return;
       const code = String(event?.error || 'unknown');
       if (code === 'no-speech') {
         noSpeech = true;
@@ -421,6 +423,7 @@
       if (recognition === current) recognition = null;
       const buttonNow = getVoiceButton();
       if (buttonNow) buttonNow.dataset.listening = 'false';
+      if (current.__unboundIntentionalStop) return;
       if (!active || token !== generation) return;
 
       if (failed) {
