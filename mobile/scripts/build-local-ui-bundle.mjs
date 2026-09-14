@@ -206,10 +206,10 @@ const nativeApiBytes = await readFile(resolve(runtimeDir, NATIVE_API_SCRIPT[0]))
 await writeFile(
   resolve(wwwDir, 'unbound-local-bundle-manifest.json'),
   `${JSON.stringify({
-    schemaVersion: 3,
+    schemaVersion: 4,
     generatedFrom: 'app production UI sources plus mobile native transport and validation runtime',
     releaseReady: false,
-    transportStatus: 'capacitor-http bridge implemented; signed native runtime validation pending',
+    transportStatus: 'capacitor-http bridge implemented; package-bound signed native runtime validation pending',
     nativeApiTransport: {
       mode: 'capacitor-http',
       apiOrigin: 'https://unbound-ai-app.onrender.com',
@@ -220,7 +220,8 @@ await writeFile(
       page: MOBILE_PAGES[0],
       runtime: 'native-validation.js',
       launcher: 'native-validation-link.js',
-      reportSchemaVersion: 1,
+      expectedAppId: 'ai.unbound.app',
+      reportSchemaVersion: 2,
       exposesSecrets: false
     },
     runtimeScripts: RUNTIME_SCRIPTS.map(([file]) => file),
@@ -235,4 +236,4 @@ await writeFile(
 );
 
 console.log(`UNBOUND local mobile UI bundle generated with ${outputFiles.length} verified output files.`);
-console.log('Native validation harness is packaged; store release remains blocked pending signed-device evidence.');
+console.log('Package-bound native validation harness is packaged; store release remains blocked pending signed-device evidence.');
