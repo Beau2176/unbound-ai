@@ -56,6 +56,9 @@ const {
   integrateLaunchRehearsalServerSource
 } = require("./ops/launch-rehearsal-server-integration");
 const {
+  integratePlanTierNormalizationServerSource
+} = require("./access/plan-tier-normalization-server-integration");
+const {
   integrateDiagnosticsServerSource
 } = require("./ops/diagnostics-server-integration");
 const {
@@ -108,6 +111,7 @@ function compileIntegratedServer({
   integratedSource = integrateLaunchDashboardServerSource(integratedSource);
   integratedSource = integrateAdminThreeTierServerSource(integratedSource);
   integratedSource = integrateLaunchRehearsalServerSource(integratedSource);
+  integratedSource = integratePlanTierNormalizationServerSource(integratedSource);
   integratedSource = integrateDiagnosticsServerSource(integratedSource);
   integratedSource = integrateRuntimeCapabilitiesServerSource(integratedSource);
   integratedSource = integrateActionControlServerSource(integratedSource);
