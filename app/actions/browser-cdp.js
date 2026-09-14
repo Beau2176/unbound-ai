@@ -2,7 +2,7 @@ const dns = require("dns").promises;
 const net = require("net");
 const crypto = require("crypto");
 
-const BROWSER_CONTROL_VERSION = "v1.0";
+const BROWSER_CONTROL_VERSION = "v1.1";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15000;
 const DEFAULT_TASK_TIMEOUT_MS = 120000;
 const MAX_ACTIONS = 12;
@@ -15,9 +15,11 @@ function getBrowserControlConfig(env = process.env) {
     env.BROWSER_WS_ENDPOINT ||
     ""
   ).trim();
+  const token = String(env.UNBOUND_BROWSER_CDP_TOKEN || "").trim();
   return Object.freeze({
     configured: /^wss?:\/\//i.test(endpoint) || /^https?:\/\//i.test(endpoint),
     endpoint,
+    token,
     commandTimeoutMs: Math.min(
       Math.max(Number(env.UNBOUND_BROWSER_COMMAND_TIMEOUT_MS) || DEFAULT_COMMAND_TIMEOUT_MS, 3000),
       60000
@@ -35,6 +37,7 @@ function publicBrowserControlStatus(env = process.env) {
     version: BROWSER_CONTROL_VERSION,
     configured: config.configured,
     provider: config.configured ? "remote-cdp" : null,
+    authenticatedTransport: Boolean(config.token),
     publicWebOnly: true,
     privateNetworkBlocked: true,
     finalActionConfirmationRequired: true,
@@ -129,7 +132,7 @@ async function resolveCdpWebSocketUrl(endpoint, fetchImpl = globalThis.fetch) {
     throw error;
   }
   const response = await fetchImpl(value, {
-    headers: { Accept: "application/json", "User-Agent": "UNBOUND-AI-Browser-Control/1.0" }
+    headers: { Accept: "application/json", "User-Agent": "UNBOUND-AI-Browser-Control/1.1" }
   });
   if (!response.ok) {
     const error = new Error(`Remote browser endpoint returned HTTP ${response.status}.`);
@@ -149,9 +152,10 @@ async function resolveCdpWebSocketUrl(endpoint, fetchImpl = globalThis.fetch) {
 }
 
 class CdpClient {
-  constructor({ url, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = {}) {
+  constructor({ url, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS, protocols = [] } = {}) {
     this.url = url;
     this.timeoutMs = timeoutMs;
+    this.protocols = Array.isArray(protocols) ? protocols.filter(Boolean) : [];
     this.ws = null;
     this.nextId = 1;
     this.pending = new Map();
@@ -165,7 +169,9 @@ class CdpClient {
       throw error;
     }
     await new Promise((resolve, reject) => {
-      const ws = new WebSocket(this.url);
+      const ws = this.protocols.length
+        ? new WebSocket(this.url, this.protocols)
+        : new WebSocket(this.url);
       const timer = setTimeout(() => {
         try { ws.close(); } catch (_) {}
         reject(Object.assign(new Error("Remote browser connection timed out."), { code: "BROWSER_CONNECT_TIMEOUT" }));
@@ -345,7 +351,12 @@ async function createBrowserSession({ env = process.env, fetchImpl = globalThis.
     throw error;
   }
   const wsUrl = await resolveCdpWebSocketUrl(config.endpoint, fetchImpl);
-  const client = await new CdpClient({ url: wsUrl, timeoutMs: config.commandTimeoutMs }).connect();
+  const protocols = config.token ? ["unbound-cdp-v1", config.token] : [];
+  const client = await new CdpClient({
+    url: wsUrl,
+    timeoutMs: config.commandTimeoutMs,
+    protocols
+  }).connect();
   let browserContextId = null;
   try {
     const context = await client.send("Target.createBrowserContext", { disposeOnDetach: true });
