@@ -1,7 +1,10 @@
 (() => {
-  const STYLE_ID = 'unbound-voice-presets-v109';
+  const STYLE_ID = 'unbound-voice-presets-v110';
   const SELECT_ID = 'unboundVoicePreset';
   const STORAGE_KEY = 'unbound.voice.preset';
+  const AUTO_READ_ACTION_ID = 'unboundVoiceAutoRead';
+  const AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead';
+  const AUTO_READ_SETTLE_MS = 700;
   const CLOUD_SPEECH_URL = '/api/voice/natural-speech';
   const DEFAULT_PRESET_ID = 'clear';
   const CLEAR_PRESET = {
@@ -31,6 +34,11 @@
   let activeAudioUrl = '';
   let playbackSerial = 0;
   let noteTimer = null;
+  let autoReadEnabled = false;
+  let autoReadTimer = null;
+  let autoReadObserver = null;
+  let autoReadLastText = '';
+  let autoReadSawBusy = false;
 
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -42,6 +50,7 @@
       '.unbound-voice-picker label{display:block;margin-bottom:6px;color:#b9d9ef;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;}',
       '.unbound-voice-picker select{width:100%;min-height:38px;padding:7px 9px;border:1px solid rgba(107,193,255,.32);border-radius:9px;background:#08111f;color:#f7fbff;font:inherit;font-size:13px;}',
       '.unbound-voice-picker-note{margin:6px 1px 0;color:#8ea9bb;font-size:10px;line-height:1.35;}',
+      '.voice-listen-action[data-auto-read="true"]{background:rgba(101,232,164,.13);color:#baf8d7;}',
       '@media (max-width:760px){.voice-listen-menu{min-width:230px;}}'
     ].join('');
     document.head.appendChild(style);
@@ -62,6 +71,15 @@
   function savePreset(id) {
     selectedPresetId = presetById(id).id;
     try { window.localStorage.setItem(STORAGE_KEY, selectedPresetId); } catch (_) {}
+  }
+
+  function loadAutoReadPreference() {
+    try { return window.localStorage.getItem(AUTO_READ_STORAGE_KEY) === 'true'; }
+    catch (_) { return false; }
+  }
+
+  function saveAutoReadPreference(enabled) {
+    try { window.localStorage.setItem(AUTO_READ_STORAGE_KEY, enabled ? 'true' : 'false'); } catch (_) {}
   }
 
   function voiceScore(voice) {
@@ -373,6 +391,135 @@
     return '';
   }
 
+  function handsFreeActive() {
+    return document.getElementById('unboundHandsFreeVoice')?.dataset.active === 'true';
+  }
+
+  function sendIsBusy() {
+    const send = document.getElementById('sendButton') || document.querySelector('.send, button[type="submit"]');
+    return Boolean(send && send.disabled);
+  }
+
+  async function hasAutoReadAccess() {
+    try {
+      const response = await window.fetch('/api/account/access', {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return {
+          allowed: false,
+          message: response.status === 401
+            ? 'Sign in before enabling Auto-Read Replies.'
+            : (payload.error || 'Could not verify Voice access.')
+        };
+      }
+      const capabilities = payload?.access?.capabilities || [];
+      const voice = capabilities.find((item) => item?.key === 'voice');
+      return {
+        allowed: Boolean(voice?.usable),
+        message: voice?.usable ? '' : 'Auto-Read Replies requires Premium or Ultra Voice access.'
+      };
+    } catch (_) {
+      return { allowed: false, message: 'Could not verify Voice access right now.' };
+    }
+  }
+
+  function updateAutoReadAction(action) {
+    if (!action) return;
+    action.dataset.autoRead = autoReadEnabled ? 'true' : 'false';
+    action.setAttribute('aria-pressed', autoReadEnabled ? 'true' : 'false');
+    action.textContent = autoReadEnabled ? '🔊 Auto-read new replies: ON' : '🔊 Auto-read new replies: OFF';
+  }
+
+  function speakAutoReadReply(text, note) {
+    if (!autoReadEnabled || handsFreeActive()) return false;
+    setNote(note, 'Auto-read always uses local Voice 2 — Clear, so it does not create cloud speech charges.', 5000);
+    primeSpeechEngine();
+    return speakBrowser(text);
+  }
+
+  function maybeAutoRead(note) {
+    if (!autoReadEnabled || handsFreeActive()) return;
+    if (sendIsBusy()) {
+      autoReadSawBusy = true;
+      scheduleAutoRead(note, 250);
+      return;
+    }
+    if (!autoReadSawBusy) return;
+    const text = getLastAssistantText();
+    if (!text || text === autoReadLastText) {
+      autoReadSawBusy = false;
+      return;
+    }
+    if (/Response interrupted before completion/i.test(text)) {
+      autoReadLastText = text;
+      autoReadSawBusy = false;
+      return;
+    }
+    autoReadLastText = text;
+    autoReadSawBusy = false;
+    speakAutoReadReply(text, note);
+  }
+
+  function scheduleAutoRead(note, delay = AUTO_READ_SETTLE_MS) {
+    if (!autoReadEnabled) return;
+    if (autoReadTimer) window.clearTimeout(autoReadTimer);
+    autoReadTimer = window.setTimeout(() => {
+      autoReadTimer = null;
+      maybeAutoRead(note);
+    }, delay);
+  }
+
+  async function setAutoReadEnabled(enabled, action, note, persist = true) {
+    if (!enabled) {
+      autoReadEnabled = false;
+      autoReadSawBusy = false;
+      if (autoReadTimer) {
+        window.clearTimeout(autoReadTimer);
+        autoReadTimer = null;
+      }
+      if (persist) saveAutoReadPreference(false);
+      updateAutoReadAction(action);
+      setNote(note, 'Auto-read is off. Manual voice playback and Hands-Free are still available.', 4000);
+      return false;
+    }
+
+    setNote(note, 'Checking Premium/Ultra Voice access…');
+    const access = await hasAutoReadAccess();
+    if (!access.allowed) {
+      autoReadEnabled = false;
+      autoReadSawBusy = false;
+      if (persist) saveAutoReadPreference(false);
+      updateAutoReadAction(action);
+      setNote(note, access.message || 'Auto-read is unavailable.', 5000);
+      return false;
+    }
+
+    autoReadEnabled = true;
+    autoReadSawBusy = false;
+    if (persist) saveAutoReadPreference(true);
+    autoReadLastText = getLastAssistantText();
+    updateAutoReadAction(action);
+    primeSpeechEngine();
+    setNote(note, 'Auto-read is on. New completed replies will play automatically with local Voice 2 — Clear.', 5000);
+    return true;
+  }
+
+  function startAutoReadObserver(note) {
+    if (autoReadObserver || !document.body) return;
+    autoReadObserver = new MutationObserver(() => scheduleAutoRead(note));
+    autoReadObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['disabled']
+    });
+  }
+
   function closeVoiceMenu(button, menu) {
     menu.hidden = true;
     button.setAttribute('aria-expanded', 'false');
@@ -420,11 +567,19 @@
     preview.className = 'voice-listen-action';
     preview.textContent = '▶ Preview selected voice';
 
+    const autoReadAction = document.createElement('button');
+    autoReadAction.type = 'button';
+    autoReadAction.id = AUTO_READ_ACTION_ID;
+    autoReadAction.className = 'voice-listen-action';
+    autoReadAction.title = 'Automatically read future completed replies with local Voice 2 — Clear.';
+    updateAutoReadAction(autoReadAction);
+
     if (listenAction) {
       menu.insertBefore(picker, listenAction);
       menu.insertBefore(preview, listenAction);
+      menu.insertBefore(autoReadAction, listenAction);
     } else {
-      menu.append(picker, preview);
+      menu.append(picker, preview, autoReadAction);
     }
 
     select.addEventListener('change', () => {
@@ -455,6 +610,12 @@
       speakSelected(previewText(), note);
     });
 
+    autoReadAction.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void setAutoReadEnabled(!autoReadEnabled, autoReadAction, note, true);
+    });
+
     if (listenAction) {
       listenAction.addEventListener('click', (event) => {
         const text = getLastAssistantText();
@@ -478,6 +639,12 @@
     refreshTitle();
     if ('speechSynthesis' in window && typeof window.speechSynthesis.addEventListener === 'function') {
       window.speechSynthesis.addEventListener('voiceschanged', refreshTitle);
+    }
+
+    autoReadLastText = getLastAssistantText();
+    startAutoReadObserver(note);
+    if (loadAutoReadPreference()) {
+      void setAutoReadEnabled(true, autoReadAction, note, false);
     }
 
     window.setTimeout(primeSpeechEngine, 0);
