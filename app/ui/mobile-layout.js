@@ -1,5 +1,5 @@
-const MOBILE_LAYOUT_STYLE_ID = "unbound-mobile-layout-v093";
-const MOBILE_LAYOUT_SCRIPT_ID = "unbound-mobile-menu-v093";
+const MOBILE_LAYOUT_STYLE_ID = "unbound-mobile-layout-v101";
+const MOBILE_LAYOUT_SCRIPT_ID = "unbound-mobile-menu-v101";
 
 const MOBILE_LAYOUT_STYLES = `<style id="${MOBILE_LAYOUT_STYLE_ID}">
 @media (max-width: 760px) {
@@ -53,15 +53,17 @@ const MOBILE_LAYOUT_STYLES = `<style id="${MOBILE_LAYOUT_STYLE_ID}">
     display: flex !important;
     width: 100%;
     max-width: 100%;
+    min-width: 0;
     align-items: center;
     justify-content: flex-end;
     gap: 6px !important;
     flex-wrap: nowrap !important;
-    overflow: visible !important;
+    overflow: hidden !important;
   }
 
   .topbar-right > * {
     flex: 0 0 auto;
+    max-width: 100%;
   }
 
   .topbar-right .account-button,
@@ -76,13 +78,17 @@ const MOBILE_LAYOUT_STYLES = `<style id="${MOBILE_LAYOUT_STYLE_ID}">
 
   .auth-actions,
   .user-menu {
+    min-width: 0;
+    max-width: 100%;
     flex-wrap: nowrap !important;
     gap: 5px !important;
   }
 
   .user-pill {
     min-width: 38px;
+    max-width: 44px;
     padding: 4px;
+    overflow: hidden;
   }
 
   .user-meta {
@@ -160,6 +166,7 @@ const MOBILE_LAYOUT_STYLES = `<style id="${MOBILE_LAYOUT_STYLE_ID}">
     place-items: center;
     width: 36px;
     min-width: 36px;
+    max-width: 36px;
     padding: 0;
     border: 1px solid rgba(107, 193, 255, 0.34);
     background: rgba(66, 165, 255, 0.10);
@@ -176,7 +183,9 @@ const MOBILE_LAYOUT_STYLES = `<style id="${MOBILE_LAYOUT_STYLE_ID}">
     right: 8px;
     z-index: 110;
     display: none;
+    max-width: calc(100vw - 16px);
     max-height: calc(100dvh - var(--unbound-mobile-menu-top, 88px) - 12px);
+    overflow-x: hidden;
     overflow-y: auto;
     padding: 12px;
     border: 1px solid rgba(107, 193, 255, 0.38);
@@ -200,10 +209,20 @@ const MOBILE_LAYOUT_STYLES = `<style id="${MOBILE_LAYOUT_STYLE_ID}">
     text-transform: uppercase;
   }
 
+  .mobile-menu-section {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   .mobile-menu-section + .mobile-menu-section {
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid rgba(255,255,255,.08);
+  }
+
+  .mobile-menu-section > * {
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .mobile-menu-section > * + * {
@@ -212,7 +231,8 @@ const MOBILE_LAYOUT_STYLES = `<style id="${MOBILE_LAYOUT_STYLE_ID}">
 
   .mobile-menu-panel .account-button,
   .mobile-menu-panel .logout-button,
-  .mobile-menu-panel .new-chat {
+  .mobile-menu-panel .new-chat,
+  .mobile-menu-panel .advertiser-link {
     width: 100%;
     min-height: 42px;
     justify-content: center;
@@ -370,7 +390,6 @@ const MOBILE_LAYOUT_SCRIPT = `<script id="${MOBILE_LAYOUT_SCRIPT_ID}">
 
     const keepTopLevel = (node) => {
       if (node === button) return true;
-      if (node.matches && node.matches('a[href="/advertisers.html"], a[href="/connected-apps.html"]')) return true;
       if (node.classList && (node.classList.contains("auth-actions") || node.classList.contains("user-menu"))) return true;
       return false;
     };
@@ -385,7 +404,7 @@ const MOBILE_LAYOUT_SCRIPT = `<script id="${MOBILE_LAYOUT_SCRIPT_ID}">
     const userMenu = topbarRight.querySelector(".user-menu");
     if (userMenu) {
       for (const child of Array.from(userMenu.children)) {
-        if (child.matches && child.matches(".logout-button")) {
+        if (child.matches && child.matches("button, a")) {
           child.dataset.unboundMobileTarget = navSection.id;
           rememberAndMove(child, navSection);
         }

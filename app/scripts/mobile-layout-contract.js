@@ -33,7 +33,10 @@ function main() {
   );
   assert.ok(rendered.includes(".chat-head {\n    display: none !important;"), "mobile chat chrome should be hidden");
   assert.ok(rendered.includes("mobile-menu-button"), "mobile layout should include a compact menu button");
-  assert.ok(rendered.includes('a[href="/advertisers.html"], a[href="/connected-apps.html"]'), "Advertise and Apps should remain visible on mobile");
+  assert.ok(rendered.includes("overflow: hidden !important;"), "mobile topbar should prevent horizontal spill outside the viewport");
+  assert.ok(rendered.includes("max-width: calc(100vw - 16px);"), "mobile menu should remain inside the viewport width");
+  assert.ok(rendered.includes('child.matches("button, a")'), "signed-in secondary actions should move into the mobile menu");
+  assert.ok(!rendered.includes('a[href="/advertisers.html"], a[href="/connected-apps.html"]'), "secondary navigation links should no longer be forced into the mobile header");
   assert.ok(rendered.includes("Chat options"), "secondary chat controls should move into the dropdown");
   assert.ok(rendered.includes("rememberAndMove"), "mobile controls should be moved without cloning event handlers");
   assert.throws(
@@ -45,7 +48,7 @@ function main() {
     (error) => error?.code === "MOBILE_LAYOUT_BODY_MARKER_INVALID"
   );
 
-  console.log("UNBOUND AI mobile-layout v0.93 contract checks passed.");
+  console.log("UNBOUND AI mobile-layout v1.01 overflow hardening checks passed.");
 }
 
 main();
