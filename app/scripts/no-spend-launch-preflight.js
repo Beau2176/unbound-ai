@@ -22,6 +22,51 @@ function bool(value) {
   return value === true;
 }
 
+function truthy(value) {
+  return ["1", "true", "yes", "on"].includes(
+    String(value || "").trim().toLowerCase()
+  );
+}
+
+function boundedPositiveInteger(value, fallback, min = 1, max = 365) {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(parsed, min), max);
+}
+
+function buildOperationalReview({
+  verified,
+  reviewedAt,
+  nowMs,
+  maxAgeDays = 90,
+  label
+}) {
+  const parsed = reviewedAt ? new Date(String(reviewedAt).trim()) : null;
+  const validDate = parsed && Number.isFinite(parsed.getTime()) ? parsed : null;
+  const notFuture = Boolean(validDate && validDate.getTime() <= nowMs + 5 * 60 * 1000);
+  const ageDays = validDate ? (nowMs - validDate.getTime()) / 86_400_000 : null;
+  const fresh = Boolean(
+    validDate &&
+      notFuture &&
+      ageDays >= -5 / 1440 &&
+      ageDays <= maxAgeDays
+  );
+  const blockers = [];
+  if (!verified) blockers.push(`${label} has not been operationally verified.`);
+  if (!validDate) blockers.push(`No valid ${label} operational-review timestamp is recorded.`);
+  else if (!notFuture) blockers.push(`${label} operational-review timestamp is unexpectedly in the future.`);
+  else if (!fresh) blockers.push(`${label} operational review is older than ${maxAgeDays} days.`);
+
+  return {
+    verified,
+    reviewedAt: validDate ? validDate.toISOString() : null,
+    maxAgeDays,
+    fresh,
+    ready: verified && fresh,
+    blockers
+  };
+}
+
 function buildNoSpendLaunchPreflight({ env = process.env, nowMs = Date.now() } = {}) {
   const infrastructure = buildInfrastructureReadiness({ env, nowMs });
   const recovery = buildRecoveryReadiness({ env, nowMs });
@@ -31,6 +76,18 @@ function buildNoSpendLaunchPreflight({ env = process.env, nowMs = Date.now() } =
   const email = buildEmailDeliveryReadiness({ env, nowMs });
   const legal = legalPublishingState(env);
   const malware = publicMalwareScanStatus(env);
+  const clamavOperationalReview = buildOperationalReview({
+    verified: truthy(env.CLAMAV_OPERATIONAL_VERIFIED),
+    reviewedAt: env.CLAMAV_OPERATIONAL_REVIEWED_AT,
+    nowMs,
+    maxAgeDays: boundedPositiveInteger(
+      env.CLAMAV_OPERATIONAL_REVIEW_MAX_AGE_DAYS,
+      90,
+      1,
+      365
+    ),
+    label: "Private ClamAV scanning"
+  });
 
   const bankingApproved = findOwnerCheck(owner, "banking_approved");
   const bankingRails = findOwnerCheck(owner, "banking_rails_verified");
@@ -144,12 +201,24 @@ function buildNoSpendLaunchPreflight({ env = process.env, nowMs = Date.now() } =
     {
       key: "clamav",
       label: "ClamAV",
-      ready: bool(malware.configured && malware.mode === "required" && malware.failClosed),
-      status: malware.mode,
+      ready: bool(
+        malware.configured &&
+          malware.mode === "required" &&
+          malware.failClosed &&
+          clamavOperationalReview.ready
+      ),
+      status:
+        malware.configured && malware.mode === "required"
+          ? clamavOperationalReview.ready
+            ? "ready"
+            : "operational_verification_required"
+          : malware.mode,
       blockers: [
         ...(malware.configured ? [] : ["A private ClamAV scanner is not configured."]),
-        ...(malware.mode === "required" ? [] : ["Upload malware scanning is not in required fail-closed mode."])
+        ...(malware.mode === "required" ? [] : ["Upload malware scanning is not in required fail-closed mode."]),
+        ...clamavOperationalReview.blockers
       ],
+      operationalReview: clamavOperationalReview,
       freeWorkNow: [
         "Keep static upload defenses and ClamAV framing/outage contracts green.",
         "Prepare the private-network deployment, EICAR, clean-file, restart, timeout, monitoring, and fail-closed test plan.",
