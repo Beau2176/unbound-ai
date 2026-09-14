@@ -6,6 +6,7 @@ const REPO_ROOT = path.resolve(__dirname, "../..");
 
 const REQUIRED_ARTIFACTS = [
   "docs/NO_SPEND_LAUNCH_PREP.md",
+  "docs/NO_SPEND_COMPLETION.md",
   "docs/PROVIDER_APPLICATION_PACKET.md",
   "docs/INFRASTRUCTURE_BASELINE_2026-09-14.md",
   "docs/INCIDENT_RECOVERY.md",
@@ -32,6 +33,7 @@ const REQUIRED_APP_SCRIPTS = [
   "backup-check",
   "recovery-integration-check",
   "launch-preflight",
+  "no-spend-complete",
   "live-smoke",
   "load-probe",
   "launch-validate"
