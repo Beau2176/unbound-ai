@@ -25,14 +25,18 @@ jobs:
           node-version: '24'
       - name: Install mobile dependencies
         run: npm install --no-audit --no-fund
-      - name: Verify official native brand sources
-        run: node scripts/verify-brand-assets.mjs
+      - name: Verify official native brand source
+        run: npm run verify:assets
       - name: Generate Android project
         run: npx cap add android
       - name: Sync Android project
         run: npx cap sync android
+      - name: Generate official Android icons and splash resources
+        run: npm run assets:android
       - name: Verify Android package
-        run: test -f android/app/src/main/AndroidManifest.xml
+        run: |
+          test -f android/app/src/main/AndroidManifest.xml
+          test -d android/app/src/main/res
 
   ios-scaffold:
     runs-on: macos-latest
@@ -46,11 +50,15 @@ jobs:
           node-version: '24'
       - name: Install mobile dependencies
         run: npm install --no-audit --no-fund
-      - name: Verify official native brand sources
-        run: node scripts/verify-brand-assets.mjs
+      - name: Verify official native brand source
+        run: npm run verify:assets
       - name: Generate iOS project
         run: npx cap add ios
       - name: Sync iOS project
         run: npx cap sync ios
+      - name: Generate official iOS icons and splash resources
+        run: npm run assets:ios
       - name: Verify iOS project
-        run: test -f ios/App/App/Info.plist
+        run: |
+          test -f ios/App/App/Info.plist
+          test -d ios/App/App/Assets.xcassets
