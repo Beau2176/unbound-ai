@@ -53,6 +53,9 @@ const {
   integrateNativeShellServerSource
 } = require("./ui/native-shell-server-integration");
 const {
+  startSelfHealingSupervisor
+} = require("./ops/self-heal");
+const {
   registerBuiltInAgeVerificationProviders
 } = require("./age/providers/register");
 
@@ -90,8 +93,13 @@ function compileIntegratedServer({
 
 if (require.main === module) {
   compileIntegratedServer();
+  startSelfHealingSupervisor({
+    rootDir: __dirname,
+    port: Number(process.env.PORT || 3000)
+  });
 }
 
 module.exports = {
-  compileIntegratedServer
+  compileIntegratedServer,
+  startSelfHealingSupervisor
 };
