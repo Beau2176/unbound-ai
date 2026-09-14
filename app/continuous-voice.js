@@ -214,21 +214,25 @@
   function speakVoice2(text, token) {
     return new Promise((resolve) => {
       if (!active || token !== generation || !('speechSynthesis' in window)) return resolve(false);
+      if (typeof window.SpeechSynthesisUtterance !== 'function') return resolve(false);
       const chunks = splitSpeech(text);
       if (!chunks.length) return resolve(false);
       const synth = window.speechSynthesis;
       const voice = resolveVoice2();
       try { synth.cancel(); } catch (_) {}
       let index = 0;
+      let settled = false;
 
       function finish(ok) {
+        if (settled) return;
+        settled = true;
         resolve(ok);
       }
 
       function next() {
         if (!active || token !== generation) return finish(false);
         if (index >= chunks.length) return finish(true);
-        const utterance = new SpeechSynthesisUtterance(chunks[index]);
+        const utterance = new window.SpeechSynthesisUtterance(chunks[index]);
         if (voice) utterance.voice = voice;
         utterance.lang = voice?.lang || 'en-US';
         utterance.rate = 1;
@@ -291,6 +295,13 @@
     return /^(stop|end|cancel|pause)( hands[ -]?free( conversation)?| listening| conversation)$/.test(text)
       || text === 'stop hands free'
       || text === 'end hands free';
+  }
+
+  function isEditingKey(event) {
+    if (!event || event.isComposing) return true;
+    if (event.ctrlKey || event.metaKey || event.altKey) return false;
+    const key = String(event.key || '');
+    return key.length === 1 || ['Backspace', 'Delete', 'Enter'].includes(key);
   }
 
   function scheduleListen(token, delay = 250) {
@@ -507,7 +518,7 @@
 
     const textarea = getTextarea();
     textarea?.addEventListener('keydown', (event) => {
-      if (!active || !event.isTrusted || event.key === 'Tab') return;
+      if (!active || !event.isTrusted || !isEditingKey(event)) return;
       stopHandsFree('Hands-Free stopped because you started typing.');
     });
 
