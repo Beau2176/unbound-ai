@@ -1,6 +1,6 @@
 {
   "name": "unbound-ai-mobile",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Native Android and iOS shell for UNBOUND AI",
   "scripts": {
@@ -13,7 +13,10 @@
     "assets:android": "npm run verify:assets && npx capacitor-assets generate --android --iconBackgroundColor '#030810' --iconBackgroundColorDark '#030810' --splashBackgroundColor '#030810' --splashBackgroundColorDark '#030810'",
     "assets:ios": "npm run verify:assets && npx capacitor-assets generate --ios --iconBackgroundColor '#030810' --iconBackgroundColorDark '#030810' --splashBackgroundColor '#030810' --splashBackgroundColorDark '#030810'",
     "assets": "npm run assets:android && npm run assets:ios",
-    "prepare:native": "npm run assets && npm run sync"
+    "configure:links:android": "node scripts/configure-deep-links.mjs --android",
+    "configure:links:ios": "node scripts/configure-deep-links.mjs --ios",
+    "configure:links": "node scripts/configure-deep-links.mjs",
+    "prepare:native": "npm run sync && npm run assets && npm run configure:links"
   },
   "dependencies": {
     "@capacitor/app": "^7.0.2",
