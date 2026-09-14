@@ -1,0 +1,18 @@
+{
+  "name": "unbound-browser-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated authenticated Chromium/CDP worker for UNBOUND AI browser actions",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "dependencies": {
+    "@sparticuz/chromium": "149.0.0",
+    "puppeteer-core": "25.10.0",
+    "ws": "8.21.3"
+  }
+}
