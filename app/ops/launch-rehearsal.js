@@ -171,11 +171,11 @@ function buildRehearsalCatalogState({ env = process.env, nowMs = Date.now() } = 
   }
   const steps = REHEARSAL_STEPS.map((step) => {
     const blockedBy = step.dependencies
-      .map((key) => stages.get(key))
-      .filter((stage) => !stage || stage.ready !== true)
-      .map((stage, index) => ({
-        key: step.dependencies[index],
-        label: stage?.label || step.dependencies[index],
+      .map((key) => ({ key, stage: stages.get(key) || null }))
+      .filter(({ stage }) => !stage || stage.ready !== true)
+      .map(({ key, stage }) => ({
+        key,
+        label: stage?.label || key,
         status: stage?.status || "not_verified"
       }));
     return {
