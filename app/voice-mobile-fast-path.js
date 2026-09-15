@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'unbound-mobile-voice-fast-path-v2';
+  const VERSION = 'unbound-mobile-voice-fast-path-v3';
   const SAFE_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead.safe.v2';
   const LEGACY_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead';
   const CLOUD_SPEECH_URL = '/api/voice/natural-speech';
@@ -22,6 +22,7 @@
   let generation = 0;
   let queue = [];
   let buffer = '';
+  let sawStreamDelta = false;
   let activeAudio = null;
   let activeAudioUrl = '';
   let uiTimer = null;
@@ -34,7 +35,6 @@
     try { window.localStorage.setItem(key, value); } catch (_) {}
   }
 
-  // Keep the legacy MutationObserver-driven reader disabled on mobile.
   storageSet(LEGACY_AUTO_READ_STORAGE_KEY, 'false');
 
   function autoReadEnabled() {
@@ -145,6 +145,7 @@
     generation += 1;
     queue = [];
     buffer = '';
+    sawStreamDelta = false;
     speaking = false;
     manualPlayback = false;
     stopCloudAudio();
@@ -226,8 +227,11 @@
       reset();
       prime();
     }
-    if (typeof detail.delta === 'string' && detail.delta) buffer += detail.delta;
-    if (detail.done && typeof detail.text === 'string' && !buffer) buffer = detail.text;
+    if (typeof detail.delta === 'string' && detail.delta) {
+      sawStreamDelta = true;
+      buffer += detail.delta;
+    }
+    if (detail.done && !sawStreamDelta && typeof detail.text === 'string' && !buffer) buffer = detail.text;
     drain(Boolean(detail.done));
   }
 
