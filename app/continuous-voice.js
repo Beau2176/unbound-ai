@@ -3,12 +3,12 @@
 
   const ACTION_ID = 'unboundHandsFreeVoice';
   const STATUS_ID = 'unboundHandsFreeStatus';
-  const STYLE_ID = 'unbound-hands-free-v099';
+  const STYLE_ID = 'unbound-hands-free-v100';
+  const VOICE_STORAGE_KEY = 'unbound.voice.systemVoiceURI';
   const MAX_NO_SPEECH_RETRIES = 3;
   const REPLY_TIMEOUT_MS = 180000;
   const POST_SPEECH_LISTEN_DELAY_MS = 1100;
   const ECHO_GUARD_MS = 6000;
-  const VOICE2_PREFERRED = ['Google US English', 'Sonia', 'Serena', 'Libby', 'Hazel', 'Susan'];
 
   let active = false;
   let recognition = null;
@@ -40,6 +40,34 @@
     return getVoiceButton()?.closest('.voice-listen-wrap')?.querySelector('.voice-listen-menu') || null;
   }
 
+  function storageGet(key) {
+    try { return String(window.localStorage.getItem(key) || ''); } catch (_) { return ''; }
+  }
+
+  function voiceKey(voice) {
+    return String(voice?.voiceURI || voice?.name || '').trim();
+  }
+
+  function systemVoices() {
+    if (!('speechSynthesis' in window)) return [];
+    try { return (window.speechSynthesis.getVoices() || []).slice(); }
+    catch (_) { return []; }
+  }
+
+  function resolveDeviceVoice() {
+    const voices = systemVoices();
+    if (!voices.length) {
+      cachedVoice = null;
+      return null;
+    }
+    const wanted = storageGet(VOICE_STORAGE_KEY);
+    cachedVoice = (wanted ? voices.find((voice) => voiceKey(voice) === wanted) : null)
+      || voices.find((voice) => voice?.default)
+      || voices[0]
+      || null;
+    return cachedVoice;
+  }
+
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
@@ -53,13 +81,8 @@
     document.head.appendChild(style);
   }
 
-  function statusNode() {
-    return document.getElementById(STATUS_ID);
-  }
-
-  function actionNode() {
-    return document.getElementById(ACTION_ID);
-  }
+  function statusNode() { return document.getElementById(STATUS_ID); }
+  function actionNode() { return document.getElementById(ACTION_ID); }
 
   function setStatus(message, kind = 'info') {
     const node = statusNode();
@@ -82,9 +105,7 @@
     for (const item of menu.querySelectorAll('.voice-listen-action')) {
       if (item.id === ACTION_ID) continue;
       const text = String(item.textContent || '');
-      if (/Voice input|Listen to last answer|Preview selected voice/i.test(text)) {
-        item.disabled = Boolean(disabled);
-      }
+      if (/Voice input|Listen to last answer|Preview selected/i.test(text)) item.disabled = Boolean(disabled);
     }
   }
 
@@ -129,63 +150,23 @@
   async function hasVoiceAccess() {
     try {
       const response = await fetch('/api/account/access', {
-        method: 'GET',
-        credentials: 'same-origin',
-        headers: { Accept: 'application/json' }
+        method: 'GET', credentials: 'same-origin', headers: { Accept: 'application/json' }
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         return {
           allowed: false,
-          message: response.status === 401
-            ? 'Sign in before using Hands-Free Conversation.'
-            : (payload.error || 'Could not verify Voice access.')
+          message: response.status === 401 ? 'Sign in before using Hands-Free Conversation.' : (payload.error || 'Could not verify Voice access.')
         };
       }
-      const capabilities = payload?.access?.capabilities || [];
-      const voice = capabilities.find((item) => item?.key === 'voice');
+      const voice = (payload?.access?.capabilities || []).find((item) => item?.key === 'voice');
       return {
         allowed: Boolean(voice?.usable),
-        message: voice?.usable
-          ? null
-          : 'Hands-Free Conversation requires Premium or Ultra Voice access.'
+        message: voice?.usable ? null : 'Hands-Free Conversation requires Premium or Ultra Voice access.'
       };
     } catch (_) {
       return { allowed: false, message: 'Could not verify Voice access right now.' };
     }
-  }
-
-  function voiceScore(voice) {
-    const name = String(voice?.name || '');
-    const lang = String(voice?.lang || '');
-    let score = 0;
-    if (/natural/i.test(name)) score += 500;
-    if (/neural/i.test(name)) score += 450;
-    if (/online/i.test(name)) score += 300;
-    if (/google/i.test(name)) score += 250;
-    if (/microsoft/i.test(name)) score += 180;
-    if (/enhanced|premium/i.test(name)) score += 160;
-    if (/^en(?:-|$)/i.test(lang)) score += 80;
-    if (voice?.default) score += 25;
-    return score;
-  }
-
-  function resolveVoice2() {
-    if (cachedVoice) return cachedVoice;
-    if (!('speechSynthesis' in window)) return null;
-    const all = window.speechSynthesis.getVoices() || [];
-    const english = all.filter((voice) => /^en(?:-|$)/i.test(String(voice.lang || '')));
-    const voices = (english.length ? english : all).slice().sort((a, b) => voiceScore(b) - voiceScore(a));
-    for (const preferred of VOICE2_PREFERRED) {
-      const wanted = preferred.toLowerCase();
-      const match = voices.find((voice) => String(voice.name || '').toLowerCase().includes(wanted));
-      if (match) {
-        cachedVoice = match;
-        return cachedVoice;
-      }
-    }
-    cachedVoice = voices[0] || null;
-    return cachedVoice;
   }
 
   function cleanSpeechText(value) {
@@ -211,7 +192,6 @@
     const spoken = normalizeRecognitionText(lastSpokenReply);
     if (!heard || !spoken || heard.length < 8) return false;
     if (spoken.includes(heard) || heard.includes(spoken)) return true;
-
     const heardWords = heard.split(' ').filter((word) => word.length > 1);
     const spokenWords = new Set(spoken.split(' ').filter((word) => word.length > 1));
     if (heardWords.length < 3 || !spokenWords.size) return false;
@@ -229,9 +209,8 @@
       const sentence = raw.trim();
       if (!sentence) continue;
       const combined = `${current} ${sentence}`.trim();
-      if (combined.length <= limit) {
-        current = combined;
-      } else {
+      if (combined.length <= limit) current = combined;
+      else {
         if (current) chunks.push(current);
         current = sentence;
       }
@@ -240,14 +219,14 @@
     return chunks;
   }
 
-  function speakVoice2(text, token) {
+  function speakDeviceVoice(text, token) {
     return new Promise((resolve) => {
       if (!active || token !== generation || !('speechSynthesis' in window)) return resolve(false);
       if (typeof window.SpeechSynthesisUtterance !== 'function') return resolve(false);
       const chunks = splitSpeech(text);
       if (!chunks.length) return resolve(false);
       const synth = window.speechSynthesis;
-      const voice = resolveVoice2();
+      const voice = resolveDeviceVoice();
       try { synth.cancel(); } catch (_) {}
       let index = 0;
       let settled = false;
@@ -263,14 +242,10 @@
         if (index >= chunks.length) return finish(true);
         const utterance = new window.SpeechSynthesisUtterance(chunks[index]);
         if (voice) utterance.voice = voice;
-        utterance.lang = voice?.lang || 'en-US';
         utterance.rate = 1;
         utterance.pitch = 1;
         utterance.volume = 1;
-        utterance.onend = () => {
-          index += 1;
-          window.setTimeout(next, 5);
-        };
+        utterance.onend = () => { index += 1; window.setTimeout(next, 5); };
         utterance.onerror = () => finish(false);
         try { synth.speak(utterance); } catch (_) { finish(false); }
       }
@@ -284,7 +259,7 @@
     const node = nodes[nodes.length - 1] || null;
     return {
       count: nodes.length,
-      text: String(node?.innerText || node?.textContent || '').trim(),
+      text: String(node?.dataset?.speechText || node?.innerText || node?.textContent || '').trim(),
       error: Boolean(node?.classList?.contains('error'))
     };
   }
@@ -297,16 +272,13 @@
     return true;
   }
 
-  function sleep(ms) {
-    return new Promise((resolve) => window.setTimeout(resolve, ms));
-  }
+  function sleep(ms) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
 
   async function waitForCompletedReply(before, token) {
     const send = getSendButton();
     if (!send) return null;
     const startedAt = Date.now();
     let sawPending = send.disabled;
-
     while (active && token === generation && Date.now() - startedAt < REPLY_TIMEOUT_MS) {
       if (send.disabled) sawPending = true;
       const current = assistantSnapshot();
@@ -386,15 +358,16 @@
     }
 
     phase = 'speaking';
-    setStatus('UNBOUND AI is speaking with Voice 2 — Clear…', 'active');
+    const voice = resolveDeviceVoice();
+    setStatus(voice ? `UNBOUND AI is speaking with device voice: ${voice.name}` : 'UNBOUND AI is speaking with the device speech engine.', 'active');
     lastSpokenReply = cleanSpeechText(reply.text);
     lastSpokenAt = 0;
-    const spoken = await speakVoice2(reply.text, token);
+    const spoken = await speakDeviceVoice(reply.text, token);
     if (!active || token !== generation) return;
     if (!spoken) {
       lastSpokenReply = '';
       lastSpokenAt = 0;
-      setStatus('Voice 2 playback was unavailable. Listening again…', 'error');
+      setStatus('Device voice playback was unavailable. Listening again…', 'error');
     } else {
       lastSpokenAt = Date.now();
       setStatus('Reply finished. Listening for your next question…', 'active');
@@ -432,15 +405,13 @@
     current.maxAlternatives = 1;
 
     phase = 'listening';
-    setStatus('Hands-Free is listening in U.S. English. Say “stop hands free” to end.', 'active');
+    setStatus('Hands-Free is listening. Say “stop hands free” to end.', 'active');
     const button = getVoiceButton();
     if (button) button.dataset.listening = 'true';
 
     current.onresult = (event) => {
       let combined = '';
-      for (let index = 0; index < event.results.length; index += 1) {
-        combined += event.results[index]?.[0]?.transcript || '';
-      }
+      for (let index = 0; index < event.results.length; index += 1) combined += event.results[index]?.[0]?.transcript || '';
       transcript = combined.trim();
       if (transcript) setStatus(`Heard: “${transcript}”`, 'active');
     };
@@ -466,9 +437,7 @@
       if (recognition === current) recognition = null;
       const buttonNow = getVoiceButton();
       if (buttonNow) buttonNow.dataset.listening = 'false';
-      if (current.__unboundIntentionalStop) return;
-      if (!active || token !== generation) return;
-
+      if (current.__unboundIntentionalStop || !active || token !== generation) return;
       if (failed) {
         stopHandsFree(statusNode()?.textContent || 'Voice input failed.', 'error');
         return;
@@ -528,8 +497,8 @@
     if (menu) menu.hidden = true;
     const button = getVoiceButton();
     if (button) button.setAttribute('aria-expanded', 'false');
-    setStatus('Hands-Free Conversation is on. Voice 2 — Clear keeps spoken replies local and instant.', 'active');
-    resolveVoice2();
+    const voice = resolveDeviceVoice();
+    setStatus(voice ? `Hands-Free is on. Replies use device voice: ${voice.name}` : 'Hands-Free is on. Replies use the device speech engine.', 'active');
     scheduleListen(generation, 150);
   }
 
@@ -550,7 +519,7 @@
     status.className = 'unbound-handsfree-status';
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    status.textContent = 'Hands-Free is off. Premium/Ultra required; spoken replies use local Voice 2 — Clear.';
+    status.textContent = 'Hands-Free is off. Spoken replies use your selected device voice.';
 
     const firstAction = menu.querySelector('.voice-listen-action');
     if (firstAction) menu.insertBefore(action, firstAction);
@@ -587,8 +556,9 @@
       if (active) stopHandsFree('Hands-Free stopped because the page closed.');
     });
 
+    window.addEventListener('unbound:device-voice-changed', () => { cachedVoice = null; resolveDeviceVoice(); });
     if ('speechSynthesis' in window && typeof window.speechSynthesis.addEventListener === 'function') {
-      window.speechSynthesis.addEventListener('voiceschanged', () => { cachedVoice = null; });
+      window.speechSynthesis.addEventListener('voiceschanged', () => { cachedVoice = null; resolveDeviceVoice(); });
     }
 
     return true;
