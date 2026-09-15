@@ -43,6 +43,16 @@ assert(client.includes("handleRecognizedText(transcript, token)"));
 assert(client.includes("waitForCompletedReply"));
 assert(client.includes("send.click()"));
 
+// Mobile recognition must stay in U.S. English and must not feed UNBOUND's own spoken reply back into chat.
+assert(client.includes("current.lang = 'en-US'"));
+assert(client.includes("current.interimResults = false"));
+assert(!client.includes("current.lang = navigator.language"));
+assert(client.includes("POST_SPEECH_LISTEN_DELAY_MS"));
+assert(client.includes("ECHO_GUARD_MS"));
+assert(client.includes("looksLikeRecentEcho"));
+assert(client.includes("Ignored UNBOUND AI hearing its own reply"));
+assert(client.includes("window.speechSynthesis.speaking || window.speechSynthesis.pending"));
+
 // Do not read interrupted/error replies aloud.
 assert(client.includes("Response interrupted before completion"));
 assert(client.includes("reply.error"));
