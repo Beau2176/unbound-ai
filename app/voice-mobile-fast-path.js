@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'unbound-mobile-voice-fast-path-v3';
+  const VERSION = 'unbound-mobile-voice-fast-path-v4';
   const SAFE_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead.safe.v2';
   const LEGACY_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead';
   const CLOUD_SPEECH_URL = '/api/voice/natural-speech';
@@ -67,8 +67,7 @@
     const name = String(voice?.name || '');
     const lang = String(voice?.lang || '');
     let score = 0;
-    if (/^en-US$/i.test(lang)) score += 300;
-    else if (/^en(?:-|$)/i.test(lang)) score += 180;
+    if (/^en[-_]US$/i.test(lang)) score += 300;
     if (/google/i.test(name)) score += 120;
     if (/natural|neural|enhanced|premium/i.test(name)) score += 80;
     if (voice?.default) score += 20;
@@ -79,8 +78,10 @@
     if (cachedVoice) return cachedVoice;
     if (!('speechSynthesis' in window)) return null;
     const all = window.speechSynthesis.getVoices() || [];
-    const english = all.filter((voice) => /^en(?:-|$)/i.test(String(voice.lang || '')));
-    const voices = (english.length ? english : all).slice().sort((a, b) => voiceScore(b) - voiceScore(a));
+    const voices = all
+      .filter((voice) => /^en[-_]US$/i.test(String(voice.lang || '')))
+      .slice()
+      .sort((a, b) => voiceScore(b) - voiceScore(a));
     for (const preferred of VOICE_NAMES) {
       const wanted = preferred.toLowerCase();
       const match = voices.find((voice) => String(voice.name || '').toLowerCase().includes(wanted));
@@ -96,7 +97,7 @@
     const voice = resolveVoice();
     const warmup = new window.SpeechSynthesisUtterance('.');
     if (voice) warmup.voice = voice;
-    warmup.lang = voice?.lang || 'en-US';
+    warmup.lang = 'en-US';
     warmup.rate = 10;
     warmup.pitch = 1;
     warmup.volume = 0;
@@ -164,7 +165,7 @@
     const voice = resolveVoice();
     const utterance = new window.SpeechSynthesisUtterance(text);
     if (voice) utterance.voice = voice;
-    utterance.lang = voice?.lang || 'en-US';
+    utterance.lang = 'en-US';
     utterance.rate = 1;
     utterance.pitch = 1;
     utterance.volume = 1;
@@ -260,7 +261,7 @@
   async function speakSelected(text) {
     const preset = selectedPreset();
     if (preset === 'clear') {
-      setNote('Reading the raw UNBOUND answer with Voice 2 — Clear.');
+      setNote('Reading the raw UNBOUND answer with Voice 2 — Clear (U.S. English).');
       return speakLocal(text);
     }
 
@@ -272,7 +273,7 @@
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: clean(text).slice(0, 4096), preset })
+        body: JSON.stringify({ text: clean(text).slice(0, 4096), preset, locale: 'en-US' })
       });
       if (token !== generation) return false;
       if (!response.ok) throw new Error('cloud voice unavailable');
@@ -286,7 +287,7 @@
       return true;
     } catch (_) {
       if (token !== generation) return false;
-      setNote('Cloud voice was unavailable, so UNBOUND is using Voice 2 — Clear.');
+      setNote('Cloud voice was unavailable, so UNBOUND is using Voice 2 — Clear (U.S. English).');
       return speakLocal(text);
     }
   }
@@ -333,7 +334,7 @@
     }
     setAutoReadEnabled(true);
     prime();
-    setNote('Auto-read is on. Mobile will start speaking from the first clean sentence.');
+    setNote('Auto-read is on. Mobile will read replies in U.S. English.');
   }
 
   function closeVoiceMenu() {
