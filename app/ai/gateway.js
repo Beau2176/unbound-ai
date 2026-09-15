@@ -54,7 +54,13 @@ function getGatewayStatus() {
   };
 }
 
-async function generateChat({ instructions, input, model, research = null }) {
+async function generateChat({
+  instructions,
+  input,
+  model,
+  research = null,
+  reasoningEffort = null
+}) {
   const provider = getProvider();
 
   if (research?.enabled && !providerSupportsResearch(provider)) {
@@ -63,21 +69,44 @@ async function generateChat({ instructions, input, model, research = null }) {
     throw error;
   }
 
-  return provider.generateChat({ instructions, input, model, research });
+  return provider.generateChat({
+    instructions,
+    input,
+    model,
+    research,
+    reasoningEffort
+  });
 }
 
-async function streamChat({ instructions, input, model, onDelta }) {
+async function streamChat({
+  instructions,
+  input,
+  model,
+  onDelta,
+  reasoningEffort = null
+}) {
   const provider = getProvider();
 
   if (typeof provider.streamChat !== "function") {
-    const result = await provider.generateChat({ instructions, input, model });
+    const result = await provider.generateChat({
+      instructions,
+      input,
+      model,
+      reasoningEffort
+    });
     if (onDelta && result.reply) {
       await onDelta(result.reply);
     }
     return result;
   }
 
-  return provider.streamChat({ instructions, input, model, onDelta });
+  return provider.streamChat({
+    instructions,
+    input,
+    model,
+    onDelta,
+    reasoningEffort
+  });
 }
 
 async function analyzeFile(options = {}) {

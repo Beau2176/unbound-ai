@@ -1,4 +1,6 @@
 const DEFAULT_MODEL = "gpt-5.6-luna";
+const REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
+let clientPromise = null;
 
 const FILE_ANALYSIS_SYSTEM_PROMPT = `
 You are analyzing a user-supplied file for UNBOUND AI.
@@ -27,9 +29,21 @@ function supportsFileAnalysis() {
   return true;
 }
 
+function normalizeReasoningEffort(value) {
+  const effort = String(value || "").trim().toLowerCase();
+  return REASONING_EFFORTS.has(effort) ? effort : null;
+}
+
 async function createClient() {
-  const OpenAI = (await import("openai")).default;
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  if (!clientPromise) {
+    clientPromise = import("openai")
+      .then(({ default: OpenAI }) => new OpenAI({ apiKey: process.env.OPENAI_API_KEY }))
+      .catch((error) => {
+        clientPromise = null;
+        throw error;
+      });
+  }
+  return clientPromise;
 }
 
 function assertConfigured() {
@@ -174,7 +188,13 @@ function buildFileAnalysisRequest({
   };
 }
 
-async function generateChat({ instructions, input, model, research = null }) {
+async function generateChat({
+  instructions,
+  input,
+  model,
+  research = null,
+  reasoningEffort = null
+}) {
   assertConfigured();
 
   const client = await createClient();
@@ -185,6 +205,8 @@ async function generateChat({ instructions, input, model, research = null }) {
     input,
     store: false
   };
+  const effort = normalizeReasoningEffort(reasoningEffort);
+  if (effort) request.reasoning = { effort };
 
   if (research?.enabled) {
     request.tools = [{ type: "web_search" }];
@@ -210,19 +232,28 @@ async function generateChat({ instructions, input, model, research = null }) {
   };
 }
 
-async function streamChat({ instructions, input, model, onDelta }) {
+async function streamChat({
+  instructions,
+  input,
+  model,
+  onDelta,
+  reasoningEffort = null
+}) {
   assertConfigured();
 
   const client = await createClient();
   const selectedModel = String(model || getModel()).trim() || getModel();
-  const stream = await client.responses.create({
+  const request = {
     model: selectedModel,
     instructions,
     input,
     stream: true,
     store: false
-  });
+  };
+  const effort = normalizeReasoningEffort(reasoningEffort);
+  if (effort) request.reasoning = { effort };
 
+  const stream = await client.responses.create(request);
   let reply = "";
   let completedResponse = null;
 
@@ -286,6 +317,7 @@ module.exports = {
   isConfigured,
   supportsResearch,
   supportsFileAnalysis,
+  normalizeReasoningEffort,
   normalizeFileDetail,
   buildFileAnalysisRequest,
   generateChat,
