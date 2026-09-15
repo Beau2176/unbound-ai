@@ -1,8 +1,10 @@
 (() => {
   'use strict';
 
-  const VERSION = 'unbound-mobile-voice-fast-path-v1';
-  const AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead.safe.v2';
+  const VERSION = 'unbound-mobile-voice-fast-path-v2';
+  const SAFE_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead.safe.v2';
+  const LEGACY_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead';
+  const CLOUD_SPEECH_URL = '/api/voice/natural-speech';
   const MAX_CHUNK = 160;
   const FALLBACK_CHUNK = 96;
   const VOICE_NAMES = ['Google US English', 'Sonia', 'Serena', 'Libby', 'Hazel', 'Susan'];
@@ -16,13 +18,32 @@
   let primed = false;
   let priming = false;
   let speaking = false;
+  let manualPlayback = false;
   let generation = 0;
   let queue = [];
   let buffer = '';
+  let activeAudio = null;
+  let activeAudioUrl = '';
+  let uiTimer = null;
+
+  function storageGet(key) {
+    try { return window.localStorage.getItem(key); } catch (_) { return null; }
+  }
+
+  function storageSet(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (_) {}
+  }
+
+  // Keep the legacy MutationObserver-driven reader disabled on mobile.
+  storageSet(LEGACY_AUTO_READ_STORAGE_KEY, 'false');
 
   function autoReadEnabled() {
-    try { return window.localStorage.getItem(AUTO_READ_STORAGE_KEY) === 'true'; }
-    catch (_) { return false; }
+    return storageGet(SAFE_AUTO_READ_STORAGE_KEY) === 'true';
+  }
+
+  function setAutoReadEnabled(enabled) {
+    storageSet(SAFE_AUTO_READ_STORAGE_KEY, enabled ? 'true' : 'false');
+    syncAutoReadButton();
   }
 
   function handsFreeActive() {
@@ -95,9 +116,7 @@
       if (word.length > MAX_CHUNK) {
         if (current) chunks.push(current);
         current = '';
-        for (let offset = 0; offset < word.length; offset += MAX_CHUNK) {
-          chunks.push(word.slice(offset, offset + MAX_CHUNK));
-        }
+        for (let offset = 0; offset < word.length; offset += MAX_CHUNK) chunks.push(word.slice(offset, offset + MAX_CHUNK));
         continue;
       }
       const candidate = current ? `${current} ${word}` : word;
@@ -111,9 +130,34 @@
     return chunks;
   }
 
+  function stopCloudAudio() {
+    if (activeAudio) {
+      try { activeAudio.pause(); activeAudio.currentTime = 0; } catch (_) {}
+      activeAudio = null;
+    }
+    if (activeAudioUrl) {
+      try { URL.revokeObjectURL(activeAudioUrl); } catch (_) {}
+      activeAudioUrl = '';
+    }
+  }
+
+  function reset({ cancelSpeech = true } = {}) {
+    generation += 1;
+    queue = [];
+    buffer = '';
+    speaking = false;
+    manualPlayback = false;
+    stopCloudAudio();
+    if (cancelSpeech && 'speechSynthesis' in window) {
+      try { window.speechSynthesis.cancel(); } catch (_) {}
+    }
+  }
+
   function speakNext() {
-    if (speaking || !queue.length || !autoReadEnabled() || handsFreeActive()) return;
+    if (speaking || !queue.length || handsFreeActive()) return;
+    if (!manualPlayback && !autoReadEnabled()) return;
     if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function') return;
+
     const token = generation;
     const text = queue.shift();
     const voice = resolveVoice();
@@ -128,10 +172,11 @@
     utterance.onend = () => {
       if (token !== generation) return;
       speaking = false;
+      if (!queue.length) manualPlayback = false;
       window.setTimeout(speakNext, 15);
     };
-    utterance.onerror = () => { speaking = false; };
-    try { window.speechSynthesis.speak(utterance); } catch (_) { speaking = false; }
+    utterance.onerror = () => { speaking = false; manualPlayback = false; };
+    try { window.speechSynthesis.speak(utterance); } catch (_) { speaking = false; manualPlayback = false; }
   }
 
   function enqueue(text) {
@@ -141,14 +186,12 @@
     speakNext();
   }
 
-  function reset() {
-    generation += 1;
-    queue = [];
-    buffer = '';
-    speaking = false;
-    if ('speechSynthesis' in window) {
-      try { window.speechSynthesis.cancel(); } catch (_) {}
-    }
+  function speakLocal(text) {
+    reset();
+    manualPlayback = true;
+    prime();
+    enqueue(text);
+    return true;
   }
 
   function drain(force = false) {
@@ -188,9 +231,142 @@
     drain(Boolean(detail.done));
   }
 
+  function canonicalAssistantText() {
+    const nodes = Array.from(document.querySelectorAll('.message.assistant'));
+    for (let index = nodes.length - 1; index >= 0; index -= 1) {
+      const node = nodes[index];
+      if (node.classList.contains('error') || node.querySelector('.typing')) continue;
+      const canonical = String(node.dataset.speechText || '').trim();
+      if (canonical) return clean(canonical);
+      const fallback = clean(node.innerText || node.textContent || '');
+      if (fallback) return fallback;
+    }
+    return '';
+  }
+
+  function selectedPreset() {
+    return String(document.getElementById('unboundVoicePreset')?.value || 'clear').trim().toLowerCase() || 'clear';
+  }
+
+  function setNote(message) {
+    const note = document.querySelector('.unbound-voice-picker-note');
+    if (note) note.textContent = message;
+  }
+
+  async function speakSelected(text) {
+    const preset = selectedPreset();
+    if (preset === 'clear') {
+      setNote('Reading the raw UNBOUND answer with Voice 2 — Clear.');
+      return speakLocal(text);
+    }
+
+    reset();
+    const token = generation;
+    try {
+      setNote('Loading the selected voice…');
+      const response = await fetch(CLOUD_SPEECH_URL, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: clean(text).slice(0, 4096), preset })
+      });
+      if (token !== generation) return false;
+      if (!response.ok) throw new Error('cloud voice unavailable');
+      const blob = await response.blob();
+      if (token !== generation || !blob?.size) return false;
+      activeAudioUrl = URL.createObjectURL(blob);
+      activeAudio = new Audio(activeAudioUrl);
+      activeAudio.onended = stopCloudAudio;
+      activeAudio.onerror = stopCloudAudio;
+      await activeAudio.play();
+      return true;
+    } catch (_) {
+      if (token !== generation) return false;
+      setNote('Cloud voice was unavailable, so UNBOUND is using Voice 2 — Clear.');
+      return speakLocal(text);
+    }
+  }
+
+  async function hasVoiceAccess() {
+    try {
+      const response = await fetch('/api/account/access', {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) return { allowed: false, message: response.status === 401 ? 'Sign in before enabling Auto-Read Replies.' : (payload.error || 'Could not verify Voice access.') };
+      const voice = (payload?.access?.capabilities || []).find((item) => item?.key === 'voice');
+      return { allowed: Boolean(voice?.usable), message: voice?.usable ? '' : 'Auto-Read Replies requires Premium or Ultra Voice access.' };
+    } catch (_) {
+      return { allowed: false, message: 'Could not verify Voice access right now.' };
+    }
+  }
+
+  function syncAutoReadButton() {
+    const action = document.getElementById('unboundVoiceAutoRead');
+    if (!action) return;
+    const enabled = autoReadEnabled();
+    const text = enabled ? '🔊 Auto-read new replies: ON' : '🔊 Auto-read new replies: OFF';
+    if (action.textContent !== text) action.textContent = text;
+    action.dataset.autoRead = enabled ? 'true' : 'false';
+    action.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  }
+
+  async function toggleAutoRead() {
+    if (autoReadEnabled()) {
+      setAutoReadEnabled(false);
+      reset();
+      setNote('Auto-read is off.');
+      return;
+    }
+    setNote('Checking Voice access…');
+    const access = await hasVoiceAccess();
+    if (!access.allowed) {
+      setAutoReadEnabled(false);
+      setNote(access.message || 'Auto-read is unavailable.');
+      return;
+    }
+    setAutoReadEnabled(true);
+    prime();
+    setNote('Auto-read is on. Mobile will start speaking from the first clean sentence.');
+  }
+
+  function closeVoiceMenu() {
+    const button = document.getElementById('unboundVoiceListenButton');
+    const menu = button?.closest('.voice-listen-wrap')?.querySelector('.voice-listen-menu');
+    if (menu) menu.hidden = true;
+    if (button) button.setAttribute('aria-expanded', 'false');
+  }
+
+  function handleCapturedClick(event) {
+    const target = event.target;
+    const autoRead = target?.closest?.('#unboundVoiceAutoRead');
+    if (autoRead) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void toggleAutoRead();
+      return;
+    }
+
+    const action = target?.closest?.('.voice-listen-action');
+    if (!action || !/Listen to last answer/i.test(String(action.textContent || ''))) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    closeVoiceMenu();
+    const text = canonicalAssistantText();
+    if (!text) {
+      setNote('There is no completed UNBOUND AI answer to read yet.');
+      return;
+    }
+    void speakSelected(text);
+  }
+
+  document.addEventListener('click', handleCapturedClick, true);
   document.addEventListener('pointerdown', prime, { passive: true, capture: true, once: true });
   document.addEventListener('touchstart', prime, { passive: true, capture: true, once: true });
   window.addEventListener('unbound:assistant-stream', onStream);
+
   if ('speechSynthesis' in window && typeof window.speechSynthesis.addEventListener === 'function') {
     window.speechSynthesis.addEventListener('voiceschanged', () => {
       cachedVoice = null;
@@ -198,5 +374,14 @@
     });
   }
 
-  window.__unboundMobileVoiceFastPath = { version: VERSION, prime, reset, isMobile: true };
+  uiTimer = window.setInterval(syncAutoReadButton, 400);
+  window.setTimeout(syncAutoReadButton, 250);
+  window.__unboundMobileVoiceFastPath = {
+    version: VERSION,
+    prime,
+    reset,
+    syncAutoReadButton,
+    isMobile: true,
+    get uiTimer() { return uiTimer; }
+  };
 })();
