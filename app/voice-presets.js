@@ -1,13 +1,13 @@
 (() => {
   'use strict';
 
-  const STYLE_ID = 'unbound-device-voices-v1';
+  const STYLE_ID = 'unbound-device-voices-v2';
   const SELECT_ID = 'unboundVoicePreset';
   const VOICE_STORAGE_KEY = 'unbound.voice.systemVoiceURI';
   const AUTO_READ_ACTION_ID = 'unboundVoiceAutoRead';
   const AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead';
   const AUTO_READ_SETTLE_MS = 700;
-  const NORMAL_NOTE = 'Playback uses a voice exposed by this phone or computer. UNBOUND does not use the operating-system language setting to choose a playback language.';
+  const NORMAL_NOTE = 'Playback uses a voice exposed by this phone or computer. The selected voice\'s own language tag is used only to activate that exact OS voice on Android; the phone/browser language setting is not used.';
 
   let speaking = false;
   let priming = false;
@@ -31,7 +31,32 @@
   }
 
   function voiceKey(voice) {
-    return String(voice?.voiceURI || voice?.name || '').trim();
+    return JSON.stringify([
+      String(voice?.voiceURI || ''),
+      String(voice?.name || ''),
+      String(voice?.lang || ''),
+      Boolean(voice?.localService)
+    ]);
+  }
+
+  function findVoiceByKey(voices, key) {
+    const wanted = String(key || '').trim();
+    if (!wanted) return null;
+    return voices.find((voice) => voiceKey(voice) === wanted)
+      || voices.find((voice) => String(voice?.voiceURI || '').trim() === wanted)
+      || voices.find((voice) => String(voice?.name || '').trim() === wanted)
+      || null;
+  }
+
+  function applyVoice(utterance, voice) {
+    if (!utterance || !voice) return;
+    utterance.voice = voice;
+    const lang = String(voice?.lang || '').trim();
+    if (lang) utterance.lang = lang;
+    const uri = String(voice?.voiceURI || '').trim();
+    if (uri) {
+      try { utterance.voiceURI = uri; } catch (_) {}
+    }
   }
 
   function systemVoices() {
@@ -48,7 +73,7 @@
     }
 
     const wanted = selectedVoiceKey || storageGet(VOICE_STORAGE_KEY);
-    let voice = wanted ? voices.find((item) => voiceKey(item) === wanted) : null;
+    let voice = findVoiceByKey(voices, wanted);
     if (!voice) voice = voices.find((item) => item?.default) || voices[0] || null;
     cachedVoice = voice;
     selectedVoiceKey = voiceKey(voice);
@@ -57,7 +82,8 @@
   }
 
   function currentVoice() {
-    if (cachedVoice && voiceKey(cachedVoice) === (selectedVoiceKey || storageGet(VOICE_STORAGE_KEY))) return cachedVoice;
+    const wanted = selectedVoiceKey || storageGet(VOICE_STORAGE_KEY);
+    if (cachedVoice && voiceKey(cachedVoice) === wanted) return cachedVoice;
     return resolveVoice();
   }
 
@@ -142,7 +168,7 @@
     if (synth.speaking || synth.pending) return;
     const voice = currentVoice();
     const warmup = new window.SpeechSynthesisUtterance('.');
-    if (voice) warmup.voice = voice;
+    applyVoice(warmup, voice);
     warmup.rate = 10;
     warmup.pitch = 1;
     warmup.volume = 0;
@@ -176,7 +202,7 @@
       if (!speaking) return;
       if (index >= chunks.length) return finish();
       const utterance = new window.SpeechSynthesisUtterance(chunks[index]);
-      if (voice) utterance.voice = voice;
+      applyVoice(utterance, voice);
       utterance.rate = 1;
       utterance.pitch = 1;
       utterance.volume = 1;
@@ -263,7 +289,7 @@
     autoReadLastText = text;
     if (/Response interrupted before completion/i.test(text)) return;
     const voice = currentVoice();
-    setNote(note, voice ? `Auto-reading with device voice: ${voice.name}` : 'Auto-reading with the device speech engine.', 4500);
+    setNote(note, voice ? `Auto-reading with device voice: ${voice.name} (${voice.lang || 'device'})` : 'Auto-reading with the device speech engine.', 4500);
     primeSpeechEngine();
     speakBrowser(text);
   }
@@ -297,7 +323,7 @@
     updateAutoReadAction(action);
     primeSpeechEngine();
     const voice = currentVoice();
-    setNote(note, voice ? `Auto-read is on with device voice: ${voice.name}` : 'Auto-read is on with the device speech engine.', 5000);
+    setNote(note, voice ? `Auto-read is on with device voice: ${voice.name} (${voice.lang || 'device'})` : 'Auto-read is on with the device speech engine.', 5000);
     return true;
   }
 
@@ -326,13 +352,13 @@
       return;
     }
     select.disabled = false;
-    voices.forEach((voice, index) => {
+    voices.forEach((voice) => {
       const option = document.createElement('option');
       option.value = voiceKey(voice);
-      option.textContent = `${voice.name}${voice.default ? ' — device default' : ''}`;
+      option.textContent = `${voice.name}${voice.lang ? ` — ${voice.lang}` : ''}${voice.default ? ' — device default' : ''}`;
       select.appendChild(option);
     });
-    const selected = voices.find((voice) => voiceKey(voice) === previous)
+    const selected = findVoiceByKey(voices, previous)
       || voices.find((voice) => voice.default)
       || voices[0];
     setSelectedVoice(voiceKey(selected));
@@ -397,7 +423,7 @@
       stopBrowserSpeech();
       const voice = setSelectedVoice(select.value);
       select.value = selectedVoiceKey;
-      setNote(note, voice ? `Playback voice: ${voice.name}` : NORMAL_NOTE, 4500);
+      setNote(note, voice ? `Playback voice: ${voice.name} (${voice.lang || 'device'})` : NORMAL_NOTE, 4500);
       primeSpeechEngine();
       window.dispatchEvent(new CustomEvent('unbound:device-voice-changed', { detail: { voiceKey: selectedVoiceKey } }));
     });
