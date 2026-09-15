@@ -44,6 +44,9 @@ const {
   integrateModelRoutingServerSource
 } = require("./ai/model-routing-server-integration");
 const {
+  integrateChatLatencyServerSource
+} = require("./ai/chat-latency-server-integration");
+const {
   integrateConnectedAppsServerSource
 } = require("./connections/server-integration");
 const {
@@ -107,6 +110,7 @@ function compileIntegratedServer({
   integratedSource = integrateAdvertisingAnalyticsServerSource(integratedSource);
   integratedSource = integrateAdvertisingPolicyServerSource(integratedSource);
   integratedSource = integrateModelRoutingServerSource(integratedSource);
+  integratedSource = integrateChatLatencyServerSource(integratedSource);
   integratedSource = integrateConnectedAppsServerSource(integratedSource);
   integratedSource = integrateLaunchDashboardServerSource(integratedSource);
   integratedSource = integrateAdminThreeTierServerSource(integratedSource);
