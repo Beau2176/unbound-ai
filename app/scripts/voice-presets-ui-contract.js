@@ -11,7 +11,7 @@ assert(presetSource.includes("unboundVoiceListenButton"), "enhancer should attac
 assert(presetSource.includes("unbound.voice.systemVoiceURI"), "selected operating-system voice must be stored locally");
 assert(presetSource.includes("speechSynthesis.getVoices()"), "voice picker must enumerate voices exposed by the user's device");
 assert(presetSource.includes("Device playback voice"), "voice picker should clearly identify device playback voices");
-assert(presetSource.includes("voice.voiceURI"), "voice selection should use a stable system voice identifier when available");
+assert(presetSource.includes("voice?.voiceURI"), "voice selection should use a stable system voice identifier when available");
 assert(presetSource.includes("voice?.default"), "device default voice should be a safe fallback when no selection is stored");
 assert(presetSource.includes("utterance.voice = voice"), "playback must explicitly use the selected device voice");
 assert(!presetSource.includes("/api/voice/natural-speech"), "device playback must not call the cloud natural-speech route");
