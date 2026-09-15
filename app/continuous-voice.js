@@ -3,7 +3,7 @@
 
   const ACTION_ID = 'unboundHandsFreeVoice';
   const STATUS_ID = 'unboundHandsFreeStatus';
-  const STYLE_ID = 'unbound-hands-free-v100';
+  const STYLE_ID = 'unbound-hands-free-v101';
   const VOICE_STORAGE_KEY = 'unbound.voice.systemVoiceURI';
   const MAX_NO_SPEECH_RETRIES = 3;
   const REPLY_TIMEOUT_MS = 180000;
@@ -45,7 +45,32 @@
   }
 
   function voiceKey(voice) {
-    return String(voice?.voiceURI || voice?.name || '').trim();
+    return JSON.stringify([
+      String(voice?.voiceURI || ''),
+      String(voice?.name || ''),
+      String(voice?.lang || ''),
+      Boolean(voice?.localService)
+    ]);
+  }
+
+  function findVoiceByKey(voices, key) {
+    const wanted = String(key || '').trim();
+    if (!wanted) return null;
+    return voices.find((voice) => voiceKey(voice) === wanted)
+      || voices.find((voice) => String(voice?.voiceURI || '').trim() === wanted)
+      || voices.find((voice) => String(voice?.name || '').trim() === wanted)
+      || null;
+  }
+
+  function applyVoice(utterance, voice) {
+    if (!utterance || !voice) return;
+    utterance.voice = voice;
+    const lang = String(voice?.lang || '').trim();
+    if (lang) utterance.lang = lang;
+    const uri = String(voice?.voiceURI || '').trim();
+    if (uri) {
+      try { utterance.voiceURI = uri; } catch (_) {}
+    }
   }
 
   function systemVoices() {
@@ -61,7 +86,7 @@
       return null;
     }
     const wanted = storageGet(VOICE_STORAGE_KEY);
-    cachedVoice = (wanted ? voices.find((voice) => voiceKey(voice) === wanted) : null)
+    cachedVoice = findVoiceByKey(voices, wanted)
       || voices.find((voice) => voice?.default)
       || voices[0]
       || null;
@@ -241,7 +266,7 @@
         if (!active || token !== generation) return finish(false);
         if (index >= chunks.length) return finish(true);
         const utterance = new window.SpeechSynthesisUtterance(chunks[index]);
-        if (voice) utterance.voice = voice;
+        applyVoice(utterance, voice);
         utterance.rate = 1;
         utterance.pitch = 1;
         utterance.volume = 1;
@@ -359,7 +384,7 @@
 
     phase = 'speaking';
     const voice = resolveDeviceVoice();
-    setStatus(voice ? `UNBOUND AI is speaking with device voice: ${voice.name}` : 'UNBOUND AI is speaking with the device speech engine.', 'active');
+    setStatus(voice ? `UNBOUND AI is speaking with device voice: ${voice.name} (${voice.lang || 'device'})` : 'UNBOUND AI is speaking with the device speech engine.', 'active');
     lastSpokenReply = cleanSpeechText(reply.text);
     lastSpokenAt = 0;
     const spoken = await speakDeviceVoice(reply.text, token);
@@ -498,7 +523,7 @@
     const button = getVoiceButton();
     if (button) button.setAttribute('aria-expanded', 'false');
     const voice = resolveDeviceVoice();
-    setStatus(voice ? `Hands-Free is on. Replies use device voice: ${voice.name}` : 'Hands-Free is on. Replies use the device speech engine.', 'active');
+    setStatus(voice ? `Hands-Free is on. Replies use device voice: ${voice.name} (${voice.lang || 'device'})` : 'Hands-Free is on. Replies use the device speech engine.', 'active');
     scheduleListen(generation, 150);
   }
 
