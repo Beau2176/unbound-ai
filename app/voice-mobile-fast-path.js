@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'unbound-mobile-voice-fast-path-v5';
+  const VERSION = 'unbound-mobile-voice-fast-path-v6';
   const SAFE_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead.safe.v2';
   const LEGACY_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead';
   const VOICE_STORAGE_KEY = 'unbound.voice.systemVoiceURI';
@@ -35,7 +35,32 @@
   storageSet(LEGACY_AUTO_READ_STORAGE_KEY, 'false');
 
   function voiceKey(voice) {
-    return String(voice?.voiceURI || voice?.name || '').trim();
+    return JSON.stringify([
+      String(voice?.voiceURI || ''),
+      String(voice?.name || ''),
+      String(voice?.lang || ''),
+      Boolean(voice?.localService)
+    ]);
+  }
+
+  function findVoiceByKey(voices, key) {
+    const wanted = String(key || '').trim();
+    if (!wanted) return null;
+    return voices.find((voice) => voiceKey(voice) === wanted)
+      || voices.find((voice) => String(voice?.voiceURI || '').trim() === wanted)
+      || voices.find((voice) => String(voice?.name || '').trim() === wanted)
+      || null;
+  }
+
+  function applyVoice(utterance, voice) {
+    if (!utterance || !voice) return;
+    utterance.voice = voice;
+    const lang = String(voice?.lang || '').trim();
+    if (lang) utterance.lang = lang;
+    const uri = String(voice?.voiceURI || '').trim();
+    if (uri) {
+      try { utterance.voiceURI = uri; } catch (_) {}
+    }
   }
 
   function systemVoices() {
@@ -51,9 +76,8 @@
       return null;
     }
     const wanted = String(storageGet(VOICE_STORAGE_KEY) || '').trim();
-    const selected = wanted ? voices.find((voice) => voiceKey(voice) === wanted) : null;
-    cachedVoice = selected || voices.find((voice) => voice?.default) || voices[0] || null;
-    if (cachedVoice && !wanted) storageSet(VOICE_STORAGE_KEY, voiceKey(cachedVoice));
+    cachedVoice = findVoiceByKey(voices, wanted) || voices.find((voice) => voice?.default) || voices[0] || null;
+    if (cachedVoice) storageSet(VOICE_STORAGE_KEY, voiceKey(cachedVoice));
     return cachedVoice;
   }
 
@@ -89,7 +113,7 @@
     if (synth.speaking || synth.pending) return;
     const voice = resolveVoice();
     const warmup = new window.SpeechSynthesisUtterance('.');
-    if (voice) warmup.voice = voice;
+    applyVoice(warmup, voice);
     warmup.rate = 10;
     warmup.pitch = 1;
     warmup.volume = 0;
@@ -144,7 +168,7 @@
     const text = queue.shift();
     const voice = resolveVoice();
     const utterance = new window.SpeechSynthesisUtterance(text);
-    if (voice) utterance.voice = voice;
+    applyVoice(utterance, voice);
     utterance.rate = 1;
     utterance.pitch = 1;
     utterance.volume = 1;
@@ -235,7 +259,7 @@
 
   function speakSelected(text) {
     const voice = resolveVoice();
-    setNote(voice ? `Playing with device voice: ${voice.name}` : 'Playing with the device speech engine.');
+    setNote(voice ? `Playing with device voice: ${voice.name} (${voice.lang || 'device'})` : 'Playing with the device speech engine.');
     return speakLocal(text);
   }
 
@@ -280,7 +304,7 @@
     setAutoReadEnabled(true);
     prime();
     const voice = resolveVoice();
-    setNote(voice ? `Auto-read is on with device voice: ${voice.name}` : 'Auto-read is on with the device speech engine.');
+    setNote(voice ? `Auto-read is on with device voice: ${voice.name} (${voice.lang || 'device'})` : 'Auto-read is on with the device speech engine.');
   }
 
   function closeVoiceMenu() {
