@@ -26,6 +26,10 @@ assert(mobileVoiceSource.includes("node.dataset.speechText"), 'manual mobile pla
 assert(mobileVoiceSource.includes("event.stopImmediatePropagation()"), 'mobile voice controls must prevent legacy raw-DOM handlers from also firing');
 assert(mobileVoiceSource.includes('sawStreamDelta = true'), 'mobile streaming must record that deltas were already consumed');
 assert(mobileVoiceSource.includes('detail.done && !sawStreamDelta'), 'completion must not replay the whole answer after streamed speech');
+assert(mobileVoiceSource.includes("/^en[-_]US$/i.test"), 'mobile playback must restrict local voices to U.S. English');
+assert(mobileVoiceSource.includes("warmup.lang = 'en-US'"), 'mobile TTS warmup must explicitly use U.S. English');
+assert(mobileVoiceSource.includes("utterance.lang = 'en-US'"), 'mobile TTS playback must explicitly use U.S. English');
+assert(!mobileVoiceSource.includes('english.length ? english : all'), 'mobile voice must never fall back from English to an arbitrary installed language');
 
 const marker = 'app.use("/api", createMaintenanceMiddleware());';
 const minimalServer = `const app = { use() {}, get() {} };\n${marker}\n`;
@@ -41,4 +45,4 @@ assert(
 );
 assert.strictEqual(integrateNativeShellServerSource(integrated), integrated, 'native shell integration must remain idempotent');
 
-console.log('PASS mobile voice fast path: canonical text, progressive speech, TTS prewarm, no legacy observer, no duplicate completion replay, desktop/mobile runtime separation.');
+console.log('PASS mobile voice fast path: canonical text, progressive speech, U.S. English language lock, TTS prewarm, no legacy observer, no duplicate completion replay, desktop/mobile runtime separation.');
