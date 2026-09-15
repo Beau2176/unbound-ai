@@ -13,6 +13,7 @@ const runtimeDir = resolve(mobileDir, 'runtime');
 const wwwDir = resolve(mobileDir, 'www');
 
 const { injectMobileLayoutStyles } = require(resolve(appDir, 'ui/mobile-layout.js'));
+const { injectSimpleShell } = require(resolve(appDir, 'ui/simple-shell.js'));
 const { injectVoiceListenControl } = require(resolve(appDir, 'ui/voice-listen.js'));
 const { injectInterruptedStreamRecovery } = require(resolve(appDir, 'ui/chat-stream-recovery.js'));
 
@@ -106,7 +107,8 @@ function injectLocalRuntime(html) {
 async function buildHomepage() {
   const raw = await readFile(resolve(appDir, 'index.html'), 'utf8');
   const mobile = injectMobileLayoutStyles(raw);
-  const voice = injectVoiceListenControl(mobile);
+  const simple = injectSimpleShell(mobile);
+  const voice = injectVoiceListenControl(simple);
   const recovered = injectInterruptedStreamRecovery(voice);
   const transported = injectNativeApiTransport(recovered);
   return injectLocalRuntime(transported);
@@ -175,6 +177,7 @@ for (const file of outputFiles) {
 const sourceFiles = [
   'index.html',
   'ui/mobile-layout.js',
+  'ui/simple-shell.js',
   'ui/voice-listen.js',
   'ui/chat-stream-recovery.js',
   ...RUNTIME_SCRIPTS.map(([file]) => file),

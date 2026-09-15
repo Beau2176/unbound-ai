@@ -139,7 +139,8 @@ if (manifest) {
       if (homepage.includes(`src="/${script}?v=`)) failures.push(`generated homepage still contains server-root runtime script ${script}`);
     }
     for (const expected of [
-      'unbound-mobile-layout-v101',
+      'unbound-mobile-layout-v102',
+      'unbound-simple-shell-v100',
       'unboundVoiceListenButton',
       'let streamCompleted = false;',
       '[Response interrupted before completion.]'
