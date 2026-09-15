@@ -11,13 +11,16 @@ assert(presetSource.includes("unboundVoiceListenButton"), "enhancer should attac
 assert(presetSource.includes("unbound.voice.systemVoiceURI"), "selected operating-system voice must be stored locally");
 assert(presetSource.includes("speechSynthesis.getVoices()"), "voice picker must enumerate voices exposed by the user's device");
 assert(presetSource.includes("Device playback voice"), "voice picker should clearly identify device playback voices");
-assert(presetSource.includes("voice?.voiceURI"), "voice selection should use a stable system voice identifier when available");
+assert(presetSource.includes("JSON.stringify(["), "device voice key must combine multiple voice fields instead of collapsing entries by URI alone");
+assert(presetSource.includes("String(voice?.lang || '')"), "device voice key must distinguish language-specific entries from the same TTS engine");
+assert(presetSource.includes("findVoiceByKey"), "saved device voices should resolve through the composite key with legacy fallback");
 assert(presetSource.includes("find((item) => item?.default)"), "device default voice should be a safe fallback when no selection is stored");
 assert(presetSource.includes("utterance.voice = voice"), "playback must explicitly use the selected device voice");
+assert(presetSource.includes("utterance.lang = lang"), "Android playback must pass the selected voice's own language tag so Chrome activates that exact voice");
+assert(presetSource.includes("utterance.voiceURI = uri"), "Android playback should also pass the selected voice URI as a compatibility hint");
+assert(!presetSource.includes("navigator.language"), "playback must never inherit the OS/browser language setting");
 assert(!presetSource.includes("/api/voice/natural-speech"), "device playback must not call the cloud natural-speech route");
 assert(!presetSource.includes("provider: 'openai'"), "device playback picker must not expose cloud provider presets");
-assert(!presetSource.includes("utterance.lang ="), "playback must not set language from browser or operating-system locale");
-assert(!presetSource.includes("navigator.language"), "playback must not inherit navigator language");
 assert(presetSource.includes("Preview selected device voice"), "device voice preview control should be present");
 assert(presetSource.includes("unbound:device-voice-changed"), "voice selection changes should notify all playback paths");
 assert(presetSource.includes("window.__unboundDeviceVoice"), "shared device voice helper should be exposed for playback integrations");
@@ -41,4 +44,4 @@ assert(integrated.includes('app.get("/voice-presets.js"'), "device voice script 
 assert(integrated.includes('/voice-presets.js?v=109'), "homepage should continue loading the voice enhancer route");
 assert(integrated.includes('injectVoiceListenControl'), "stable Voice / Listen control injection must remain in place");
 
-console.log("UNBOUND AI operating-system voice picker and local Auto-Read checks passed.");
+console.log("UNBOUND AI distinct Android operating-system voice picker and local Auto-Read checks passed.");
