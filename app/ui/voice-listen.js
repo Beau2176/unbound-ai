@@ -1,5 +1,5 @@
-const VOICE_LISTEN_STYLE_ID = "unbound-voice-listen-v098";
-const VOICE_LISTEN_SCRIPT_ID = "unbound-voice-listen-v098";
+const VOICE_LISTEN_STYLE_ID = "unbound-voice-listen-v099";
+const VOICE_LISTEN_SCRIPT_ID = "unbound-voice-listen-v099";
 
 const VOICE_LISTEN_STYLES = `<style id="${VOICE_LISTEN_STYLE_ID}">
 .voice-listen-wrap {
@@ -92,6 +92,16 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
     return false;
   }
 
+  function getUsEnglishVoice() {
+    if (!('speechSynthesis' in window)) return null;
+    const voices = window.speechSynthesis.getVoices() || [];
+    const usEnglish = voices.filter((voice) => /^en[-_]US$/i.test(String(voice?.lang || '')));
+    return usEnglish.find((voice) => /Google US English/i.test(String(voice?.name || '')))
+      || usEnglish.find((voice) => /natural|neural|enhanced|premium/i.test(String(voice?.name || '')))
+      || usEnglish[0]
+      || null;
+  }
+
   function getLastAssistantText() {
     const selectors = [
       '[data-role="assistant"]',
@@ -127,7 +137,7 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ text })
+        body: JSON.stringify({ text, locale: 'en-US' })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.audioUrl) throw new Error(payload.error || 'Voice playback is unavailable.');
@@ -137,9 +147,16 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
       audio = new Audio(payload.audioUrl);
       await audio.play();
     } catch (error) {
-      if ('speechSynthesis' in window) {
+      if ('speechSynthesis' in window && typeof SpeechSynthesisUtterance === 'function') {
         window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+        const utterance = new SpeechSynthesisUtterance(text);
+        const voice = getUsEnglishVoice();
+        if (voice) utterance.voice = voice;
+        utterance.lang = 'en-US';
+        utterance.rate = 1;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+        window.speechSynthesis.speak(utterance);
       } else {
         button.title = error.message || 'Voice playback is unavailable.';
       }
@@ -164,7 +181,7 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
     }
 
     recognition = new Recognition();
-    recognition.lang = navigator.language || 'en-US';
+    recognition.lang = 'en-US';
     recognition.interimResults = true;
     recognition.continuous = false;
 
@@ -231,7 +248,7 @@ const VOICE_LISTEN_SCRIPT = `<script id="${VOICE_LISTEN_SCRIPT_ID}">
     button.textContent = '🎙 Voice / Listen';
     button.setAttribute('aria-haspopup', 'menu');
     button.setAttribute('aria-expanded', 'false');
-    button.title = 'Use voice input or listen to the latest UNBOUND AI answer';
+    button.title = 'Use U.S. English voice input or listen to the latest UNBOUND AI answer';
 
     const menu = document.createElement('div');
     menu.className = 'voice-listen-menu';
