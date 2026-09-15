@@ -28,8 +28,11 @@ assert(mobileVoiceSource.includes('sawStreamDelta = true'), 'mobile streaming mu
 assert(mobileVoiceSource.includes('detail.done && !sawStreamDelta'), 'completion must not replay the whole answer after streamed speech');
 assert(mobileVoiceSource.includes("unbound.voice.systemVoiceURI"), 'mobile playback must reuse the saved device voice');
 assert(mobileVoiceSource.includes('speechSynthesis.getVoices()'), 'mobile playback must enumerate device voices');
+assert(mobileVoiceSource.includes('JSON.stringify(['), 'mobile device voice key must distinguish multiple entries from the same Android TTS engine');
+assert(mobileVoiceSource.includes("String(voice?.lang || '')"), 'mobile voice key must include each selected voice language tag');
 assert(mobileVoiceSource.includes('utterance.voice = voice'), 'mobile playback must use the selected device voice');
-assert(!mobileVoiceSource.includes('utterance.lang ='), 'mobile playback must not force playback language');
+assert(mobileVoiceSource.includes('utterance.lang = lang'), 'Android Chrome must receive the selected voice language tag to activate the correct voice');
+assert(mobileVoiceSource.includes('utterance.voiceURI = uri'), 'Android Chrome should receive the selected voice URI compatibility hint');
 assert(!mobileVoiceSource.includes('navigator.language'), 'mobile playback must not inherit the OS/browser language setting');
 assert(!mobileVoiceSource.includes('/api/voice/natural-speech'), 'mobile playback must remain local and not call cloud TTS');
 assert(mobileVoiceSource.includes('unbound:device-voice-changed'), 'mobile playback should refresh when the selected device voice changes');
@@ -48,4 +51,4 @@ assert(
 );
 assert.strictEqual(integrateNativeShellServerSource(integrated), integrated, 'native shell integration must remain idempotent');
 
-console.log('PASS mobile voice fast path: canonical text, progressive speech, selected operating-system voice playback, TTS prewarm, no legacy observer, no duplicate completion replay.');
+console.log('PASS mobile voice fast path: canonical text, progressive speech, distinct Android operating-system voice playback, TTS prewarm, no legacy observer, no duplicate completion replay.');
