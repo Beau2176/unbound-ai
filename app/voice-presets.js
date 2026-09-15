@@ -1,38 +1,20 @@
 (() => {
-  const STYLE_ID = 'unbound-voice-presets-v110';
+  'use strict';
+
+  const STYLE_ID = 'unbound-device-voices-v1';
   const SELECT_ID = 'unboundVoicePreset';
-  const STORAGE_KEY = 'unbound.voice.preset';
+  const VOICE_STORAGE_KEY = 'unbound.voice.systemVoiceURI';
   const AUTO_READ_ACTION_ID = 'unboundVoiceAutoRead';
   const AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead';
   const AUTO_READ_SETTLE_MS = 700;
-  const CLOUD_SPEECH_URL = '/api/voice/natural-speech';
-  const DEFAULT_PRESET_ID = 'clear';
-  const CLEAR_PRESET = {
-    id: 'clear',
-    label: 'Voice 2 — Clear',
-    provider: 'browser',
-    rate: 1.0,
-    pitch: 1.0,
-    preferred: ['Google US English', 'Sonia', 'Serena', 'Libby', 'Hazel', 'Susan']
-  };
-  const PRESETS = [
-    { id: 'marin', label: 'Voice 1 — Marin', provider: 'openai' },
-    CLEAR_PRESET,
-    { id: 'cedar', label: 'Voice 3 — Cedar', provider: 'openai' },
-    { id: 'coral', label: 'Voice 4 — Coral', provider: 'openai' },
-    { id: 'nova', label: 'Voice 5 — Nova', provider: 'openai' }
-  ];
-  const NORMAL_NOTE = 'Voice 2 — Clear stays local and instant. Marin, Cedar, Coral, and Nova use OpenAI speech and fall back to Voice 2 if cloud speech is unavailable.';
+  const NORMAL_NOTE = 'Playback uses a voice exposed by this phone or computer. UNBOUND does not use the operating-system language setting to choose a playback language.';
 
   let speaking = false;
-  let cachedVoice = null;
   let priming = false;
   let enginePrimed = false;
+  let selectedVoiceKey = '';
+  let cachedVoice = null;
   let previewStartedOnPointerDown = false;
-  let selectedPresetId = DEFAULT_PRESET_ID;
-  let activeAudio = null;
-  let activeAudioUrl = '';
-  let playbackSerial = 0;
   let noteTimer = null;
   let autoReadEnabled = false;
   let autoReadTimer = null;
@@ -40,249 +22,67 @@
   let autoReadLastText = '';
   let autoReadSawBusy = false;
 
+  function storageGet(key) {
+    try { return String(window.localStorage.getItem(key) || ''); } catch (_) { return ''; }
+  }
+
+  function storageSet(key, value) {
+    try { window.localStorage.setItem(key, String(value || '')); } catch (_) {}
+  }
+
+  function voiceKey(voice) {
+    return String(voice?.voiceURI || voice?.name || '').trim();
+  }
+
+  function systemVoices() {
+    if (!('speechSynthesis' in window)) return [];
+    try { return (window.speechSynthesis.getVoices() || []).slice(); }
+    catch (_) { return []; }
+  }
+
+  function resolveVoice() {
+    const voices = systemVoices();
+    if (!voices.length) {
+      cachedVoice = null;
+      return null;
+    }
+
+    const wanted = selectedVoiceKey || storageGet(VOICE_STORAGE_KEY);
+    let voice = wanted ? voices.find((item) => voiceKey(item) === wanted) : null;
+    if (!voice) voice = voices.find((item) => item?.default) || voices[0] || null;
+    cachedVoice = voice;
+    selectedVoiceKey = voiceKey(voice);
+    if (selectedVoiceKey) storageSet(VOICE_STORAGE_KEY, selectedVoiceKey);
+    return cachedVoice;
+  }
+
+  function currentVoice() {
+    if (cachedVoice && voiceKey(cachedVoice) === (selectedVoiceKey || storageGet(VOICE_STORAGE_KEY))) return cachedVoice;
+    return resolveVoice();
+  }
+
+  function setSelectedVoice(key) {
+    selectedVoiceKey = String(key || '').trim();
+    storageSet(VOICE_STORAGE_KEY, selectedVoiceKey);
+    cachedVoice = null;
+    enginePrimed = false;
+    return resolveVoice();
+  }
+
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = [
-      '.voice-listen-menu{min-width:250px;}',
+      '.voice-listen-menu{min-width:270px;}',
       '.unbound-voice-picker{margin:5px 3px 7px;padding:9px;border:1px solid rgba(107,193,255,.22);border-radius:11px;background:rgba(66,165,255,.06);}',
       '.unbound-voice-picker label{display:block;margin-bottom:6px;color:#b9d9ef;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;}',
       '.unbound-voice-picker select{width:100%;min-height:38px;padding:7px 9px;border:1px solid rgba(107,193,255,.32);border-radius:9px;background:#08111f;color:#f7fbff;font:inherit;font-size:13px;}',
       '.unbound-voice-picker-note{margin:6px 1px 0;color:#8ea9bb;font-size:10px;line-height:1.35;}',
       '.voice-listen-action[data-auto-read="true"]{background:rgba(101,232,164,.13);color:#baf8d7;}',
-      '@media (max-width:760px){.voice-listen-menu{min-width:230px;}}'
+      '@media (max-width:760px){.voice-listen-menu{min-width:240px;max-width:min(92vw,340px);}}'
     ].join('');
     document.head.appendChild(style);
-  }
-
-  function presetById(id) {
-    return PRESETS.find((preset) => preset.id === id) || CLEAR_PRESET;
-  }
-
-  function loadSavedPreset() {
-    try {
-      const saved = String(window.localStorage.getItem(STORAGE_KEY) || '').trim().toLowerCase();
-      if (PRESETS.some((preset) => preset.id === saved)) return saved;
-    } catch (_) {}
-    return DEFAULT_PRESET_ID;
-  }
-
-  function savePreset(id) {
-    selectedPresetId = presetById(id).id;
-    try { window.localStorage.setItem(STORAGE_KEY, selectedPresetId); } catch (_) {}
-  }
-
-  function loadAutoReadPreference() {
-    try { return window.localStorage.getItem(AUTO_READ_STORAGE_KEY) === 'true'; }
-    catch (_) { return false; }
-  }
-
-  function saveAutoReadPreference(enabled) {
-    try { window.localStorage.setItem(AUTO_READ_STORAGE_KEY, enabled ? 'true' : 'false'); } catch (_) {}
-  }
-
-  function voiceScore(voice) {
-    const name = String((voice && voice.name) || '');
-    const lang = String((voice && voice.lang) || '');
-    let score = 0;
-    if (/natural/i.test(name)) score += 500;
-    if (/neural/i.test(name)) score += 450;
-    if (/online/i.test(name)) score += 300;
-    if (/google/i.test(name)) score += 250;
-    if (/microsoft/i.test(name)) score += 180;
-    if (/enhanced|premium/i.test(name)) score += 160;
-    if (/^en(?:-|$)/i.test(lang)) score += 80;
-    if (voice && voice.default) score += 25;
-    return score;
-  }
-
-  function englishVoices() {
-    if (!('speechSynthesis' in window)) return [];
-    const all = window.speechSynthesis.getVoices() || [];
-    const english = all.filter((voice) => /^en(?:-|$)/i.test(String(voice.lang || '')));
-    return (english.length ? english : all).slice().sort((a, b) => voiceScore(b) - voiceScore(a));
-  }
-
-  function refreshVoiceCache() {
-    const voices = englishVoices();
-    if (!voices.length) {
-      cachedVoice = null;
-      return null;
-    }
-    for (const preferred of CLEAR_PRESET.preferred) {
-      const wanted = preferred.toLowerCase();
-      const match = voices.find((voice) => String(voice.name || '').toLowerCase().includes(wanted));
-      if (match) {
-        cachedVoice = match;
-        return cachedVoice;
-      }
-    }
-    cachedVoice = voices[0] || null;
-    return cachedVoice;
-  }
-
-  function resolveVoice() {
-    return cachedVoice || refreshVoiceCache();
-  }
-
-  function primeVoiceList() {
-    if (!('speechSynthesis' in window)) return;
-    try { window.speechSynthesis.getVoices(); } catch (_) {}
-    refreshVoiceCache();
-  }
-
-  function primeSpeechEngine() {
-    if (
-      enginePrimed ||
-      priming ||
-      speaking ||
-      !('speechSynthesis' in window) ||
-      typeof window.SpeechSynthesisUtterance !== 'function'
-    ) return;
-
-    const synth = window.speechSynthesis;
-    if (synth.speaking || synth.pending) return;
-
-    primeVoiceList();
-    const voice = resolveVoice();
-    const warmup = new window.SpeechSynthesisUtterance('.');
-    if (voice) warmup.voice = voice;
-    warmup.lang = (voice && voice.lang) || 'en-US';
-    warmup.rate = 10;
-    warmup.pitch = CLEAR_PRESET.pitch;
-    warmup.volume = 0;
-
-    const finishPrime = () => {
-      priming = false;
-      enginePrimed = true;
-    };
-    warmup.onstart = () => { enginePrimed = true; };
-    warmup.onend = finishPrime;
-    warmup.onerror = () => { priming = false; };
-
-    priming = true;
-    try {
-      synth.speak(warmup);
-    } catch (_) {
-      priming = false;
-    }
-  }
-
-  function cleanText(value) {
-    return String(value || '')
-      .replace(/https?:\/\/\S+/g, ' link ')
-      .replace(/[*_#>|]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  function splitText(value, limit) {
-    const text = cleanText(value);
-    if (!text) return [];
-    const maxLength = limit || 560;
-    const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
-    const chunks = [];
-    let current = '';
-    for (const raw of sentences) {
-      const sentence = raw.trim();
-      if (!sentence) continue;
-      const combined = (current + ' ' + sentence).trim();
-      if (combined.length <= maxLength) {
-        current = combined;
-        continue;
-      }
-      if (current) chunks.push(current);
-      current = sentence;
-    }
-    if (current) chunks.push(current);
-    return chunks;
-  }
-
-  function stopBrowserSpeech() {
-    if (!('speechSynthesis' in window)) {
-      speaking = false;
-      priming = false;
-      return;
-    }
-    const synth = window.speechSynthesis;
-    const hasActiveSpeech = speaking || synth.speaking || synth.pending;
-    speaking = false;
-    priming = false;
-    if (hasActiveSpeech) synth.cancel();
-  }
-
-  function stopRealBrowserSpeech() {
-    if (!('speechSynthesis' in window)) return;
-    const synth = window.speechSynthesis;
-    const realSpeechActive = speaking || ((synth.speaking || synth.pending) && !priming);
-    if (realSpeechActive) stopBrowserSpeech();
-  }
-
-  function stopCloudAudio() {
-    if (activeAudio) {
-      try {
-        activeAudio.pause();
-        activeAudio.currentTime = 0;
-      } catch (_) {}
-      activeAudio = null;
-    }
-    if (activeAudioUrl) {
-      try { URL.revokeObjectURL(activeAudioUrl); } catch (_) {}
-      activeAudioUrl = '';
-    }
-  }
-
-  function stopAllPlayback() {
-    playbackSerial += 1;
-    stopCloudAudio();
-    stopBrowserSpeech();
-  }
-
-  function speakBrowser(text, onDone) {
-    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function') return false;
-    const chunks = splitText(text, 560);
-    if (!chunks.length) return false;
-
-    const synth = window.speechSynthesis;
-    const realSpeechActive = speaking || ((synth.speaking || synth.pending) && !priming);
-    if (realSpeechActive) stopBrowserSpeech();
-    if (synth.paused) {
-      try { synth.resume(); } catch (_) {}
-    }
-
-    speaking = true;
-    const voice = resolveVoice();
-    let index = 0;
-
-    function finish() {
-      speaking = false;
-      if (typeof onDone === 'function') onDone();
-    }
-
-    function next() {
-      if (!speaking) return;
-      if (index >= chunks.length) return finish();
-      const utterance = new window.SpeechSynthesisUtterance(chunks[index]);
-      if (voice) utterance.voice = voice;
-      utterance.lang = (voice && voice.lang) || 'en-US';
-      utterance.rate = CLEAR_PRESET.rate;
-      utterance.pitch = CLEAR_PRESET.pitch;
-      utterance.volume = 1;
-      utterance.onstart = () => {
-        enginePrimed = true;
-        priming = false;
-      };
-      utterance.onend = () => {
-        index += 1;
-        window.setTimeout(next, 5);
-      };
-      utterance.onerror = finish;
-      synth.speak(utterance);
-    }
-
-    next();
-    return true;
   }
 
   function setNote(note, message, temporaryMs) {
@@ -300,83 +100,98 @@
     }
   }
 
-  async function speakOpenAi(text, preset, token, note, onDone) {
-    const input = cleanText(text).slice(0, 4096);
-    if (!input) return false;
-
-    try {
-      const response = await window.fetch(CLOUD_SPEECH_URL, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: input, preset: preset.id })
-      });
-
-      if (token !== playbackSerial) return false;
-      if (!response.ok) {
-        const error = new Error('OpenAI speech request failed.');
-        error.status = response.status;
-        throw error;
-      }
-
-      const blob = await response.blob();
-      if (token !== playbackSerial) return false;
-      if (!blob || !blob.size) throw new Error('OpenAI speech returned no audio.');
-
-      stopCloudAudio();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      activeAudio = audio;
-      activeAudioUrl = url;
-      audio.onended = () => {
-        if (activeAudio === audio) stopCloudAudio();
-        if (typeof onDone === 'function') onDone();
-      };
-      audio.onerror = () => {
-        if (activeAudio === audio) stopCloudAudio();
-      };
-      await audio.play();
-      return true;
-    } catch (error) {
-      if (token !== playbackSerial) return false;
-      const reason = error && error.status === 429 ? 'OpenAI voice limit reached' : 'OpenAI voice unavailable';
-      setNote(note, reason + ' — playing Voice 2 — Clear instead.', 5000);
-      primeSpeechEngine();
-      return speakBrowser(text, onDone);
-    }
+  function cleanText(value) {
+    return String(value || '')
+      .replace(/\[Response interrupted before completion\.\]/gi, ' ')
+      .replace(/https?:\/\/\S+/g, ' link ')
+      .replace(/[*_#>|]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
-  function speakSelected(text, note, onDone) {
-    const preset = presetById(selectedPresetId);
-    playbackSerial += 1;
-    const token = playbackSerial;
-    stopCloudAudio();
+  function splitText(value, limit = 560) {
+    const text = cleanText(value);
+    if (!text) return [];
+    const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+    const chunks = [];
+    let current = '';
+    for (const raw of sentences) {
+      const sentence = raw.trim();
+      if (!sentence) continue;
+      const combined = `${current} ${sentence}`.trim();
+      if (combined.length <= limit) current = combined;
+      else {
+        if (current) chunks.push(current);
+        current = sentence;
+      }
+    }
+    if (current) chunks.push(current);
+    return chunks;
+  }
 
-    if (preset.provider === 'browser') {
-      setNote(note, NORMAL_NOTE);
-      return speakBrowser(text, onDone);
+  function stopBrowserSpeech() {
+    speaking = false;
+    priming = false;
+    if (!('speechSynthesis' in window)) return;
+    try { window.speechSynthesis.cancel(); } catch (_) {}
+  }
+
+  function primeSpeechEngine() {
+    if (enginePrimed || priming || speaking || !('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function') return;
+    const synth = window.speechSynthesis;
+    if (synth.speaking || synth.pending) return;
+    const voice = currentVoice();
+    const warmup = new window.SpeechSynthesisUtterance('.');
+    if (voice) warmup.voice = voice;
+    warmup.rate = 10;
+    warmup.pitch = 1;
+    warmup.volume = 0;
+    const finish = () => { priming = false; enginePrimed = true; };
+    warmup.onstart = () => { enginePrimed = true; };
+    warmup.onend = finish;
+    warmup.onerror = () => { priming = false; };
+    priming = true;
+    try { synth.speak(warmup); } catch (_) { priming = false; }
+  }
+
+  function speakBrowser(text, onDone) {
+    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function') return false;
+    const chunks = splitText(text);
+    if (!chunks.length) return false;
+    const synth = window.speechSynthesis;
+    try { synth.cancel(); } catch (_) {}
+    if (synth.paused) {
+      try { synth.resume(); } catch (_) {}
+    }
+    const voice = currentVoice();
+    speaking = true;
+    let index = 0;
+
+    function finish() {
+      speaking = false;
+      if (typeof onDone === 'function') onDone();
     }
 
-    stopRealBrowserSpeech();
-    setNote(note, 'Loading ' + preset.label.replace(/^Voice \d+ — /, '') + ' from OpenAI…');
-    void speakOpenAi(text, preset, token, note, onDone);
+    function next() {
+      if (!speaking) return;
+      if (index >= chunks.length) return finish();
+      const utterance = new window.SpeechSynthesisUtterance(chunks[index]);
+      if (voice) utterance.voice = voice;
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      utterance.onstart = () => { enginePrimed = true; priming = false; };
+      utterance.onend = () => { index += 1; window.setTimeout(next, 5); };
+      utterance.onerror = finish;
+      try { synth.speak(utterance); } catch (_) { finish(); }
+    }
+
+    next();
     return true;
   }
 
-  function previewText() {
-    const preset = presetById(selectedPresetId);
-    if (preset.id === 'clear') return 'Voice 2 — Clear. This is UNBOUND AI.';
-    return preset.label.replace(/^Voice \d+ — /, '') + '. This is UNBOUND AI.';
-  }
-
   function getLastAssistantText() {
-    const selectors = [
-      '[data-role="assistant"]',
-      '.message.assistant',
-      '.assistant-message',
-      '.messages .assistant',
-      '.messages .message'
-    ];
+    const selectors = ['[data-role="assistant"]', '.message.assistant', '.assistant-message', '.messages .assistant', '.messages .message'];
     for (const selector of selectors) {
       const nodes = Array.from(document.querySelectorAll(selector));
       for (let index = nodes.length - 1; index >= 0; index -= 1) {
@@ -384,7 +199,8 @@
         const role = String(node.getAttribute('data-role') || '').toLowerCase();
         const className = String(node.className || '').toLowerCase();
         if (selector === '.messages .message' && !(role === 'assistant' || className.includes('assistant') || className.includes('ai'))) continue;
-        const text = String(node.innerText || node.textContent || '').trim();
+        const canonical = String(node.dataset?.speechText || '').trim();
+        const text = canonical || String(node.innerText || node.textContent || '').trim();
         if (text) return text;
       }
     }
@@ -403,25 +219,12 @@
   async function hasAutoReadAccess() {
     try {
       const response = await window.fetch('/api/account/access', {
-        method: 'GET',
-        credentials: 'same-origin',
-        headers: { Accept: 'application/json' }
+        method: 'GET', credentials: 'same-origin', headers: { Accept: 'application/json' }
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        return {
-          allowed: false,
-          message: response.status === 401
-            ? 'Sign in before enabling Auto-Read Replies.'
-            : (payload.error || 'Could not verify Voice access.')
-        };
-      }
-      const capabilities = payload?.access?.capabilities || [];
-      const voice = capabilities.find((item) => item?.key === 'voice');
-      return {
-        allowed: Boolean(voice?.usable),
-        message: voice?.usable ? '' : 'Auto-Read Replies requires Premium or Ultra Voice access.'
-      };
+      if (!response.ok) return { allowed: false, message: response.status === 401 ? 'Sign in before enabling Auto-Read Replies.' : (payload.error || 'Could not verify Voice access.') };
+      const voice = (payload?.access?.capabilities || []).find((item) => item?.key === 'voice');
+      return { allowed: Boolean(voice?.usable), message: voice?.usable ? '' : 'Auto-Read Replies requires Premium or Ultra Voice access.' };
     } catch (_) {
       return { allowed: false, message: 'Could not verify Voice access right now.' };
     }
@@ -434,11 +237,13 @@
     action.textContent = autoReadEnabled ? '🔊 Auto-read new replies: ON' : '🔊 Auto-read new replies: OFF';
   }
 
-  function speakAutoReadReply(text, note) {
-    if (!autoReadEnabled || handsFreeActive()) return false;
-    setNote(note, 'Auto-read always uses local Voice 2 — Clear, so it does not create cloud speech charges.', 5000);
-    primeSpeechEngine();
-    return speakBrowser(text);
+  function scheduleAutoRead(note, delay = AUTO_READ_SETTLE_MS) {
+    if (!autoReadEnabled) return;
+    if (autoReadTimer) window.clearTimeout(autoReadTimer);
+    autoReadTimer = window.setTimeout(() => {
+      autoReadTimer = null;
+      maybeAutoRead(note);
+    }, delay);
   }
 
   function maybeAutoRead(note) {
@@ -454,45 +259,32 @@
       autoReadSawBusy = false;
       return;
     }
-    if (/Response interrupted before completion/i.test(text)) {
-      autoReadLastText = text;
-      autoReadSawBusy = false;
-      return;
-    }
-    autoReadLastText = text;
     autoReadSawBusy = false;
-    speakAutoReadReply(text, note);
-  }
-
-  function scheduleAutoRead(note, delay = AUTO_READ_SETTLE_MS) {
-    if (!autoReadEnabled) return;
-    if (autoReadTimer) window.clearTimeout(autoReadTimer);
-    autoReadTimer = window.setTimeout(() => {
-      autoReadTimer = null;
-      maybeAutoRead(note);
-    }, delay);
+    autoReadLastText = text;
+    if (/Response interrupted before completion/i.test(text)) return;
+    const voice = currentVoice();
+    setNote(note, voice ? `Auto-reading with device voice: ${voice.name}` : 'Auto-reading with the device speech engine.', 4500);
+    primeSpeechEngine();
+    speakBrowser(text);
   }
 
   async function setAutoReadEnabled(enabled, action, note, persist = true) {
     if (!enabled) {
       autoReadEnabled = false;
       autoReadSawBusy = false;
-      if (autoReadTimer) {
-        window.clearTimeout(autoReadTimer);
-        autoReadTimer = null;
-      }
-      if (persist) saveAutoReadPreference(false);
+      if (autoReadTimer) window.clearTimeout(autoReadTimer);
+      autoReadTimer = null;
+      if (persist) storageSet(AUTO_READ_STORAGE_KEY, 'false');
       updateAutoReadAction(action);
-      setNote(note, 'Auto-read is off. Manual voice playback and Hands-Free are still available.', 4000);
+      setNote(note, 'Auto-read is off.', 3500);
       return false;
     }
 
-    setNote(note, 'Checking Premium/Ultra Voice access…');
+    setNote(note, 'Checking Voice access…');
     const access = await hasAutoReadAccess();
     if (!access.allowed) {
       autoReadEnabled = false;
-      autoReadSawBusy = false;
-      if (persist) saveAutoReadPreference(false);
+      if (persist) storageSet(AUTO_READ_STORAGE_KEY, 'false');
       updateAutoReadAction(action);
       setNote(note, access.message || 'Auto-read is unavailable.', 5000);
       return false;
@@ -500,11 +292,12 @@
 
     autoReadEnabled = true;
     autoReadSawBusy = false;
-    if (persist) saveAutoReadPreference(true);
+    if (persist) storageSet(AUTO_READ_STORAGE_KEY, 'true');
     autoReadLastText = getLastAssistantText();
     updateAutoReadAction(action);
     primeSpeechEngine();
-    setNote(note, 'Auto-read is on. New completed replies will play automatically with local Voice 2 — Clear.', 5000);
+    const voice = currentVoice();
+    setNote(note, voice ? `Auto-read is on with device voice: ${voice.name}` : 'Auto-read is on with the device speech engine.', 5000);
     return true;
   }
 
@@ -520,6 +313,32 @@
     });
   }
 
+  function populateVoiceSelect(select) {
+    const voices = systemVoices();
+    const previous = selectedVoiceKey || storageGet(VOICE_STORAGE_KEY);
+    select.replaceChildren();
+    if (!voices.length) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'Device default voice';
+      select.appendChild(option);
+      select.disabled = true;
+      return;
+    }
+    select.disabled = false;
+    voices.forEach((voice, index) => {
+      const option = document.createElement('option');
+      option.value = voiceKey(voice);
+      option.textContent = `${voice.name}${voice.default ? ' — device default' : ''}`;
+      select.appendChild(option);
+    });
+    const selected = voices.find((voice) => voiceKey(voice) === previous)
+      || voices.find((voice) => voice.default)
+      || voices[0];
+    setSelectedVoice(voiceKey(selected));
+    select.value = selectedVoiceKey;
+  }
+
   function closeVoiceMenu(button, menu) {
     menu.hidden = true;
     button.setAttribute('aria-expanded', 'false');
@@ -530,48 +349,40 @@
     const button = document.getElementById('unboundVoiceListenButton');
     if (!button) return false;
     const wrap = button.closest('.voice-listen-wrap');
-    if (!wrap) return false;
-    const menu = wrap.querySelector('.voice-listen-menu');
+    const menu = wrap?.querySelector('.voice-listen-menu');
     if (!menu) return false;
 
     injectStyles();
-    selectedPresetId = loadSavedPreset();
-    savePreset(selectedPresetId);
-    primeVoiceList();
+    selectedVoiceKey = storageGet(VOICE_STORAGE_KEY);
+    resolveVoice();
 
     const actions = Array.from(menu.querySelectorAll('.voice-listen-action'));
-    const listenAction = actions.find((item) => String(item.textContent || '').includes('Listen to last answer')) || null;
+    const listenAction = actions.find((item) => /Listen to last answer/i.test(String(item.textContent || ''))) || null;
 
     const picker = document.createElement('div');
     picker.className = 'unbound-voice-picker';
     const label = document.createElement('label');
     label.setAttribute('for', SELECT_ID);
-    label.textContent = 'Spoken answer voice';
+    label.textContent = 'Device playback voice';
     const select = document.createElement('select');
     select.id = SELECT_ID;
-    select.setAttribute('aria-label', 'Spoken answer voice');
-    for (const preset of PRESETS) {
-      const option = document.createElement('option');
-      option.value = preset.id;
-      option.textContent = preset.label;
-      select.appendChild(option);
-    }
-    select.value = selectedPresetId;
+    select.setAttribute('aria-label', 'Device playback voice');
     const note = document.createElement('div');
     note.className = 'unbound-voice-picker-note';
     note.textContent = NORMAL_NOTE;
     picker.append(label, select, note);
+    populateVoiceSelect(select);
 
     const preview = document.createElement('button');
     preview.type = 'button';
     preview.className = 'voice-listen-action';
-    preview.textContent = '▶ Preview selected voice';
+    preview.textContent = '▶ Preview selected device voice';
 
     const autoReadAction = document.createElement('button');
     autoReadAction.type = 'button';
     autoReadAction.id = AUTO_READ_ACTION_ID;
     autoReadAction.className = 'voice-listen-action';
-    autoReadAction.title = 'Automatically read future completed replies with local Voice 2 — Clear.';
+    autoReadAction.title = 'Automatically read completed replies with the selected device voice.';
     updateAutoReadAction(autoReadAction);
 
     if (listenAction) {
@@ -583,11 +394,12 @@
     }
 
     select.addEventListener('change', () => {
-      stopAllPlayback();
-      savePreset(select.value);
-      select.value = selectedPresetId;
-      setNote(note, NORMAL_NOTE);
+      stopBrowserSpeech();
+      const voice = setSelectedVoice(select.value);
+      select.value = selectedVoiceKey;
+      setNote(note, voice ? `Playback voice: ${voice.name}` : NORMAL_NOTE, 4500);
       primeSpeechEngine();
+      window.dispatchEvent(new CustomEvent('unbound:device-voice-changed', { detail: { voiceKey: selectedVoiceKey } }));
     });
 
     button.addEventListener('pointerenter', primeSpeechEngine, { passive: true });
@@ -597,9 +409,8 @@
     preview.addEventListener('pointerdown', (event) => {
       if (typeof event.button === 'number' && event.button !== 0) return;
       previewStartedOnPointerDown = true;
-      speakSelected(previewText(), note);
+      speakBrowser('This is UNBOUND AI using your selected device voice.');
     });
-
     preview.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -607,7 +418,7 @@
         previewStartedOnPointerDown = false;
         return;
       }
-      speakSelected(previewText(), note);
+      speakBrowser('This is UNBOUND AI using your selected device voice.');
     });
 
     autoReadAction.addEventListener('click', (event) => {
@@ -623,36 +434,41 @@
         event.preventDefault();
         event.stopImmediatePropagation();
         closeVoiceMenu(button, menu);
-        speakSelected(text, note);
+        speakBrowser(text);
       }, true);
     }
 
-    function refreshTitle() {
-      const voice = refreshVoiceCache();
+    function refreshVoiceList() {
+      cachedVoice = null;
       enginePrimed = false;
-      const preset = presetById(selectedPresetId);
-      select.title = preset.provider === 'browser'
-        ? (voice ? 'Using ' + voice.name : 'Using browser default voice')
-        : 'Using OpenAI ' + preset.label.replace(/^Voice \d+ — /, '');
+      populateVoiceSelect(select);
       window.setTimeout(primeSpeechEngine, 0);
     }
-    refreshTitle();
+
     if ('speechSynthesis' in window && typeof window.speechSynthesis.addEventListener === 'function') {
-      window.speechSynthesis.addEventListener('voiceschanged', refreshTitle);
+      window.speechSynthesis.addEventListener('voiceschanged', refreshVoiceList);
     }
 
     autoReadLastText = getLastAssistantText();
     startAutoReadObserver(note);
-    if (loadAutoReadPreference()) {
-      void setAutoReadEnabled(true, autoReadAction, note, false);
-    }
+    if (storageGet(AUTO_READ_STORAGE_KEY) === 'true') void setAutoReadEnabled(true, autoReadAction, note, false);
+
+    window.__unboundDeviceVoice = {
+      storageKey: VOICE_STORAGE_KEY,
+      getVoices: systemVoices,
+      getVoice: currentVoice,
+      setVoice: setSelectedVoice,
+      speak: speakBrowser
+    };
 
     window.setTimeout(primeSpeechEngine, 0);
     return true;
   }
 
   function boot() {
-    primeVoiceList();
+    if ('speechSynthesis' in window) {
+      try { window.speechSynthesis.getVoices(); } catch (_) {}
+    }
     if (mount()) return;
     let attempts = 0;
     const timer = window.setInterval(() => {
@@ -661,9 +477,6 @@
     }, 125);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot, { once: true });
-  } else {
-    boot();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
 })();
