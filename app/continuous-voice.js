@@ -6,6 +6,8 @@
   const STYLE_ID = 'unbound-hands-free-v099';
   const MAX_NO_SPEECH_RETRIES = 3;
   const REPLY_TIMEOUT_MS = 180000;
+  const POST_SPEECH_LISTEN_DELAY_MS = 1100;
+  const ECHO_GUARD_MS = 6000;
   const VOICE2_PREFERRED = ['Google US English', 'Sonia', 'Serena', 'Libby', 'Hazel', 'Susan'];
 
   let active = false;
@@ -15,6 +17,8 @@
   let noSpeechRetries = 0;
   let restartTimer = null;
   let cachedVoice = null;
+  let lastSpokenReply = '';
+  let lastSpokenAt = 0;
 
   function RecognitionCtor() {
     return window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -110,6 +114,8 @@
     active = false;
     phase = 'idle';
     noSpeechRetries = 0;
+    lastSpokenReply = '';
+    lastSpokenAt = 0;
     clearRestartTimer();
     stopRecognition();
     stopSpeech();
@@ -189,6 +195,28 @@
       .replace(/[*_#>|]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  function normalizeRecognitionText(value) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9'\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function looksLikeRecentEcho(value) {
+    if (!lastSpokenReply || !lastSpokenAt || Date.now() - lastSpokenAt > ECHO_GUARD_MS) return false;
+    const heard = normalizeRecognitionText(value);
+    const spoken = normalizeRecognitionText(lastSpokenReply);
+    if (!heard || !spoken || heard.length < 8) return false;
+    if (spoken.includes(heard) || heard.includes(spoken)) return true;
+
+    const heardWords = heard.split(' ').filter((word) => word.length > 1);
+    const spokenWords = new Set(spoken.split(' ').filter((word) => word.length > 1));
+    if (heardWords.length < 3 || !spokenWords.size) return false;
+    const overlap = heardWords.filter((word) => spokenWords.has(word)).length / heardWords.length;
+    return overlap >= 0.72;
   }
 
   function splitSpeech(value, limit = 560) {
@@ -327,6 +355,11 @@
       stopHandsFree('Hands-Free Conversation stopped by voice command.');
       return;
     }
+    if (looksLikeRecentEcho(text)) {
+      setStatus('Ignored UNBOUND AI hearing its own reply. Listening for you again…', 'active');
+      scheduleListen(token, 700);
+      return;
+    }
 
     textarea.value = text.trim();
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -354,14 +387,19 @@
 
     phase = 'speaking';
     setStatus('UNBOUND AI is speaking with Voice 2 — Clear…', 'active');
+    lastSpokenReply = cleanSpeechText(reply.text);
+    lastSpokenAt = 0;
     const spoken = await speakVoice2(reply.text, token);
     if (!active || token !== generation) return;
     if (!spoken) {
+      lastSpokenReply = '';
+      lastSpokenAt = 0;
       setStatus('Voice 2 playback was unavailable. Listening again…', 'error');
     } else {
+      lastSpokenAt = Date.now();
       setStatus('Reply finished. Listening for your next question…', 'active');
     }
-    scheduleListen(token, 300);
+    scheduleListen(token, POST_SPEECH_LISTEN_DELAY_MS);
   }
 
   function startListening(token = generation) {
@@ -377,19 +415,24 @@
       scheduleListen(token, 500);
       return;
     }
+    if ('speechSynthesis' in window && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
+      setStatus('Finishing UNBOUND AI playback before reopening the microphone…', 'active');
+      scheduleListen(token, 250);
+      return;
+    }
 
     let transcript = '';
     let failed = false;
     let noSpeech = false;
     const current = new Recognition();
     recognition = current;
-    current.lang = navigator.language || 'en-US';
-    current.interimResults = true;
+    current.lang = 'en-US';
+    current.interimResults = false;
     current.continuous = false;
     current.maxAlternatives = 1;
 
     phase = 'listening';
-    setStatus('Hands-Free is listening. Say “stop hands free” to end.', 'active');
+    setStatus('Hands-Free is listening in U.S. English. Say “stop hands free” to end.', 'active');
     const button = getVoiceButton();
     if (button) button.dataset.listening = 'true';
 
@@ -477,6 +520,8 @@
     active = true;
     phase = 'starting';
     noSpeechRetries = 0;
+    lastSpokenReply = '';
+    lastSpokenAt = 0;
     setConflictingActionsDisabled(true);
     setActionState();
     const menu = getMenu();
