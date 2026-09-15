@@ -25,7 +25,7 @@ assert(client.includes("item?.key === 'voice'"));
 assert(client.includes("Boolean(voice?.usable)"));
 assert(client.includes("requires Premium or Ultra Voice access"));
 
-// Playback must stay local and use the selected voice exposed by the operating system/browser.
+// Playback must stay local and use the exact selected voice exposed by the operating system/browser.
 assert(!client.includes("/api/voice/natural-speech"));
 assert(!client.includes("/api/voice/speech"));
 assert(!/heygen/i.test(client));
@@ -33,12 +33,15 @@ assert(!/openai/i.test(client));
 assert(client.includes("unbound.voice.systemVoiceURI"));
 assert(client.includes("speechSynthesis.getVoices()"));
 assert(client.includes("resolveDeviceVoice"));
+assert(client.includes("JSON.stringify(["));
+assert(client.includes("String(voice?.lang || '')"));
 assert(client.includes("new window.SpeechSynthesisUtterance"));
 assert(client.includes("utterance.voice = voice"));
-assert(!client.includes("utterance.lang ="));
+assert(client.includes("utterance.lang = lang"));
+assert(client.includes("utterance.voiceURI = uri"));
 assert(!client.includes("navigator.language"));
 
-// Recognition remains independently constrained while playback voice comes from the device.
+// Recognition remains independently constrained while playback voice comes from the selected device entry.
 assert(client.includes("current.lang = 'en-US'"));
 assert(client.includes("current.interimResults = false"));
 assert(client.includes("current.continuous = false"));
@@ -89,4 +92,4 @@ assert(integratedServer.includes('app.get("/continuous-voice.js"'));
 assert(integratedServer.includes('<script src="/continuous-voice.js?v=099" defer></script>'));
 assert(integratedServer.includes('Cache-Control", "no-cache, no-store, must-revalidate'));
 
-console.log("Hands-Free Conversation device-voice contract passed.");
+console.log("Hands-Free Conversation exact Android device-voice contract passed.");
