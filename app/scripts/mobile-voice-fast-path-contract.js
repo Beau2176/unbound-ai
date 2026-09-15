@@ -23,13 +23,16 @@ assert(mobileVoiceSource.includes("storageSet(LEGACY_AUTO_READ_STORAGE_KEY, 'fal
 assert(!mobileVoiceSource.includes('new MutationObserver'), 'mobile voice fast path must not use a broad DOM MutationObserver');
 assert(mobileVoiceSource.includes("document.addEventListener('pointerdown', prime"), 'mobile TTS must pre-warm from a user gesture');
 assert(mobileVoiceSource.includes("node.dataset.speechText"), 'manual mobile playback must prefer canonical raw answer text');
-assert(mobileVoiceSource.includes("event.stopImmediatePropagation()"), 'mobile voice controls must prevent legacy raw-DOM handlers from also firing');
+assert(mobileVoiceSource.includes("event.stopImmediatePropagation()"), 'mobile voice controls must prevent legacy handlers from also firing');
 assert(mobileVoiceSource.includes('sawStreamDelta = true'), 'mobile streaming must record that deltas were already consumed');
 assert(mobileVoiceSource.includes('detail.done && !sawStreamDelta'), 'completion must not replay the whole answer after streamed speech');
-assert(mobileVoiceSource.includes("/^en[-_]US$/i.test"), 'mobile playback must restrict local voices to U.S. English');
-assert(mobileVoiceSource.includes("warmup.lang = 'en-US'"), 'mobile TTS warmup must explicitly use U.S. English');
-assert(mobileVoiceSource.includes("utterance.lang = 'en-US'"), 'mobile TTS playback must explicitly use U.S. English');
-assert(!mobileVoiceSource.includes('english.length ? english : all'), 'mobile voice must never fall back from English to an arbitrary installed language');
+assert(mobileVoiceSource.includes("unbound.voice.systemVoiceURI"), 'mobile playback must reuse the saved device voice');
+assert(mobileVoiceSource.includes('speechSynthesis.getVoices()'), 'mobile playback must enumerate device voices');
+assert(mobileVoiceSource.includes('utterance.voice = voice'), 'mobile playback must use the selected device voice');
+assert(!mobileVoiceSource.includes('utterance.lang ='), 'mobile playback must not force playback language');
+assert(!mobileVoiceSource.includes('navigator.language'), 'mobile playback must not inherit the OS/browser language setting');
+assert(!mobileVoiceSource.includes('/api/voice/natural-speech'), 'mobile playback must remain local and not call cloud TTS');
+assert(mobileVoiceSource.includes('unbound:device-voice-changed'), 'mobile playback should refresh when the selected device voice changes');
 
 const marker = 'app.use("/api", createMaintenanceMiddleware());';
 const minimalServer = `const app = { use() {}, get() {} };\n${marker}\n`;
@@ -45,4 +48,4 @@ assert(
 );
 assert.strictEqual(integrateNativeShellServerSource(integrated), integrated, 'native shell integration must remain idempotent');
 
-console.log('PASS mobile voice fast path: canonical text, progressive speech, U.S. English language lock, TTS prewarm, no legacy observer, no duplicate completion replay, desktop/mobile runtime separation.');
+console.log('PASS mobile voice fast path: canonical text, progressive speech, selected operating-system voice playback, TTS prewarm, no legacy observer, no duplicate completion replay.');
