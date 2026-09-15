@@ -1,13 +1,12 @@
 (() => {
   'use strict';
 
-  const VERSION = 'unbound-mobile-voice-fast-path-v4';
+  const VERSION = 'unbound-mobile-voice-fast-path-v5';
   const SAFE_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead.safe.v2';
   const LEGACY_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead';
-  const CLOUD_SPEECH_URL = '/api/voice/natural-speech';
+  const VOICE_STORAGE_KEY = 'unbound.voice.systemVoiceURI';
   const MAX_CHUNK = 160;
   const FALLBACK_CHUNK = 96;
-  const VOICE_NAMES = ['Google US English', 'Sonia', 'Serena', 'Libby', 'Hazel', 'Susan'];
 
   const mobile = /Android|iPhone|iPad|iPod/i.test(String(navigator.userAgent || '')) ||
     Boolean(window.matchMedia?.('(pointer: coarse)').matches && window.innerWidth <= 900);
@@ -23,8 +22,6 @@
   let queue = [];
   let buffer = '';
   let sawStreamDelta = false;
-  let activeAudio = null;
-  let activeAudioUrl = '';
   let uiTimer = null;
 
   function storageGet(key) {
@@ -36,6 +33,29 @@
   }
 
   storageSet(LEGACY_AUTO_READ_STORAGE_KEY, 'false');
+
+  function voiceKey(voice) {
+    return String(voice?.voiceURI || voice?.name || '').trim();
+  }
+
+  function systemVoices() {
+    if (!('speechSynthesis' in window)) return [];
+    try { return (window.speechSynthesis.getVoices() || []).slice(); }
+    catch (_) { return []; }
+  }
+
+  function resolveVoice() {
+    const voices = systemVoices();
+    if (!voices.length) {
+      cachedVoice = null;
+      return null;
+    }
+    const wanted = String(storageGet(VOICE_STORAGE_KEY) || '').trim();
+    const selected = wanted ? voices.find((voice) => voiceKey(voice) === wanted) : null;
+    cachedVoice = selected || voices.find((voice) => voice?.default) || voices[0] || null;
+    if (cachedVoice && !wanted) storageSet(VOICE_STORAGE_KEY, voiceKey(cachedVoice));
+    return cachedVoice;
+  }
 
   function autoReadEnabled() {
     return storageGet(SAFE_AUTO_READ_STORAGE_KEY) === 'true';
@@ -63,33 +83,6 @@
       .trim();
   }
 
-  function voiceScore(voice) {
-    const name = String(voice?.name || '');
-    const lang = String(voice?.lang || '');
-    let score = 0;
-    if (/^en[-_]US$/i.test(lang)) score += 300;
-    if (/google/i.test(name)) score += 120;
-    if (/natural|neural|enhanced|premium/i.test(name)) score += 80;
-    if (voice?.default) score += 20;
-    return score;
-  }
-
-  function resolveVoice() {
-    if (cachedVoice) return cachedVoice;
-    if (!('speechSynthesis' in window)) return null;
-    const all = window.speechSynthesis.getVoices() || [];
-    const voices = all
-      .filter((voice) => /^en[-_]US$/i.test(String(voice.lang || '')))
-      .slice()
-      .sort((a, b) => voiceScore(b) - voiceScore(a));
-    for (const preferred of VOICE_NAMES) {
-      const wanted = preferred.toLowerCase();
-      const match = voices.find((voice) => String(voice.name || '').toLowerCase().includes(wanted));
-      if (match) return (cachedVoice = match);
-    }
-    return (cachedVoice = voices[0] || null);
-  }
-
   function prime() {
     if (primed || priming || speaking || !('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function') return;
     const synth = window.speechSynthesis;
@@ -97,7 +90,6 @@
     const voice = resolveVoice();
     const warmup = new window.SpeechSynthesisUtterance('.');
     if (voice) warmup.voice = voice;
-    warmup.lang = 'en-US';
     warmup.rate = 10;
     warmup.pitch = 1;
     warmup.volume = 0;
@@ -131,17 +123,6 @@
     return chunks;
   }
 
-  function stopCloudAudio() {
-    if (activeAudio) {
-      try { activeAudio.pause(); activeAudio.currentTime = 0; } catch (_) {}
-      activeAudio = null;
-    }
-    if (activeAudioUrl) {
-      try { URL.revokeObjectURL(activeAudioUrl); } catch (_) {}
-      activeAudioUrl = '';
-    }
-  }
-
   function reset({ cancelSpeech = true } = {}) {
     generation += 1;
     queue = [];
@@ -149,7 +130,6 @@
     sawStreamDelta = false;
     speaking = false;
     manualPlayback = false;
-    stopCloudAudio();
     if (cancelSpeech && 'speechSynthesis' in window) {
       try { window.speechSynthesis.cancel(); } catch (_) {}
     }
@@ -165,7 +145,6 @@
     const voice = resolveVoice();
     const utterance = new window.SpeechSynthesisUtterance(text);
     if (voice) utterance.voice = voice;
-    utterance.lang = 'en-US';
     utterance.rate = 1;
     utterance.pitch = 1;
     utterance.volume = 1;
@@ -249,55 +228,21 @@
     return '';
   }
 
-  function selectedPreset() {
-    return String(document.getElementById('unboundVoicePreset')?.value || 'clear').trim().toLowerCase() || 'clear';
-  }
-
   function setNote(message) {
     const note = document.querySelector('.unbound-voice-picker-note');
     if (note) note.textContent = message;
   }
 
-  async function speakSelected(text) {
-    const preset = selectedPreset();
-    if (preset === 'clear') {
-      setNote('Reading the raw UNBOUND answer with Voice 2 — Clear (U.S. English).');
-      return speakLocal(text);
-    }
-
-    reset();
-    const token = generation;
-    try {
-      setNote('Loading the selected voice…');
-      const response = await fetch(CLOUD_SPEECH_URL, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: clean(text).slice(0, 4096), preset, locale: 'en-US' })
-      });
-      if (token !== generation) return false;
-      if (!response.ok) throw new Error('cloud voice unavailable');
-      const blob = await response.blob();
-      if (token !== generation || !blob?.size) return false;
-      activeAudioUrl = URL.createObjectURL(blob);
-      activeAudio = new Audio(activeAudioUrl);
-      activeAudio.onended = stopCloudAudio;
-      activeAudio.onerror = stopCloudAudio;
-      await activeAudio.play();
-      return true;
-    } catch (_) {
-      if (token !== generation) return false;
-      setNote('Cloud voice was unavailable, so UNBOUND is using Voice 2 — Clear (U.S. English).');
-      return speakLocal(text);
-    }
+  function speakSelected(text) {
+    const voice = resolveVoice();
+    setNote(voice ? `Playing with device voice: ${voice.name}` : 'Playing with the device speech engine.');
+    return speakLocal(text);
   }
 
   async function hasVoiceAccess() {
     try {
       const response = await fetch('/api/account/access', {
-        method: 'GET',
-        credentials: 'same-origin',
-        headers: { Accept: 'application/json' }
+        method: 'GET', credentials: 'same-origin', headers: { Accept: 'application/json' }
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) return { allowed: false, message: response.status === 401 ? 'Sign in before enabling Auto-Read Replies.' : (payload.error || 'Could not verify Voice access.') };
@@ -334,7 +279,8 @@
     }
     setAutoReadEnabled(true);
     prime();
-    setNote('Auto-read is on. Mobile will read replies in U.S. English.');
+    const voice = resolveVoice();
+    setNote(voice ? `Auto-read is on with device voice: ${voice.name}` : 'Auto-read is on with the device speech engine.');
   }
 
   function closeVoiceMenu() {
@@ -364,13 +310,18 @@
       setNote('There is no completed UNBOUND AI answer to read yet.');
       return;
     }
-    void speakSelected(text);
+    speakSelected(text);
   }
 
   document.addEventListener('click', handleCapturedClick, true);
   document.addEventListener('pointerdown', prime, { passive: true, capture: true, once: true });
   document.addEventListener('touchstart', prime, { passive: true, capture: true, once: true });
   window.addEventListener('unbound:assistant-stream', onStream);
+  window.addEventListener('unbound:device-voice-changed', () => {
+    cachedVoice = null;
+    primed = false;
+    resolveVoice();
+  });
 
   if ('speechSynthesis' in window && typeof window.speechSynthesis.addEventListener === 'function') {
     window.speechSynthesis.addEventListener('voiceschanged', () => {
