@@ -244,6 +244,7 @@ async function generateChat({
   model,
   research = null,
   reasoningEffort = null,
+  signal: requestSignal = null,
   fetchImpl = fetch
 } = {}) {
   assertConfigured();
@@ -323,6 +324,7 @@ async function generateChat({
       };
     },
     {
+      externalSignal: requestSignal,
       code: research?.enabled
         ? "ANTHROPIC_RESEARCH_TIMEOUT"
         : "ANTHROPIC_REQUEST_TIMEOUT",
@@ -359,6 +361,7 @@ async function streamChat({
   model,
   onDelta,
   reasoningEffort = null,
+  signal: requestSignal = null,
   fetchImpl = fetch
 } = {}) {
   return runWithProviderDeadline(
@@ -481,6 +484,7 @@ async function streamChat({
       };
     },
     {
+      externalSignal: requestSignal,
       code: "ANTHROPIC_STREAM_TIMEOUT",
       label: "Anthropic streaming request"
     }
