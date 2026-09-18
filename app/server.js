@@ -96,6 +96,9 @@ const {
   buildReadinessStatus
 } = require("./ops/runtime-status");
 const {
+  runWithRequestCancellation
+} = require("./ops/request-cancellation");
+const {
   getDatabaseResilienceConfig,
   databaseRetryDelay
 } = require("./ops/database-resilience");
@@ -6913,17 +6916,22 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
       }
     ];
 
-    const aiResponse = await generateChat({
-      model: gatewayStatus.model,
-      instructions: [UNBOUND_SYSTEM_PROMPT, styleInstructions, depthInstructions, modeInstructions]
-        .filter(Boolean)
-        .join("\n\n"),
-      input,
-      research:
-        productMode === "research"
-          ? { enabled: true, maxToolCalls: depthStyle === "work" ? 8 : 4 }
-          : null
-    });
+    const aiResponse = await runWithRequestCancellation(
+      req,
+      res,
+      (signal) => generateChat({
+        model: gatewayStatus.model,
+        instructions: [UNBOUND_SYSTEM_PROMPT, styleInstructions, depthInstructions, modeInstructions]
+          .filter(Boolean)
+          .join("\n\n"),
+        input,
+        research:
+          productMode === "research"
+            ? { enabled: true, maxToolCalls: depthStyle === "work" ? 8 : 4 }
+            : null,
+        signal
+      })
+    );
 
     const researchMetadata = aiResponse.research || {
       sources: [],
@@ -6980,7 +6988,9 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
       conversationId: persistentChat?.conversationId || null
     });
   } catch (error) {
+    if (error?.code === "AI_REQUEST_ABORTED" || res.destroyed) return;
     console.error("UNBOUND AI ERROR:", error);
+    if (res.writableEnded) return;
 
     res.status(error.statusCode || 500).json({
       error: error.message || "UNBOUND AI could not get a response."
@@ -7082,16 +7092,21 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
       conversationId: persistentChat?.conversationId || null
     });
 
-    const aiResponse = await streamChat({
-      model: gatewayStatus.model,
-      instructions: [UNBOUND_SYSTEM_PROMPT, styleInstructions, depthInstructions, modeInstructions]
-        .filter(Boolean)
-        .join("\n\n"),
-      input,
-      onDelta: async (delta) => {
-        writeEvent({ type: "delta", delta });
-      }
-    });
+    const aiResponse = await runWithRequestCancellation(
+      req,
+      res,
+      (signal) => streamChat({
+        model: gatewayStatus.model,
+        instructions: [UNBOUND_SYSTEM_PROMPT, styleInstructions, depthInstructions, modeInstructions]
+          .filter(Boolean)
+          .join("\n\n"),
+        input,
+        onDelta: async (delta) => {
+          writeEvent({ type: "delta", delta });
+        },
+        signal
+      })
+    );
 
     if (persistentChat) {
       await persistAssistantMessage(
@@ -7135,7 +7150,9 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
     });
     res.end();
   } catch (error) {
+    if (error?.code === "AI_REQUEST_ABORTED" || res.destroyed) return;
     console.error("UNBOUND AI STREAM ERROR:", error);
+    if (res.writableEnded) return;
 
     if (res.headersSent) {
       if (!res.writableEnded && !res.destroyed) {
