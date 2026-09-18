@@ -351,7 +351,7 @@ function resolveProviderForRequest({
   };
 }
 
-function getGatewayStatus() {
+function getGatewayStatus({ includeTelemetry = false } = {}) {
   const name = normalizeProviderName(process.env.AI_PROVIDER);
   const provider = providers.get(name);
 
@@ -374,7 +374,7 @@ function getGatewayStatus() {
         primaryProviderId: name,
         fallbackProviderId: null
       }),
-      telemetry: getProviderTelemetrySnapshot(),
+      ...(includeTelemetry ? { telemetry: getProviderTelemetrySnapshot() } : {}),
       fileAnalysis: false,
       error: "unsupported-provider"
     };
@@ -414,7 +414,7 @@ function getGatewayStatus() {
       : null,
     fallbackError: fallbackRoute.error || null,
     circuitBreaker,
-    telemetry: getProviderTelemetrySnapshot(),
+    ...(includeTelemetry ? { telemetry: getProviderTelemetrySnapshot() } : {}),
     fileAnalysis: providerSupportsFileAnalysis(provider),
     error: provider.isConfigured() ? null : "provider-not-configured"
   };
