@@ -164,6 +164,10 @@ Client cancellation is not treated as a provider outage: it does not trigger fal
 
 File Analysis and Artifact Studio planning now create request-scoped cancellation signals at their HTTP routes, so their gateway/provider work is cancelled automatically on disconnect or graceful restart instead of relying on callers to supply a signal manually. Local artifact export remains provider-free and does not need an upstream cancellation signal.
 
+### Streaming backpressure
+
+UNBOUND's NDJSON chat stream honors Node's writable backpressure signal. When the client/socket buffer fills, provider delta delivery pauses until the response emits `drain` instead of continuing to queue output in memory. Drain waits are bounded to 5 seconds by default; a closed, errored, or persistently stalled client stream is treated as request cancellation rather than a provider outage.
+
 ### Graceful AI shutdown drain
 
 During SIGTERM/SIGINT shutdown, UNBOUND marks the process unready, broadcasts a `SERVER_SHUTDOWN` cancellation to every registered AI request, and only then waits for the HTTP server to close. This releases provider bulkhead slots and aborts active upstream requests instead of leaving long AI calls alive until the forced-exit deadline.
