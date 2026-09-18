@@ -203,7 +203,7 @@ async function main() {
     "enforceChatUsageBudget",
     "enforceStreamingUsageBudget",
     "assertUsageBudget: enforceUsageBudgetForUser",
-    "agent-router-budget",
+    "createRunRateLimit: agentRunRateLimit,\n    assertUsageBudget: enforceUsageBudgetForUser",
     '"/api/account/usage-budget"'
   ]) {
     assert.ok(integrated.includes(marker), `missing integrated marker: ${marker}`);
