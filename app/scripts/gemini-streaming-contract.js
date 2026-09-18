@@ -38,6 +38,15 @@ async function main() {
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse"
     );
 
+    assert.strictEqual(google.normalizeThinkingLevel("low"), "low");
+    assert.strictEqual(google.normalizeThinkingLevel("medium"), "medium");
+    assert.strictEqual(google.normalizeThinkingLevel("high"), "high");
+    assert.strictEqual(google.normalizeThinkingLevel("xhigh"), "high");
+    assert.strictEqual(google.normalizeThinkingLevel("max"), "high");
+    assert.strictEqual(google.normalizeThinkingLevel("none"), "low");
+    assert.strictEqual(google.normalizeThinkingLevel("minimal"), "low");
+    assert.strictEqual(google.normalizeThinkingLevel("unsupported"), null);
+
     const body = google.buildGeminiRequestBody(
       "system instruction",
       [
@@ -51,6 +60,38 @@ async function main() {
     assert.strictEqual(body.contents[1].role, "model");
     assert.strictEqual(body.contents[2].role, "user");
 
+    const highThinkingBody = google.buildGeminiRequestBody(
+      "system instruction",
+      [{ role: "user", content: "deep problem" }],
+      "high"
+    );
+    assert.strictEqual(
+      highThinkingBody.generationConfig.thinkingConfig.thinkingLevel,
+      "high"
+    );
+    const casualThinkingBody = google.buildGeminiRequestBody(
+      "",
+      [{ role: "user", content: "fast answer" }],
+      "none"
+    );
+    assert.strictEqual(
+      casualThinkingBody.generationConfig.thinkingConfig.thinkingLevel,
+      "low"
+    );
+    assert.strictEqual(
+      google.extractGeminiText({
+        candidates: [{
+          content: {
+            parts: [
+              { text: "thought summary", thought: true },
+              { text: "visible answer" }
+            ]
+          }
+        }]
+      }),
+      "visible answer"
+    );
+
     assert.deepStrictEqual(
       google.parseSseEvent('data: {"candidates":[{"content":{"parts":[{"text":"A"}]}}]}'),
       { candidates: [{ content: { parts: [{ text: "A" }] } }] }
@@ -60,6 +101,37 @@ async function main() {
       () => google.parseSseEvent("data: {not-json}"),
       (error) => error && error.code === "GEMINI_STREAM_INVALID_EVENT"
     );
+
+    let generateRequest = null;
+    const generated = await google.generateChat({
+      instructions: "system instruction",
+      input: [{ role: "user", content: "answer this" }],
+      reasoningEffort: "low",
+      fetchImpl: async (url, options) => {
+        generateRequest = { url, options };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            responseId: "generate-1",
+            candidates: [{
+              content: {
+                parts: [
+                  { text: "hidden thought", thought: true },
+                  { text: "answer" }
+                ]
+              }
+            }]
+          })
+        };
+      }
+    });
+    assert.strictEqual(generateRequest.options.redirect, "error");
+    assert.strictEqual(
+      JSON.parse(generateRequest.options.body).generationConfig.thinkingConfig.thinkingLevel,
+      "low"
+    );
+    assert.strictEqual(generated.reply, "answer");
 
     let request = null;
     const deltas = [];
@@ -76,6 +148,7 @@ async function main() {
     const result = await google.streamChat({
       instructions: "system instruction",
       input: [{ role: "user", content: "hello" }],
+      reasoningEffort: "medium",
       onDelta: async (delta) => deltas.push(delta),
       fetchImpl: async (url, options) => {
         request = { url, options };
@@ -91,8 +164,13 @@ async function main() {
     assert.strictEqual(request.options.headers["x-goog-api-key"], "gemini-test-key");
     assert.strictEqual(request.options.headers.accept, "text/event-stream");
     assert.strictEqual(request.options.headers["content-type"], "application/json");
+    assert.strictEqual(request.options.redirect, "error");
     const requestBody = JSON.parse(request.options.body);
     assert.strictEqual(requestBody.systemInstruction.parts[0].text, "system instruction");
+    assert.strictEqual(
+      requestBody.generationConfig.thinkingConfig.thinkingLevel,
+      "medium"
+    );
     assert.strictEqual(result.provider, "google");
     assert.strictEqual(result.model, "gemini-3.8-flash");
     assert.strictEqual(result.reply, "Hello");
@@ -114,7 +192,18 @@ async function main() {
     assert.strictEqual(googleProvider.configured, true);
     assert.strictEqual(googleProvider.chat, true);
     assert.strictEqual(googleProvider.streaming, true);
-    assert.strictEqual(googleProvider.adapterState, "active-streaming-text-chat");
+    assert.strictEqual(googleProvider.reasoningControls, true);
+    assert.deepStrictEqual(Array.from(googleProvider.supportedThinkingLevels), ["low", "medium", "high"]);
+    assert.strictEqual(googleProvider.defaultThinkingLevel, "medium");
+    assert.strictEqual(googleProvider.defaultModel, "gemini-3.8-flash");
+    assert.strictEqual(
+      googleProvider.adapterState,
+      "active-gemini-3.8-chat-streaming-thinking"
+    );
+    const anthropicProvider = catalog.find((provider) => provider.id === "anthropic");
+    assert(anthropicProvider);
+    assert.strictEqual(anthropicProvider.reasoningControls, undefined);
+    assert.strictEqual(anthropicProvider.defaultModel, undefined);
 
     await assert.rejects(
       () => google.streamChat({
@@ -125,7 +214,7 @@ async function main() {
       (error) => error && error.code === "GEMINI_STREAM_INVALID_EVENT"
     );
 
-    console.log("PASS Gemini streaming parity: native SSE chat streaming, fragmented-event parsing, active gateway status, and bounded adapter state.");
+    console.log("PASS Gemini streaming parity: native SSE chat streaming, bounded parsing, 3.8 reasoning controls, thought filtering, redirect hardening, and low-latency fallback.");
   } finally {
     for (const key of tracked) {
       if (original[key] === undefined) delete process.env[key];
