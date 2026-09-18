@@ -91,7 +91,37 @@
         </section>
       </article>
 
-      <div class="notice">GitHub App registration and production credentials must be configured by the UNBOUND owner before Connect becomes active. UNBOUND does not ask you to paste a GitHub password, personal access token, Client Secret, or encryption key into this page.</div>
+      <article class="provider">
+        <div class="provider-head">
+          <div>
+            <h2>Google Workspace</h2>
+            <p style="margin:0">Read-only Gmail headers, Calendar events, and Drive metadata. Message bodies, file contents, and write actions are not requested in this release.</p>
+          </div>
+          <span id="googleBadge" class="badge off">CHECKING</span>
+        </div>
+        <div id="googleIdentity" class="status">Loading Google Workspace connection status…</div>
+        <div class="actions">
+          <button id="googleConnectButton" class="primary" type="button" disabled>CONNECT GOOGLE</button>
+          <button id="googleMailButton" type="button" hidden>MAIL HEADERS</button>
+          <button id="googleCalendarButton" type="button" hidden>CALENDAR</button>
+          <button id="googleDriveButton" type="button" hidden>DRIVE METADATA</button>
+          <button id="googleDisconnectButton" class="danger" type="button" hidden>DISCONNECT</button>
+        </div>
+        <div id="googleStatus" class="status" role="status" aria-live="polite"></div>
+        <div id="googleResults" class="repo-list"></div>
+        <section class="diagnostics" aria-labelledby="googleDiagnosticsTitle">
+          <h3 id="googleDiagnosticsTitle">Google Workspace setup diagnostics</h3>
+          <div id="googleChecklist" class="checklist"></div>
+          <div class="callback">
+            <div class="callback-label">EXACT GOOGLE CALLBACK URL</div>
+            <div id="googleCallbackUrl" class="callback-value"></div>
+            <div class="actions"><button id="copyGoogleCallbackButton" type="button">COPY GOOGLE CALLBACK</button></div>
+          </div>
+          <div id="googleNextAction" class="next-action">Checking Google Workspace setup…</div>
+        </section>
+      </article>
+
+      <div class="notice">Connected Apps remain read-only in this release. Provider Client Secrets and the Connected Apps encryption key belong only in deployment settings—never in chat or browser storage.</div>
     </section>
   </main>
   <script>
@@ -107,9 +137,24 @@
     const copyCallbackButton = document.getElementById("copyCallbackButton");
     const nextActionEl = document.getElementById("nextAction");
     const exactCallbackUrl = `${location.origin}/api/connections/github/callback`;
+    const googleBadge = document.getElementById("googleBadge");
+    const googleIdentity = document.getElementById("googleIdentity");
+    const googleConnectButton = document.getElementById("googleConnectButton");
+    const googleMailButton = document.getElementById("googleMailButton");
+    const googleCalendarButton = document.getElementById("googleCalendarButton");
+    const googleDriveButton = document.getElementById("googleDriveButton");
+    const googleDisconnectButton = document.getElementById("googleDisconnectButton");
+    const googleStatusEl = document.getElementById("googleStatus");
+    const googleResults = document.getElementById("googleResults");
+    const googleChecklist = document.getElementById("googleChecklist");
+    const googleCallbackUrlEl = document.getElementById("googleCallbackUrl");
+    const copyGoogleCallbackButton = document.getElementById("copyGoogleCallbackButton");
+    const googleNextActionEl = document.getElementById("googleNextAction");
+    const exactGoogleCallbackUrl = location.origin + "/api/connections/google/callback";
     let currentStatus = null;
 
     callbackUrlEl.textContent = exactCallbackUrl;
+    googleCallbackUrlEl.textContent = exactGoogleCallbackUrl;
 
     function setStatus(message) { statusEl.textContent = message || ""; }
 
@@ -162,6 +207,52 @@
       }
     }
 
+    function setGoogleStatus(message) { googleStatusEl.textContent = message || ""; }
+
+    function renderGoogleDiagnostics(google = {}) {
+      googleChecklist.innerHTML = "";
+      const encryptionReady = Boolean(google.tokenEncryptionConfigured);
+      const registrationReady = Boolean(google.appRegistrationVerified);
+      const scopesReady = Boolean(google.readOnlyScopesVerified);
+      const fullyReady = Boolean(google.configured);
+      googleChecklist.append(
+        diagnosticRow(encryptionReady, "Server-side credential encryption", encryptionReady ? "Connected Apps encryption is configured." : "Deployment encryption key is still missing."),
+        diagnosticRow(registrationReady, "Google OAuth registration verified", registrationReady ? "The OAuth web application registration is verified." : "Create the Google OAuth web application with the exact callback URL shown below."),
+        diagnosticRow(scopesReady, "Metadata-only read scopes verified", scopesReady ? "Gmail metadata, Calendar event read-only, and Drive metadata scopes are verified." : "Verify only the approved read-only metadata scopes before enabling the connector."),
+        diagnosticRow(fullyReady, "OAuth credentials and callback ready", fullyReady ? "Client ID, Client Secret, callback, verification flags, and encryption are ready." : "Google Workspace remains fail-closed until every required deployment setting is present.")
+      );
+      if (fullyReady) googleNextActionEl.textContent = "Next action: Connect Google Workspace and approve the displayed read-only scopes.";
+      else if (!registrationReady) googleNextActionEl.textContent = "Next action: finish the Google OAuth web application using the exact callback URL shown here.";
+      else if (!scopesReady) googleNextActionEl.textContent = "Next action: verify the Gmail metadata, Calendar read-only, and Drive metadata scopes, then enable the verification flag.";
+      else googleNextActionEl.textContent = "Next action: add the Google OAuth Client ID and Client Secret directly to deployment settings. Never paste the Client Secret into chat.";
+    }
+
+    function renderGoogleItems(items, kind) {
+      googleResults.innerHTML = "";
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No " + kind + " items were returned.";
+        googleResults.appendChild(empty);
+        return;
+      }
+      for (const item of items) {
+        const row = document.createElement("div"); row.className = "repo";
+        const name = document.createElement("div"); name.className = "repo-name";
+        const meta = document.createElement("div"); meta.className = "repo-meta";
+        if (kind === "mail") {
+          name.textContent = item.subject || "(no subject)";
+          meta.textContent = [item.from, item.date].filter(Boolean).join(" • ");
+        } else if (kind === "calendar") {
+          name.textContent = item.summary || "(untitled event)";
+          meta.textContent = [item.start, item.location].filter(Boolean).join(" • ");
+        } else {
+          name.textContent = item.name || "(unnamed file)";
+          meta.textContent = [item.mimeType, item.modifiedTime].filter(Boolean).join(" • ");
+        }
+        row.append(name, meta); googleResults.appendChild(row);
+      }
+    }
     async function api(url, options = {}) {
       const response = await fetch(url, { credentials:"same-origin", ...options, headers:{ "Content-Type":"application/json", ...(options.headers || {}) } });
       const payload = response.status === 204 ? {} : await response.json().catch(() => ({}));
@@ -187,8 +278,26 @@
         reposButton.hidden = !connected;
         disconnectButton.hidden = !connected;
         renderDiagnostics(payload.github || {});
+        const google = payload.googleWorkspace || {};
+        const googleConnection = (payload.connections || []).find((item) => item.provider === "google_workspace") || null;
+        const googleConfigured = Boolean(google.configured);
+        const googleConnected = Boolean(googleConnection);
+        googleBadge.textContent = googleConnected ? "CONNECTED" : googleConfigured ? "READY" : "NOT CONFIGURED";
+        googleBadge.className = `badge ${googleConnected ? "live" : "off"}`;
+        googleIdentity.textContent = googleConnected
+          ? `Connected as ${googleConnection.accountLogin || "Google user"}. Metadata-only read access.`
+          : googleConfigured
+            ? "Google Workspace is ready to connect."
+            : "Google OAuth registration or deployment credentials are not configured yet.";
+        googleConnectButton.hidden = googleConnected;
+        googleConnectButton.disabled = !googleConfigured;
+        googleMailButton.hidden = !googleConnected;
+        googleCalendarButton.hidden = !googleConnected;
+        googleDriveButton.hidden = !googleConnected;
+        googleDisconnectButton.hidden = !googleConnected;
+        renderGoogleDiagnostics(google);
       } catch (error) {
-        badge.textContent = "UNAVAILABLE"; badge.className = "badge off"; identity.textContent = "Could not load Connected Apps status."; setStatus(error.message); renderDiagnostics({});
+        badge.textContent = "UNAVAILABLE"; badge.className = "badge off"; identity.textContent = "Could not load Connected Apps status."; setStatus(error.message); renderDiagnostics({}); googleBadge.textContent = "UNAVAILABLE"; googleBadge.className = "badge off"; googleIdentity.textContent = "Could not load Google Workspace status."; setGoogleStatus(error.message); renderGoogleDiagnostics({});
       }
     }
 
@@ -225,9 +334,55 @@
       finally { disconnectButton.disabled = false; }
     });
 
+    copyGoogleCallbackButton.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(exactGoogleCallbackUrl); setGoogleStatus("Google callback URL copied."); }
+      catch (_) { setGoogleStatus("Could not copy automatically. Press and hold the callback URL to copy it."); }
+    });
+
+    googleConnectButton.addEventListener("click", async () => {
+      googleConnectButton.disabled = true; setGoogleStatus("Starting secure Google authorization…");
+      try {
+        const payload = await api("/api/connections/google/authorize", { method:"POST", body:"{}" });
+        if (!payload.authorizationUrl) throw new Error("Google authorization URL was not returned.");
+        location.assign(payload.authorizationUrl);
+      } catch (error) { setGoogleStatus(error.message); googleConnectButton.disabled = false; }
+    });
+
+    googleMailButton.addEventListener("click", async () => {
+      googleMailButton.disabled = true; setGoogleStatus("Loading Gmail headers…"); googleResults.innerHTML = "";
+      try { const payload = await api("/api/connections/google/mail"); renderGoogleItems(payload.messages || [], "mail"); setGoogleStatus("Loaded " + (payload.messages || []).length + " message header record(s)."); }
+      catch (error) { setGoogleStatus(error.message); }
+      finally { googleMailButton.disabled = false; }
+    });
+
+    googleCalendarButton.addEventListener("click", async () => {
+      googleCalendarButton.disabled = true; setGoogleStatus("Loading Calendar events…"); googleResults.innerHTML = "";
+      try { const payload = await api("/api/connections/google/calendar"); renderGoogleItems(payload.events || [], "calendar"); setGoogleStatus("Loaded " + (payload.events || []).length + " calendar event(s)."); }
+      catch (error) { setGoogleStatus(error.message); }
+      finally { googleCalendarButton.disabled = false; }
+    });
+
+    googleDriveButton.addEventListener("click", async () => {
+      googleDriveButton.disabled = true; setGoogleStatus("Loading Drive metadata…"); googleResults.innerHTML = "";
+      try { const payload = await api("/api/connections/google/drive"); renderGoogleItems(payload.files || [], "drive"); setGoogleStatus("Loaded " + (payload.files || []).length + " Drive metadata record(s)."); }
+      catch (error) { setGoogleStatus(error.message); }
+      finally { googleDriveButton.disabled = false; }
+    });
+
+    googleDisconnectButton.addEventListener("click", async () => {
+      if (!confirm("Disconnect Google Workspace from UNBOUND AI?")) return;
+      googleDisconnectButton.disabled = true; setGoogleStatus("Disconnecting Google Workspace…");
+      try { const payload = await api("/api/connections/google", { method:"DELETE" }); googleResults.innerHTML = ""; setGoogleStatus(payload.warning || "Google Workspace disconnected."); await refresh(); }
+      catch (error) { setGoogleStatus(error.message); }
+      finally { googleDisconnectButton.disabled = false; }
+    });
+
     const githubResult = new URLSearchParams(location.search).get("github");
     if (githubResult === "connected") setStatus("GitHub connected successfully.");
     else if (githubResult) setStatus("GitHub connection was not completed. You can try again.");
+    const googleResult = new URLSearchParams(location.search).get("google");
+    if (googleResult === "connected") setGoogleStatus("Google Workspace connected successfully.");
+    else if (googleResult) setGoogleStatus("Google Workspace connection was not completed. You can try again.");
     refresh();
   </script>
 </body>
