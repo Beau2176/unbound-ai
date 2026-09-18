@@ -8,6 +8,12 @@ const {
   recordProviderCircuitSuccess,
   recordProviderCircuitFailure
 } = require("./provider-circuit-breaker");
+const {
+  beginProviderAttempt,
+  finishProviderAttempt,
+  recordProviderRoutingEvent,
+  getProviderTelemetrySnapshot
+} = require("./provider-telemetry");
 
 const providers = new Map([
   [openai.id, openai],
@@ -368,6 +374,7 @@ function getGatewayStatus() {
         primaryProviderId: name,
         fallbackProviderId: null
       }),
+      telemetry: getProviderTelemetrySnapshot(),
       fileAnalysis: false,
       error: "unsupported-provider"
     };
@@ -407,26 +414,57 @@ function getGatewayStatus() {
       : null,
     fallbackError: fallbackRoute.error || null,
     circuitBreaker,
+    telemetry: getProviderTelemetrySnapshot(),
     fileAnalysis: providerSupportsFileAnalysis(provider),
     error: provider.isConfigured() ? null : "provider-not-configured"
   };
 }
 
-async function generateWithProvider(provider, options) {
-  return provider.generateChat(options);
+async function generateWithProvider(provider, options, role = "primary") {
+  const attempt = beginProviderAttempt({
+    providerId: provider?.id,
+    role
+  });
+  try {
+    const result = await provider.generateChat(options);
+    finishProviderAttempt(attempt, { ok: true });
+    return result;
+  } catch (error) {
+    finishProviderAttempt(attempt, {
+      ok: false,
+      retryable: isRetryableProviderError(error),
+      errorCode: nestedErrorCode(error)
+    });
+    throw error;
+  }
 }
 
-async function streamWithProvider(provider, options) {
-  if (typeof provider.streamChat === "function") {
-    return provider.streamChat(options);
+async function streamWithProvider(provider, options, role = "primary") {
+  const attempt = beginProviderAttempt({
+    providerId: provider?.id,
+    role
+  });
+  try {
+    let result;
+    if (typeof provider.streamChat === "function") {
+      result = await provider.streamChat(options);
+    } else {
+      result = await provider.generateChat(options);
+      if (options.onDelta && result.reply) {
+        await options.onDelta(result.reply);
+      }
+    }
+    finishProviderAttempt(attempt, { ok: true });
+    return result;
+  } catch (error) {
+    finishProviderAttempt(attempt, {
+      ok: false,
+      retryable: isRetryableProviderError(error),
+      errorCode: nestedErrorCode(error)
+    });
+    throw error;
   }
-  const result = await provider.generateChat(options);
-  if (options.onDelta && result.reply) {
-    await options.onDelta(result.reply);
-  }
-  return result;
 }
-
 async function generateChat({
   instructions,
   input,
@@ -451,7 +489,7 @@ async function generateChat({
   // Research Mode has its own sourced-provider route and intentionally does not
   // participate in general provider failover/circuit breaking.
   if (research?.enabled) {
-    return generateWithProvider(route.provider, primaryOptions);
+    return generateWithProvider(route.provider, primaryOptions, "research");
   }
 
   const fallbackRoute = resolveFallbackProvider({
@@ -464,13 +502,18 @@ async function generateChat({
   });
 
   if (circuitAttempt.bypassPrimary && fallbackRoute.provider) {
+    recordProviderRoutingEvent({
+      type: "circuit_bypass",
+      fromProvider: route.provider.id,
+      toProvider: fallbackRoute.provider.id
+    });
     return generateWithProvider(fallbackRoute.provider, {
       instructions,
       input,
       model: fallbackModelForProvider(fallbackRoute.provider),
       research: null,
       reasoningEffort
-    });
+    }, "fallback");
   }
 
   try {
@@ -491,13 +534,18 @@ async function generateChat({
 
     if (!retryable || !fallbackRoute.provider) throw error;
 
+    recordProviderRoutingEvent({
+      type: "failover",
+      fromProvider: route.provider.id,
+      toProvider: fallbackRoute.provider.id
+    });
     return generateWithProvider(fallbackRoute.provider, {
       instructions,
       input,
       model: fallbackModelForProvider(fallbackRoute.provider),
       research: null,
       reasoningEffort
-    });
+    }, "fallback");
   }
 }
 
@@ -520,13 +568,18 @@ async function streamChat({
   });
 
   if (circuitAttempt.bypassPrimary && fallbackRoute.provider) {
+    recordProviderRoutingEvent({
+      type: "circuit_bypass",
+      fromProvider: provider.id,
+      toProvider: fallbackRoute.provider.id
+    });
     return streamWithProvider(fallbackRoute.provider, {
       instructions,
       input,
       model: fallbackModelForProvider(fallbackRoute.provider),
       onDelta,
       reasoningEffort
-    });
+    }, "fallback");
   }
 
   let emittedPrimaryOutput = false;
@@ -562,13 +615,18 @@ async function streamChat({
     // duplicate/conflicting answers. Only pre-output transient failures fail over.
     if (emittedPrimaryOutput || !retryable || !fallbackRoute.provider) throw error;
 
+    recordProviderRoutingEvent({
+      type: "failover",
+      fromProvider: provider.id,
+      toProvider: fallbackRoute.provider.id
+    });
     return streamWithProvider(fallbackRoute.provider, {
       instructions,
       input,
       model: fallbackModelForProvider(fallbackRoute.provider),
       onDelta,
       reasoningEffort
-    });
+    }, "fallback");
   }
 }
 
