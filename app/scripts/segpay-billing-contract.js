@@ -126,7 +126,7 @@ async function main() {
     assert.ok(!JSON.stringify(payload).includes("owner@example.com"));
   }
 
-  await assert.rejects(
+  assert.throws(
     () => createCheckoutToken({
       subject,
       planTier: "max",
