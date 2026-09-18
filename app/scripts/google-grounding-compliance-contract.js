@@ -79,7 +79,7 @@ function main() {
   const persistFunction = between(
     serverSource,
     "async function persistAssistantMessage(",
-    "function validConversationId("
+    'app.get(\n  "/api/conversations",'
   );
   assert.strictEqual(
     persistFunction.includes("searchSuggestionsHtml"),
