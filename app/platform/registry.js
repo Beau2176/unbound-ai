@@ -45,7 +45,7 @@ function providerCatalog(env = process.env) {
       adapterState: "active-text-adapter"
     },
     {
-      id: "google",
+      id: "gemini",
       label: "Google Gemini",
       kind: "cloud",
       configured: configured(env.GEMINI_API_KEY || env.GOOGLE_AI_API_KEY) && configured(env.GEMINI_MODEL || env.GOOGLE_AI_MODEL),
