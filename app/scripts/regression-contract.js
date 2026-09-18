@@ -401,7 +401,11 @@ function testBrowserContracts() {
     "window.location.assign(verificationUrl)",
     "age-verification provider navigation"
   );
-  requireText(indexHtml, 'id="billingUpgradeButton"', "TOP upgrade action");
+  requireText(indexHtml, 'id="billingPremiumButton"', "Premium checkout action");
+  requireText(indexHtml, 'id="billingUltraButton"', "Ultra checkout action");
+  requireText(indexHtml, 'id="billingMaxButton"', "staged Max checkout action");
+  requireText(indexHtml, 'MAX · $199.99 · COMING', "Max must remain visibly staged before launch");
+  forbidText(indexHtml, 'id="billingUpgradeButton"', "legacy TOP upgrade button must not return");
   requireText(indexHtml, 'id="billingPortalButton"', "billing management action");
   requireText(indexHtml, 'fetch("/api/account/billing/checkout"', "billing checkout endpoint usage");
   requireText(indexHtml, 'fetch("/api/account/billing/portal"', "billing portal endpoint usage");

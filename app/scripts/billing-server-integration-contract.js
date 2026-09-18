@@ -15,9 +15,10 @@ function main() {
   const emailIntegrated = integrateEmailVerificationServerSource(rawServer);
   const integrated = integrateBillingServerSource(emailIntegrated);
 
-  assert.strictEqual(INTEGRATION_VERSION, "v0.94");
+  assert.strictEqual(INTEGRATION_VERSION, "v1.0");
   assert.match(integrated, /const requestedPlan = normalizePlanTier\(req\.body\?\.planTier\)/);
-  assert.match(integrated, /\["premium", "ultra"\]\.includes\(requestedPlan\)/);
+  assert.match(integrated, /billingGateway\.paidPlans\.includes\(requestedPlan\)/);
+  assert.match(integrated, /priceMonthlyUsd\.toFixed\(2\)/);
   assert.match(integrated, /planTier: requestedPlan/);
   assert.match(integrated, /VALUES \(\$1, \$2, 'incomplete', \$3, \$4, NOW\(\), NOW\(\)\)/);
   assert.match(integrated, /plan_tier = EXCLUDED\.plan_tier/);
@@ -60,7 +61,7 @@ function main() {
   assert.match(startSource, /integrateAbuseEvidenceServerSource/);
   assert.match(startSource, /runtimeModule\._compile\(integratedSource, serverPath\)/);
 
-  console.log("Billing three-tier server integration contract passed.");
+  console.log("Billing active-plan catalog server integration contract passed.");
 }
 
 try {

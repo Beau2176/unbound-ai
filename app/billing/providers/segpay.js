@@ -5,8 +5,14 @@ const CONSUMER_PORTAL_URL = "https://cs.segpay.com/";
 const CHECKOUT_TTL_SECONDS = 30 * 60;
 const SUBJECT_CHUNK_SIZE = 32;
 const PLAN_PRICES = Object.freeze({
-  premium: "59.99",
-  ultra: "114.99"
+  premium: "49.99",
+  ultra: "129.99",
+  max: "199.99"
+});
+const LEGACY_PLAN_PRICES = Object.freeze({
+  premium: Object.freeze(["59.99"]),
+  ultra: Object.freeze(["114.99"]),
+  max: Object.freeze([])
 });
 
 const capabilities = Object.freeze({
@@ -52,6 +58,8 @@ function getSegpayConfig(env = process.env) {
   const ultraPayPageRef = normalizePageRef(
     env.SEGPAY_ULTRA_PAY_PAGE_REF || env.SEGPAY_PAY_PAGE_REF
   );
+  const maxPayPageRef = normalizePageRef(env.SEGPAY_MAX_PAY_PAGE_REF);
+  const maxLaunchEnabled = truthy(env.UNBOUND_MAX_LAUNCH_ENABLED);
   const signingKey = safeText(env.SEGPAY_SIGNING_KEY, 500);
   const postbackUsername = safeText(env.SEGPAY_POSTBACK_USERNAME, 200);
   const postbackPassword = safeText(env.SEGPAY_POSTBACK_PASSWORD, 300);
@@ -64,13 +72,22 @@ function getSegpayConfig(env = process.env) {
       id: "premium",
       amount: PLAN_PRICES.premium,
       payPageRef: premiumPayPageRef,
-      configured: Boolean(premiumPayPageRef)
+      configured: Boolean(premiumPayPageRef),
+      launchEnabled: true
     }),
     ultra: Object.freeze({
       id: "ultra",
       amount: PLAN_PRICES.ultra,
       payPageRef: ultraPayPageRef,
-      configured: Boolean(ultraPayPageRef)
+      configured: Boolean(ultraPayPageRef),
+      launchEnabled: true
+    }),
+    max: Object.freeze({
+      id: "max",
+      amount: PLAN_PRICES.max,
+      payPageRef: maxPayPageRef,
+      configured: Boolean(maxPayPageRef),
+      launchEnabled: maxLaunchEnabled
     })
   });
 
@@ -145,6 +162,11 @@ function createCheckoutToken({
   if (!plan || !planConfig) {
     const error = new Error("Segpay billing plan is unsupported.");
     error.code = "SEGPAY_PLAN_UNSUPPORTED";
+    throw error;
+  }
+  if (!planConfig.launchEnabled) {
+    const error = new Error("That Segpay billing plan has not been launched.");
+    error.code = "SEGPAY_PLAN_NOT_LAUNCHED";
     throw error;
   }
   if (!config.sharedConfigured || !planConfig.configured) {
@@ -236,7 +258,11 @@ function planFromPostback(params) {
     params.amount || params.transactionamount || params.tranamount || params.price
   );
   if (!amount) return null;
-  return Object.entries(PLAN_PRICES).find(([, price]) => price === amount)?.[0] || null;
+  for (const [plan, price] of Object.entries(PLAN_PRICES)) {
+    if (price === amount) return plan;
+    if ((LEGACY_PLAN_PRICES[plan] || []).includes(amount)) return plan;
+  }
+  return null;
 }
 
 function parseSegpayTimestamp(value) {
@@ -333,7 +359,7 @@ function addDays(timestamp, days) {
 async function startCheckout({ subject, planTier, env = process.env } = {}) {
   const { plan, config, planConfig } = getPlanConfig(planTier, env);
   if (!plan || !planConfig) {
-    const error = new Error("Segpay checkout only supports Premium and Ultra plans.");
+    const error = new Error("Segpay checkout does not support that plan.");
     error.code = "SEGPAY_PLAN_UNSUPPORTED";
     throw error;
   }
@@ -428,6 +454,7 @@ module.exports = {
   CHECKOUT_TTL_SECONDS,
   SUBJECT_CHUNK_SIZE,
   PLAN_PRICES,
+  LEGACY_PLAN_PRICES,
   capabilities,
   truthy,
   normalizeAmount,

@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v0.94";
+const INTEGRATION_VERSION = "v1.0";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const first = source.indexOf(marker);
@@ -46,7 +46,23 @@ function integrateBillingServerSource(serverSource) {
     block = replaceExactlyOnce(
       block,
       `      const access = await buildAccountAccess(req.user);\n      if (access?.plan?.tier === "top") {\n        return res.status(409).json({\n          error: "This account already has TOP access.",\n          gateway: getBillingGatewayStatus()\n        });\n      }\n\n      const subject = billingSubject(req.user.id);`,
-      `      const requestedPlan = normalizePlanTier(req.body?.planTier);\n      if (!["premium", "ultra"].includes(requestedPlan)) {\n        return res.status(400).json({\n          error: "Choose Premium ($59.99/month) or Ultra ($114.99/month).",\n          code: "BILLING_PLAN_INVALID",\n          gateway: getBillingGatewayStatus()\n        });\n      }\n\n      const access = await buildAccountAccess(req.user);\n      const currentPlan = getPlanDefinition(access?.plan?.tier);\n      const targetPlan = getPlanDefinition(requestedPlan);\n      const activePaidSubscription = Boolean(\n        access?.subscription?.connected &&\n        subscriptionStatusAllowsAccess(access?.subscription?.status)\n      );\n\n      if (currentPlan.rank >= targetPlan.rank) {\n        return res.status(409).json({\n          error:\n            currentPlan.id === targetPlan.id\n              ? "This account already has " + targetPlan.displayName + " access."\n              : "This account already has a higher " + currentPlan.displayName + " access level.",\n          code: "BILLING_PLAN_ALREADY_INCLUDED",\n          gateway: getBillingGatewayStatus()\n        });\n      }\n\n      if (activePaidSubscription) {\n        return res.status(409).json({\n          error: "Use Manage Billing for changes to an active paid subscription. This prevents access from changing before the billing provider confirms the plan change.",\n          code: "BILLING_ACTIVE_PLAN_CHANGE_REQUIRES_PORTAL",\n          gateway: getBillingGatewayStatus()\n        });\n      }\n\n      const subject = billingSubject(req.user.id);`,
+      `      const requestedPlan = normalizePlanTier(req.body?.planTier);
+      const billingGateway = getBillingGatewayStatus();
+      if (!billingGateway.paidPlans.includes(requestedPlan)) {
+        const availablePlans = billingGateway.paidPlans
+          .map((tier) => {
+            const plan = getPlanDefinition(tier);
+            return plan.displayName + " ($" + plan.priceMonthlyUsd.toFixed(2) + "/month)";
+          })
+          .join(" or ");
+        return res.status(400).json({
+          error: "Choose " + (availablePlans || "a currently available paid plan") + ".",
+          code: "BILLING_PLAN_INVALID",
+          gateway: billingGateway
+        });
+      }
+
+      const access = await buildAccountAccess(req.user);\n      const currentPlan = getPlanDefinition(access?.plan?.tier);\n      const targetPlan = getPlanDefinition(requestedPlan);\n      const activePaidSubscription = Boolean(\n        access?.subscription?.connected &&\n        subscriptionStatusAllowsAccess(access?.subscription?.status)\n      );\n\n      if (currentPlan.rank >= targetPlan.rank) {\n        return res.status(409).json({\n          error:\n            currentPlan.id === targetPlan.id\n              ? "This account already has " + targetPlan.displayName + " access."\n              : "This account already has a higher " + currentPlan.displayName + " access level.",\n          code: "BILLING_PLAN_ALREADY_INCLUDED",\n          gateway: getBillingGatewayStatus()\n        });\n      }\n\n      if (activePaidSubscription) {\n        return res.status(409).json({\n          error: "Use Manage Billing for changes to an active paid subscription. This prevents access from changing before the billing provider confirms the plan change.",\n          code: "BILLING_ACTIVE_PLAN_CHANGE_REQUIRES_PORTAL",\n          gateway: getBillingGatewayStatus()\n        });\n      }\n\n      const subject = billingSubject(req.user.id);`,
       "three-tier-checkout-validation"
     );
 
