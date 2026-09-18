@@ -417,12 +417,17 @@ async function main() {
     resetProviderBulkheads();
     const adapterAbort = new AbortController();
     let adapterSignal = null;
+    let markAdapterStarted;
+    const adapterStarted = new Promise((resolve) => {
+      markAdapterStarted = resolve;
+    });
     const adapterRequest = google.generateChat({
       instructions: "system",
       input: [{ role: "user", content: "adapter cancellation" }],
       signal: adapterAbort.signal,
       fetchImpl: async (url, options) => {
         adapterSignal = options.signal;
+        markAdapterStarted();
         return new Promise((resolve, reject) => {
           options.signal.addEventListener(
             "abort",
@@ -432,7 +437,7 @@ async function main() {
         });
       }
     });
-    await Promise.resolve();
+    await adapterStarted;
     assert.ok(adapterSignal instanceof AbortSignal);
     adapterAbort.abort();
     await assert.rejects(
