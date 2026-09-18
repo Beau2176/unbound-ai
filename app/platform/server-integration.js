@@ -30,7 +30,8 @@ function integratePlatformParityServerSource(serverSource) {
     source.includes("CREATE TABLE IF NOT EXISTS ai_projects") &&
     source.includes("CREATE TABLE IF NOT EXISTS project_memories") &&
     source.includes("CREATE TABLE IF NOT EXISTS marketplace_skills") &&
-    source.includes("CREATE TABLE IF NOT EXISTS marketplace_skill_installs")
+    source.includes("CREATE TABLE IF NOT EXISTS marketplace_skill_installs") &&
+    source.includes("CREATE TABLE IF NOT EXISTS agent_teams")
   ) return source;
 
   const futureImport = 'const { createFutureCoreRouter } = require("./orchestration/routes");';
@@ -113,6 +114,24 @@ function integratePlatformParityServerSource(serverSource) {
     "",
     "    CREATE INDEX IF NOT EXISTS coding_workspace_jobs_user_idx",
     "      ON coding_workspace_jobs(user_id, updated_at DESC);",
+    "",
+    "    CREATE TABLE IF NOT EXISTS agent_teams (",
+    "      id UUID PRIMARY KEY,",
+    "      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,",
+    "      project_id UUID REFERENCES ai_projects(id) ON DELETE CASCADE,",
+    "      name TEXT NOT NULL,",
+    "      description TEXT NOT NULL DEFAULT '',",
+    "      roles JSONB NOT NULL DEFAULT '[]'::jsonb,",
+    "      active BOOLEAN NOT NULL DEFAULT TRUE,",
+    "      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),",
+    "      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),",
+    "      CONSTRAINT agent_teams_name_check CHECK (char_length(name) BETWEEN 1 AND 100)",
+    "    );",
+    "",
+    "    CREATE INDEX IF NOT EXISTS agent_teams_user_idx",
+    "      ON agent_teams(user_id, active, updated_at DESC);",
+    "    CREATE INDEX IF NOT EXISTS agent_teams_project_idx",
+    "      ON agent_teams(user_id, project_id, updated_at DESC);",
     "",
     "    CREATE TABLE IF NOT EXISTS platform_audit_events (",
     "      id BIGSERIAL PRIMARY KEY,",
