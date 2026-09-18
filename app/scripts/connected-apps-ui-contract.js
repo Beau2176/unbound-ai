@@ -40,6 +40,17 @@ function main() {
   assert.ok(page.includes("readOnlyPermissionsVerified"));
   assert.ok(page.includes("/api/connections/github/callback"));
   assert.ok(page.includes("Never paste the Client Secret into chat."));
+  assert.ok(page.includes("Google Workspace"));
+  assert.ok(page.includes('id="googleBadge"'));
+  assert.ok(page.includes('id="googleConnectButton"'));
+  assert.ok(page.includes('id="googleMailButton"'));
+  assert.ok(page.includes('id="googleCalendarButton"'));
+  assert.ok(page.includes('id="googleDriveButton"'));
+  assert.ok(page.includes("/api/connections/google/authorize"));
+  assert.ok(page.includes("/api/connections/google/mail"));
+  assert.ok(page.includes("/api/connections/google/calendar"));
+  assert.ok(page.includes("/api/connections/google/drive"));
+  assert.ok(page.includes("Message bodies, file contents, and write actions are not requested"));
   assert.ok(!page.includes("GITHUB_APP_CLIENT_SECRET"));
   assert.ok(!page.includes("CONNECTED_APPS_TOKEN_KEY"));
   assert.ok(!page.includes("access_token"));
