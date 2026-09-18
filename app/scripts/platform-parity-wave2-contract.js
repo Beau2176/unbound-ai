@@ -182,7 +182,7 @@ async function main() {
     UNBOUND_CODE_SANDBOX_TOKEN: "token"
   };
   assert.strictEqual(providerCatalog(catalogEnv).find((item) => item.id === "anthropic").configured, true);
-  assert.strictEqual(providerCatalog(catalogEnv).find((item) => item.id === "google").configured, true);
+  assert.strictEqual(providerCatalog(catalogEnv).find((item) => item.id === "gemini").configured, true);
   assert.strictEqual(workspaceStatus(catalogEnv).codeWorkspace, true);
 
   const routesSource = fs.readFileSync(path.join(__dirname, "..", "platform", "routes.js"), "utf8");
