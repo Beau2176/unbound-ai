@@ -5,6 +5,7 @@ const local = require("./providers/local");
 const {
   getProviderCircuitSnapshot,
   beginProviderCircuitAttempt,
+  cancelProviderCircuitAttempt,
   recordProviderCircuitSuccess,
   recordProviderCircuitFailure
 } = require("./provider-circuit-breaker");
@@ -546,7 +547,14 @@ async function generateChat({
     return result;
   } catch (error) {
     const retryable = isRetryableProviderError(error);
-    if (!isProviderBulkheadError(error)) {
+    if (isProviderBulkheadError(error)) {
+      if (circuitAttempt.halfOpenProbe) {
+        cancelProviderCircuitAttempt({
+          primaryProviderId: route.provider.id,
+          fallbackProviderId: fallbackRoute.provider?.id || null
+        });
+      }
+    } else {
       recordProviderCircuitFailure({
         primaryProviderId: route.provider.id,
         fallbackProviderId: fallbackRoute.provider?.id || null,
@@ -627,7 +635,14 @@ async function streamChat({
     return result;
   } catch (error) {
     const retryable = isRetryableProviderError(error);
-    if (!isProviderBulkheadError(error)) {
+    if (isProviderBulkheadError(error)) {
+      if (circuitAttempt.halfOpenProbe) {
+        cancelProviderCircuitAttempt({
+          primaryProviderId: provider.id,
+          fallbackProviderId: fallbackRoute.provider?.id || null
+        });
+      }
+    } else {
       recordProviderCircuitFailure({
         primaryProviderId: provider.id,
         fallbackProviderId: fallbackRoute.provider?.id || null,
