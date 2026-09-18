@@ -14,7 +14,23 @@ const BILLING_STATUSES = Object.freeze([
   "unpaid"
 ]);
 
-const PAID_PLAN_TIERS = Object.freeze(["premium", "ultra"]);
+const PAID_PLAN_TIERS = Object.freeze(["premium", "ultra", "max"]);
+const DEFAULT_ACTIVE_PAID_PLAN_TIERS = Object.freeze(["premium", "ultra"]);
+
+function truthy(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
+function isPaidPlanLaunchEnabled(planTier, env = process.env) {
+  const plan = String(planTier || "").trim().toLowerCase();
+  if (DEFAULT_ACTIVE_PAID_PLAN_TIERS.includes(plan)) return true;
+  if (plan === "max") return truthy(env.UNBOUND_MAX_LAUNCH_ENABLED);
+  return false;
+}
+
+function getActivePaidPlanTiers(env = process.env) {
+  return PAID_PLAN_TIERS.filter((plan) => isPaidPlanLaunchEnabled(plan, env));
+}
 const adapters = new Map();
 
 function normalizeBillingProvider(value) {
@@ -32,10 +48,12 @@ function subscriptionStatusAllowsAccess(status) {
   return ["active", "trialing"].includes(normalizeSubscriptionStatus(status));
 }
 
-function normalizePaidPlanTier(value) {
+function normalizePaidPlanTier(value, env = process.env) {
   const raw = String(value || "").trim().toLowerCase();
   const normalized = raw === "top" ? "ultra" : raw;
-  return PAID_PLAN_TIERS.includes(normalized) ? normalized : null;
+  return PAID_PLAN_TIERS.includes(normalized) && isPaidPlanLaunchEnabled(normalized, env)
+    ? normalized
+    : null;
 }
 
 function registerBillingAdapter(name, adapter) {
@@ -64,7 +82,8 @@ function getBillingGatewayStatus(env = process.env) {
       checkout: false,
       customerPortal: false,
       webhooks: false,
-      paidPlans: [...PAID_PLAN_TIERS],
+      paidPlans: getActivePaidPlanTiers(env),
+      futurePlans: PAID_PLAN_TIERS.filter((plan) => !isPaidPlanLaunchEnabled(plan, env)),
       state: "provider-not-selected"
     };
   }
@@ -78,7 +97,8 @@ function getBillingGatewayStatus(env = process.env) {
       checkout: false,
       customerPortal: false,
       webhooks: false,
-      paidPlans: [...PAID_PLAN_TIERS],
+      paidPlans: getActivePaidPlanTiers(env),
+      futurePlans: PAID_PLAN_TIERS.filter((plan) => !isPaidPlanLaunchEnabled(plan, env)),
       state: "adapter-not-installed"
     };
   }
@@ -103,7 +123,8 @@ function getBillingGatewayStatus(env = process.env) {
       Boolean(capabilities.webhooks) &&
       typeof adapter.verifyWebhook === "function" &&
       typeof adapter.parseWebhook === "function",
-    paidPlans: [...PAID_PLAN_TIERS],
+    paidPlans: getActivePaidPlanTiers(env),
+      futurePlans: PAID_PLAN_TIERS.filter((plan) => !isPaidPlanLaunchEnabled(plan, env)),
     state: configured ? "ready" : "adapter-not-configured"
   };
 }
@@ -173,11 +194,11 @@ async function startBillingCheckoutSession({
 
   const normalizedSubject = cleanOpaqueIdentifier(subject, 200);
   const normalizedEmail = cleanEmail(email);
-  const normalizedPlan = normalizePaidPlanTier(planTier);
+  const normalizedPlan = normalizePaidPlanTier(planTier, env);
   if (!normalizedSubject || !normalizedEmail || !normalizedPlan) {
     throw billingGatewayError(
       "BILLING_CHECKOUT_INPUT_INVALID",
-      "Choose a valid Premium or Ultra subscription.",
+      "Choose a currently available paid subscription plan.",
       400
     );
   }
@@ -322,7 +343,7 @@ async function processBillingWebhook({
     300
   );
   const status = normalizeSubscriptionStatus(parsed?.status);
-  const planTier = parsed?.planTier ? normalizePaidPlanTier(parsed.planTier) : null;
+  const planTier = parsed?.planTier ? normalizePaidPlanTier(parsed.planTier, env) : null;
   const occurredAt = cleanTimestamp(parsed?.occurredAt || parsed?.createdAt);
   const currentPeriodStart = cleanTimestamp(parsed?.currentPeriodStart);
   const currentPeriodEnd = cleanTimestamp(parsed?.currentPeriodEnd);
@@ -362,6 +383,10 @@ async function processBillingWebhook({
 module.exports = {
   BILLING_STATUSES,
   PAID_PLAN_TIERS,
+  DEFAULT_ACTIVE_PAID_PLAN_TIERS,
+  truthy,
+  isPaidPlanLaunchEnabled,
+  getActivePaidPlanTiers,
   normalizeBillingProvider,
   normalizeSubscriptionStatus,
   subscriptionStatusAllowsAccess,
