@@ -4,7 +4,8 @@ UNBOUND AI has four customer tiers, with Max staged for future launch:
 
 - **Tier 1 — Free:** $0/month.
 - **Tier 2 — Premium:** **$29.99/month**.
-- **Tier 3 — Ultra:** **$99.99/month**.\n- **Tier 4 — Max:** **$199.99/month**, staged for a future launch and disabled unless `UNBOUND_MAX_LAUNCH_ENABLED=true`.
+- **Tier 3 — Ultra:** **$99.99/month**.
+- **Tier 4 — Max:** **$199.99/month**, staged for a future launch and disabled unless `UNBOUND_MAX_LAUNCH_ENABLED=true`.
 
 Adult Mode is **Ultra-only** and payment never bypasses the separate hard 18+ verification gate.
 
@@ -16,7 +17,9 @@ Premium adds the paid productivity/understanding layer above Free, including web
 
 Ultra includes Premium and adds the advanced tool layer, including image generation/editing, agents, scheduled monitoring, multi-model routing, connected apps, Command Center, and verified-18+ Adult Mode.
 
-Max inherits all currently launched Ultra capabilities; it is staged as a higher-allowance future tier until additional Max-only capabilities are launched.\n\nLegacy internal/database plan value `top` is accepted only as a backwards-compatibility alias for **Ultra**. New checkout and entitlement responses use `premium`, `ultra`, or launch-enabled `max`.
+Max inherits all currently launched Ultra capabilities; it is staged as a higher-allowance future tier until additional Max-only capabilities are launched.
+
+Legacy internal/database plan value `top` is accepted only as a backwards-compatibility alias for **Ultra**. New checkout and entitlement responses use `premium`, `ultra`, or launch-enabled `max`.
 
 ## Production Segpay configuration
 
@@ -25,7 +28,8 @@ Set `BILLING_PROVIDER=segpay` only after the merchant setup is ready.
 Required values:
 
 - `SEGPAY_PREMIUM_PAY_PAGE_REF` — hosted pay page for the **$29.99 Premium** recurring package.
-- `SEGPAY_ULTRA_PAY_PAGE_REF` — hosted pay page for the **$99.99 Ultra** recurring package. `SEGPAY_PAY_PAGE_REF` remains a temporary backwards-compatible Ultra alias during migration.\n- `SEGPAY_MAX_PAY_PAGE_REF` — hosted pay page for the **$199.99 Max** recurring package, required only when Max launch is enabled.
+- `SEGPAY_ULTRA_PAY_PAGE_REF` — hosted pay page for the **$99.99 Ultra** recurring package. `SEGPAY_PAY_PAGE_REF` remains a temporary backwards-compatible Ultra alias during migration.
+- `SEGPAY_MAX_PAY_PAGE_REF` — hosted pay page for the **$199.99 Max** recurring package, required only when Max launch is enabled.
 - `SEGPAY_SIGNING_KEY` — hosted-pay-page HS256 signing key issued by Segpay Merchant Services. Use the string exactly as issued.
 - `SEGPAY_POSTBACK_USERNAME`
 - `SEGPAY_POSTBACK_PASSWORD`
