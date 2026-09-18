@@ -153,6 +153,40 @@
         </section>
       </article>
 
+
+      <article class="provider">
+        <div class="provider-head">
+          <div>
+            <h2>Microsoft 365</h2>
+            <p style="margin:0">Read-only Outlook basic mail, Outlook basic calendar, and OneDrive metadata. Mail and calendar bodies/attachments are not requested. OneDrive file content is not exposed by UNBOUND in this release.</p>
+          </div>
+          <span id="microsoftBadge" class="badge off">CHECKING</span>
+        </div>
+        <div id="microsoftIdentity" class="status">Loading Microsoft 365 connection status…</div>
+        <div class="actions">
+          <button id="microsoftConnectButton" class="primary" type="button" disabled>CONNECT MICROSOFT 365</button>
+          <button id="microsoftMailButton" type="button" hidden>OUTLOOK MAIL</button>
+          <button id="microsoftCalendarButton" type="button" hidden>OUTLOOK CALENDAR</button>
+          <button id="microsoftDriveButton" type="button" hidden>ONEDRIVE METADATA</button>
+          <button id="microsoftDisconnectButton" class="danger" type="button" hidden>DISCONNECT</button>
+        </div>
+        <div id="microsoftStatus" class="status" role="status" aria-live="polite"></div>
+        <div id="microsoftResults" class="repo-list"></div>
+        <section class="diagnostics" aria-labelledby="microsoftDiagnosticsTitle">
+          <h3 id="microsoftDiagnosticsTitle">Microsoft 365 setup diagnostics</h3>
+          <div id="microsoftChecklist" class="checklist"></div>
+          <div class="callback">
+            <div class="callback-label">EXACT MICROSOFT CALLBACK URL</div>
+            <div id="microsoftCallbackUrl" class="callback-value"></div>
+            <div class="actions"><button id="copyMicrosoftCallbackButton" type="button">COPY MICROSOFT CALLBACK</button></div>
+          </div>
+          <div class="notice" style="margin:12px 0 0">
+            Delegated scopes: <strong>Mail.ReadBasic</strong>, <strong>Calendars.ReadBasic</strong>, and <strong>Files.Read</strong>. The Files.Read permission is broader than metadata; UNBOUND deliberately exposes only metadata endpoints here.
+          </div>
+          <div id="microsoftNextAction" class="next-action">Checking Microsoft 365 setup…</div>
+        </section>
+      </article>
+
       <div class="notice">Connected Apps remain read-only in this release. Provider Client Secrets and the Connected Apps encryption key belong only in deployment settings—never in chat or browser storage.</div>
     </section>
   </main>
@@ -195,11 +229,26 @@
     const copySlackCallbackButton = document.getElementById("copySlackCallbackButton");
     const slackNextActionEl = document.getElementById("slackNextAction");
     const exactSlackCallbackUrl = location.origin + "/api/connections/slack/callback";
+    const microsoftBadge = document.getElementById("microsoftBadge");
+    const microsoftIdentity = document.getElementById("microsoftIdentity");
+    const microsoftConnectButton = document.getElementById("microsoftConnectButton");
+    const microsoftMailButton = document.getElementById("microsoftMailButton");
+    const microsoftCalendarButton = document.getElementById("microsoftCalendarButton");
+    const microsoftDriveButton = document.getElementById("microsoftDriveButton");
+    const microsoftDisconnectButton = document.getElementById("microsoftDisconnectButton");
+    const microsoftStatusEl = document.getElementById("microsoftStatus");
+    const microsoftResults = document.getElementById("microsoftResults");
+    const microsoftChecklist = document.getElementById("microsoftChecklist");
+    const microsoftCallbackUrlEl = document.getElementById("microsoftCallbackUrl");
+    const copyMicrosoftCallbackButton = document.getElementById("copyMicrosoftCallbackButton");
+    const microsoftNextActionEl = document.getElementById("microsoftNextAction");
+    const exactMicrosoftCallbackUrl = location.origin + "/api/connections/microsoft/callback";
     let currentStatus = null;
 
     callbackUrlEl.textContent = exactCallbackUrl;
     googleCallbackUrlEl.textContent = exactGoogleCallbackUrl;
     slackCallbackUrlEl.textContent = exactSlackCallbackUrl;
+    microsoftCallbackUrlEl.textContent = exactMicrosoftCallbackUrl;
 
     function setStatus(message) { statusEl.textContent = message || ""; }
 
@@ -381,6 +430,57 @@
       }
     }
 
+
+    function setMicrosoftStatus(message) { microsoftStatusEl.textContent = message || ""; }
+
+    function renderMicrosoftDiagnostics(microsoft = {}) {
+      microsoftChecklist.innerHTML = "";
+      const encryptionReady = Boolean(microsoft.tokenEncryptionConfigured);
+      const registrationReady = Boolean(microsoft.appRegistrationVerified);
+      const scopesReady = Boolean(microsoft.readOnlyScopesVerified);
+      const fileScopeReady = Boolean(microsoft.fileReadScopeVerified);
+      const fullyReady = Boolean(microsoft.configured);
+      microsoftChecklist.append(
+        diagnosticRow(encryptionReady, "Server-side credential encryption", encryptionReady ? "Connected Apps encryption is configured." : "Deployment encryption key is still missing."),
+        diagnosticRow(registrationReady, "Microsoft app registration verified", registrationReady ? "The Microsoft Entra app registration is verified." : "Create the Microsoft web app registration with the exact callback URL shown below."),
+        diagnosticRow(scopesReady, "Basic read scopes verified", scopesReady ? "Mail.ReadBasic and Calendars.ReadBasic are verified." : "Verify delegated Mail.ReadBasic and Calendars.ReadBasic before enabling the connector."),
+        diagnosticRow(fileScopeReady, "Files.Read scope explicitly approved", fileScopeReady ? "The broader Files.Read delegated permission is explicitly acknowledged while UNBOUND keeps its endpoint metadata-only." : "Review and explicitly approve Files.Read before enabling OneDrive metadata."),
+        diagnosticRow(fullyReady, "OAuth credentials and callback ready", fullyReady ? "Client ID, Client Secret, callback, verification flags, and encryption are ready." : "Microsoft 365 remains fail-closed until every required deployment setting is present.")
+      );
+      if (fullyReady) microsoftNextActionEl.textContent = "Next action: Connect Microsoft 365 and review the displayed delegated permissions before consenting.";
+      else if (!registrationReady) microsoftNextActionEl.textContent = "Next action: finish the Microsoft Entra web app registration with the exact callback URL shown here.";
+      else if (!scopesReady) microsoftNextActionEl.textContent = "Next action: verify Mail.ReadBasic and Calendars.ReadBasic in the app registration, then mark read-only scopes verified.";
+      else if (!fileScopeReady) microsoftNextActionEl.textContent = "Next action: review the Files.Read permission and explicitly mark it verified only if OneDrive metadata is required.";
+      else microsoftNextActionEl.textContent = "Next action: add the Microsoft Client ID and Client Secret directly to deployment settings. Never paste the Client Secret into chat.";
+    }
+
+    function renderMicrosoftItems(items, kind) {
+      microsoftResults.innerHTML = "";
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No " + kind + " items were returned.";
+        microsoftResults.appendChild(empty);
+        return;
+      }
+      for (const item of items) {
+        const row = document.createElement("div"); row.className = "repo";
+        const name = document.createElement("div"); name.className = "repo-name";
+        const meta = document.createElement("div"); meta.className = "repo-meta";
+        if (kind === "mail") {
+          name.textContent = item.subject || "(no subject)";
+          meta.textContent = [item.from, item.receivedDateTime, item.isRead ? "Read" : "Unread"].filter(Boolean).join(" • ");
+        } else if (kind === "calendar") {
+          name.textContent = item.subject || "(untitled event)";
+          meta.textContent = [item.start, item.location].filter(Boolean).join(" • ");
+        } else {
+          name.textContent = item.name || "(unnamed item)";
+          meta.textContent = [item.mimeType || (item.isFolder ? "Folder" : "File"), item.lastModifiedDateTime].filter(Boolean).join(" • ");
+        }
+        row.append(name, meta); microsoftResults.appendChild(row);
+      }
+    }
+
     async function api(url, options = {}) {
       const response = await fetch(url, { credentials:"same-origin", ...options, headers:{ "Content-Type":"application/json", ...(options.headers || {}) } });
       const payload = response.status === 204 ? {} : await response.json().catch(() => ({}));
@@ -440,8 +540,26 @@
         slackChannelsButton.hidden = !slackConnected;
         slackDisconnectButton.hidden = !slackConnected;
         renderSlackDiagnostics(slack);
+        const microsoft = payload.microsoft365 || {};
+        const microsoftConnection = (payload.connections || []).find((item) => item.provider === "microsoft_365") || null;
+        const microsoftConfigured = Boolean(microsoft.configured);
+        const microsoftConnected = Boolean(microsoftConnection);
+        microsoftBadge.textContent = microsoftConnected ? "CONNECTED" : microsoftConfigured ? "READY" : "NOT CONFIGURED";
+        microsoftBadge.className = `badge ${microsoftConnected ? "live" : "off"}`;
+        microsoftIdentity.textContent = microsoftConnected
+          ? `Connected as ${microsoftConnection.accountLogin || "Microsoft user"}. Read-only basic mail/calendar plus OneDrive metadata.`
+          : microsoftConfigured
+            ? "Microsoft 365 is ready to connect."
+            : "Microsoft app registration or deployment credentials are not configured yet.";
+        microsoftConnectButton.hidden = microsoftConnected;
+        microsoftConnectButton.disabled = !microsoftConfigured;
+        microsoftMailButton.hidden = !microsoftConnected;
+        microsoftCalendarButton.hidden = !microsoftConnected;
+        microsoftDriveButton.hidden = !microsoftConnected;
+        microsoftDisconnectButton.hidden = !microsoftConnected;
+        renderMicrosoftDiagnostics(microsoft);
       } catch (error) {
-        badge.textContent = "UNAVAILABLE"; badge.className = "badge off"; identity.textContent = "Could not load Connected Apps status."; setStatus(error.message); renderDiagnostics({}); googleBadge.textContent = "UNAVAILABLE"; googleBadge.className = "badge off"; googleIdentity.textContent = "Could not load Google Workspace status."; setGoogleStatus(error.message); renderGoogleDiagnostics({}); slackBadge.textContent = "UNAVAILABLE"; slackBadge.className = "badge off"; slackIdentity.textContent = "Could not load Slack status."; setSlackStatus(error.message); renderSlackDiagnostics({});
+        badge.textContent = "UNAVAILABLE"; badge.className = "badge off"; identity.textContent = "Could not load Connected Apps status."; setStatus(error.message); renderDiagnostics({}); googleBadge.textContent = "UNAVAILABLE"; googleBadge.className = "badge off"; googleIdentity.textContent = "Could not load Google Workspace status."; setGoogleStatus(error.message); renderGoogleDiagnostics({}); slackBadge.textContent = "UNAVAILABLE"; slackBadge.className = "badge off"; slackIdentity.textContent = "Could not load Slack status."; setSlackStatus(error.message); renderSlackDiagnostics({}); microsoftBadge.textContent = "UNAVAILABLE"; microsoftBadge.className = "badge off"; microsoftIdentity.textContent = "Could not load Microsoft 365 status."; setMicrosoftStatus(error.message); renderMicrosoftDiagnostics({});
       }
     }
 
@@ -558,6 +676,63 @@
       finally { slackDisconnectButton.disabled = false; }
     });
 
+
+    copyMicrosoftCallbackButton.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(exactMicrosoftCallbackUrl); setMicrosoftStatus("Microsoft callback URL copied."); }
+      catch (_) { setMicrosoftStatus("Could not copy automatically. Press and hold the callback URL to copy it."); }
+    });
+
+    microsoftConnectButton.addEventListener("click", async () => {
+      microsoftConnectButton.disabled = true; setMicrosoftStatus("Starting secure Microsoft authorization…");
+      try {
+        const payload = await api("/api/connections/microsoft/authorize", { method:"POST", body:"{}" });
+        if (!payload.authorizationUrl) throw new Error("Microsoft authorization URL was not returned.");
+        location.assign(payload.authorizationUrl);
+      } catch (error) { setMicrosoftStatus(error.message); microsoftConnectButton.disabled = false; }
+    });
+
+    microsoftMailButton.addEventListener("click", async () => {
+      microsoftMailButton.disabled = true; setMicrosoftStatus("Loading Outlook basic mail…"); microsoftResults.innerHTML = "";
+      try {
+        const payload = await api("/api/connections/microsoft/mail");
+        renderMicrosoftItems(payload.messages || [], "mail");
+        setMicrosoftStatus("Loaded " + (payload.messages || []).length + " basic mail record(s).");
+      } catch (error) { setMicrosoftStatus(error.message); }
+      finally { microsoftMailButton.disabled = false; }
+    });
+
+    microsoftCalendarButton.addEventListener("click", async () => {
+      microsoftCalendarButton.disabled = true; setMicrosoftStatus("Loading Outlook basic calendar…"); microsoftResults.innerHTML = "";
+      try {
+        const payload = await api("/api/connections/microsoft/calendar");
+        renderMicrosoftItems(payload.events || [], "calendar");
+        setMicrosoftStatus("Loaded " + (payload.events || []).length + " calendar event(s).");
+      } catch (error) { setMicrosoftStatus(error.message); }
+      finally { microsoftCalendarButton.disabled = false; }
+    });
+
+    microsoftDriveButton.addEventListener("click", async () => {
+      microsoftDriveButton.disabled = true; setMicrosoftStatus("Loading OneDrive metadata…"); microsoftResults.innerHTML = "";
+      try {
+        const payload = await api("/api/connections/microsoft/drive");
+        renderMicrosoftItems(payload.items || [], "drive");
+        setMicrosoftStatus("Loaded " + (payload.items || []).length + " OneDrive metadata record(s).");
+      } catch (error) { setMicrosoftStatus(error.message); }
+      finally { microsoftDriveButton.disabled = false; }
+    });
+
+    microsoftDisconnectButton.addEventListener("click", async () => {
+      if (!confirm("Disconnect Microsoft 365 from UNBOUND AI?")) return;
+      microsoftDisconnectButton.disabled = true; setMicrosoftStatus("Disconnecting Microsoft 365…");
+      try {
+        const payload = await api("/api/connections/microsoft", { method:"DELETE" });
+        microsoftResults.innerHTML = "";
+        setMicrosoftStatus(payload.warning || "Microsoft 365 disconnected.");
+        await refresh();
+      } catch (error) { setMicrosoftStatus(error.message); }
+      finally { microsoftDisconnectButton.disabled = false; }
+    });
+
     const githubResult = new URLSearchParams(location.search).get("github");
     if (githubResult === "connected") setStatus("GitHub connected successfully.");
     else if (githubResult) setStatus("GitHub connection was not completed. You can try again.");
@@ -567,6 +742,9 @@
     const slackResult = new URLSearchParams(location.search).get("slack");
     if (slackResult === "connected") setSlackStatus("Slack connected successfully.");
     else if (slackResult) setSlackStatus("Slack connection was not completed. You can try again.");
+    const microsoftResult = new URLSearchParams(location.search).get("microsoft");
+    if (microsoftResult === "connected") setMicrosoftStatus("Microsoft 365 connected successfully.");
+    else if (microsoftResult) setMicrosoftStatus("Microsoft 365 connection was not completed. You can try again.");
     refresh();
   </script>
 </body>
