@@ -63,8 +63,12 @@ function providerCatalog(env = process.env) {
       supportedThinkingLevels: Object.freeze(["low", "medium", "high"]),
       defaultThinkingLevel: "medium",
       defaultModel: "gemini-3.8-flash",
-      research: false,
-      adapterState: "active-gemini-3.8-chat-streaming-thinking"
+      research: true,
+      researchTool: "google_search",
+      researchDisplay: "search-suggestions-plus-citations",
+      researchHistoryStorage: "text-only-no-links-or-suggestions",
+      googleGroundingRetentionDays: 30,
+      adapterState: "active-gemini-3.8-chat-streaming-thinking-grounded-research"
     },
     {
       id: "local",
