@@ -121,6 +121,38 @@
         </section>
       </article>
 
+
+      <article class="provider">
+        <div class="provider-head">
+          <div>
+            <h2>Slack</h2>
+            <p style="margin:0">Read-only public-channel discovery and recent message history for channels the installed app can access. This release does not post, edit, delete, read private channels, or read DMs.</p>
+          </div>
+          <span id="slackBadge" class="badge off">CHECKING</span>
+        </div>
+        <div id="slackIdentity" class="status">Loading Slack connection status…</div>
+        <div class="actions">
+          <button id="slackConnectButton" class="primary" type="button" disabled>CONNECT SLACK</button>
+          <button id="slackChannelsButton" type="button" hidden>PUBLIC CHANNELS</button>
+          <button id="slackDisconnectButton" class="danger" type="button" hidden>DISCONNECT</button>
+        </div>
+        <div id="slackStatus" class="status" role="status" aria-live="polite"></div>
+        <div id="slackResults" class="repo-list"></div>
+        <section class="diagnostics" aria-labelledby="slackDiagnosticsTitle">
+          <h3 id="slackDiagnosticsTitle">Slack setup diagnostics</h3>
+          <div id="slackChecklist" class="checklist"></div>
+          <div class="callback">
+            <div class="callback-label">EXACT SLACK CALLBACK URL</div>
+            <div id="slackCallbackUrl" class="callback-value"></div>
+            <div class="actions"><button id="copySlackCallbackButton" type="button">COPY SLACK CALLBACK</button></div>
+          </div>
+          <div class="notice" style="margin:12px 0 0">
+            Approved bot scopes: <strong>channels:read</strong> and <strong>channels:history</strong>. History is bounded and only requested for a selected public channel.
+          </div>
+          <div id="slackNextAction" class="next-action">Checking Slack setup…</div>
+        </section>
+      </article>
+
       <div class="notice">Connected Apps remain read-only in this release. Provider Client Secrets and the Connected Apps encryption key belong only in deployment settings—never in chat or browser storage.</div>
     </section>
   </main>
@@ -151,10 +183,23 @@
     const copyGoogleCallbackButton = document.getElementById("copyGoogleCallbackButton");
     const googleNextActionEl = document.getElementById("googleNextAction");
     const exactGoogleCallbackUrl = location.origin + "/api/connections/google/callback";
+    const slackBadge = document.getElementById("slackBadge");
+    const slackIdentity = document.getElementById("slackIdentity");
+    const slackConnectButton = document.getElementById("slackConnectButton");
+    const slackChannelsButton = document.getElementById("slackChannelsButton");
+    const slackDisconnectButton = document.getElementById("slackDisconnectButton");
+    const slackStatusEl = document.getElementById("slackStatus");
+    const slackResults = document.getElementById("slackResults");
+    const slackChecklist = document.getElementById("slackChecklist");
+    const slackCallbackUrlEl = document.getElementById("slackCallbackUrl");
+    const copySlackCallbackButton = document.getElementById("copySlackCallbackButton");
+    const slackNextActionEl = document.getElementById("slackNextAction");
+    const exactSlackCallbackUrl = location.origin + "/api/connections/slack/callback";
     let currentStatus = null;
 
     callbackUrlEl.textContent = exactCallbackUrl;
     googleCallbackUrlEl.textContent = exactGoogleCallbackUrl;
+    slackCallbackUrlEl.textContent = exactSlackCallbackUrl;
 
     function setStatus(message) { statusEl.textContent = message || ""; }
 
@@ -256,6 +301,86 @@
         row.append(name, meta); googleResults.appendChild(row);
       }
     }
+
+    function setSlackStatus(message) { slackStatusEl.textContent = message || ""; }
+
+    function renderSlackDiagnostics(slack = {}) {
+      slackChecklist.innerHTML = "";
+      const encryptionReady = Boolean(slack.tokenEncryptionConfigured);
+      const registrationReady = Boolean(slack.appRegistrationVerified);
+      const pkceReady = Boolean(slack.pkceEnabledVerified);
+      const scopesReady = Boolean(slack.readOnlyScopesVerified);
+      const rotationReady = Boolean(slack.tokenRotationVerified);
+      const fullyReady = Boolean(slack.configured);
+      slackChecklist.append(
+        diagnosticRow(encryptionReady, "Server-side credential encryption", encryptionReady ? "Connected Apps encryption is configured." : "Deployment encryption key is still missing."),
+        diagnosticRow(registrationReady, "Slack app registration verified", registrationReady ? "The Slack app registration is verified." : "Create the Slack app and set the exact callback URL shown below."),
+        diagnosticRow(pkceReady, "PKCE enabled", pkceReady ? "Slack PKCE is marked enabled for this app." : "Enable PKCE in the Slack app OAuth settings before production use."),
+        diagnosticRow(scopesReady, "Read-only public-channel scopes verified", scopesReady ? "Only channels:read and channels:history are approved." : "Verify the bot scopes are limited to channels:read and channels:history."),
+        diagnosticRow(rotationReady, "Token rotation verified", rotationReady ? "Rotating Slack tokens are enabled and refresh tokens are stored encrypted." : "Enable Slack token rotation before production use."),
+        diagnosticRow(fullyReady, "OAuth callback ready", fullyReady ? "Client ID, callback, PKCE, read-only scopes, token rotation, and encryption are ready." : "Slack remains fail-closed until every required deployment setting is present.")
+      );
+      if (fullyReady) slackNextActionEl.textContent = "Next action: Connect Slack, then add the UNBOUND app only to the public channels you want it to read.";
+      else if (!registrationReady) slackNextActionEl.textContent = "Next action: finish the Slack app registration with the exact callback URL shown here.";
+      else if (!pkceReady) slackNextActionEl.textContent = "Next action: enable PKCE in the Slack app OAuth settings and mark it verified in deployment settings.";
+      else if (!scopesReady) slackNextActionEl.textContent = "Next action: keep bot scopes limited to channels:read and channels:history, then mark the read-only scope verification flag.";
+      else if (!rotationReady) slackNextActionEl.textContent = "Next action: enable Slack token rotation, then mark token rotation verified in deployment settings.";
+      else slackNextActionEl.textContent = "Next action: add the Slack Client ID and exact redirect URL to deployment settings.";
+    }
+
+    async function loadSlackHistory(channelId, channelName) {
+      setSlackStatus("Loading recent read-only history for #" + channelName + "…");
+      slackResults.innerHTML = "";
+      try {
+        const payload = await api("/api/connections/slack/history?channel=" + encodeURIComponent(channelId));
+        const messages = payload.messages || [];
+        if (!messages.length) {
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = "No recent messages were returned for #" + channelName + ".";
+          slackResults.appendChild(empty);
+        } else {
+          for (const item of messages) {
+            const row = document.createElement("div"); row.className = "repo";
+            const text = document.createElement("div"); text.className = "repo-name"; text.textContent = item.text || "(message without text)";
+            const meta = document.createElement("div"); meta.className = "repo-meta"; meta.textContent = [item.user, item.ts].filter(Boolean).join(" • ");
+            row.append(text, meta); slackResults.appendChild(row);
+          }
+        }
+        setSlackStatus("Loaded " + messages.length + " recent message(s) from #" + channelName + ".");
+      } catch (error) {
+        setSlackStatus(error.message);
+      }
+    }
+
+    function renderSlackChannels(channels) {
+      slackResults.innerHTML = "";
+      if (!channels.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No public Slack channels were returned.";
+        slackResults.appendChild(empty);
+        return;
+      }
+      for (const item of channels) {
+        const row = document.createElement("div"); row.className = "repo";
+        const name = document.createElement("div"); name.className = "repo-name"; name.textContent = "#" + (item.name || "channel");
+        const meta = document.createElement("div"); meta.className = "repo-meta";
+        const details = [];
+        details.push(item.isMember ? "App is a member" : "Add app to channel for history");
+        if (item.topic) details.push(item.topic);
+        meta.textContent = details.join(" • ");
+        row.append(name, meta);
+        if (item.isMember && item.id) {
+          const actions = document.createElement("div"); actions.className = "actions";
+          const history = document.createElement("button"); history.type = "button"; history.textContent = "RECENT HISTORY";
+          history.addEventListener("click", () => loadSlackHistory(item.id, item.name || "channel"));
+          actions.appendChild(history); row.appendChild(actions);
+        }
+        slackResults.appendChild(row);
+      }
+    }
+
     async function api(url, options = {}) {
       const response = await fetch(url, { credentials:"same-origin", ...options, headers:{ "Content-Type":"application/json", ...(options.headers || {}) } });
       const payload = response.status === 204 ? {} : await response.json().catch(() => ({}));
@@ -299,8 +424,24 @@
         googleDriveButton.hidden = !googleConnected;
         googleDisconnectButton.hidden = !googleConnected;
         renderGoogleDiagnostics(google);
+        const slack = payload.slack || {};
+        const slackConnection = (payload.connections || []).find((item) => item.provider === "slack") || null;
+        const slackConfigured = Boolean(slack.configured);
+        const slackConnected = Boolean(slackConnection);
+        slackBadge.textContent = slackConnected ? "CONNECTED" : slackConfigured ? "READY" : "NOT CONFIGURED";
+        slackBadge.className = `badge ${slackConnected ? "live" : "off"}`;
+        slackIdentity.textContent = slackConnected
+          ? `Connected to ${slackConnection.accountLogin || "Slack workspace"}. Read-only public-channel access.`
+          : slackConfigured
+            ? "Slack is ready to connect."
+            : "Slack app registration or deployment settings are not configured yet.";
+        slackConnectButton.hidden = slackConnected;
+        slackConnectButton.disabled = !slackConfigured;
+        slackChannelsButton.hidden = !slackConnected;
+        slackDisconnectButton.hidden = !slackConnected;
+        renderSlackDiagnostics(slack);
       } catch (error) {
-        badge.textContent = "UNAVAILABLE"; badge.className = "badge off"; identity.textContent = "Could not load Connected Apps status."; setStatus(error.message); renderDiagnostics({}); googleBadge.textContent = "UNAVAILABLE"; googleBadge.className = "badge off"; googleIdentity.textContent = "Could not load Google Workspace status."; setGoogleStatus(error.message); renderGoogleDiagnostics({});
+        badge.textContent = "UNAVAILABLE"; badge.className = "badge off"; identity.textContent = "Could not load Connected Apps status."; setStatus(error.message); renderDiagnostics({}); googleBadge.textContent = "UNAVAILABLE"; googleBadge.className = "badge off"; googleIdentity.textContent = "Could not load Google Workspace status."; setGoogleStatus(error.message); renderGoogleDiagnostics({}); slackBadge.textContent = "UNAVAILABLE"; slackBadge.className = "badge off"; slackIdentity.textContent = "Could not load Slack status."; setSlackStatus(error.message); renderSlackDiagnostics({});
       }
     }
 
@@ -380,12 +521,52 @@
       finally { googleDisconnectButton.disabled = false; }
     });
 
+
+    copySlackCallbackButton.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(exactSlackCallbackUrl); setSlackStatus("Slack callback URL copied."); }
+      catch (_) { setSlackStatus("Could not copy automatically. Press and hold the callback URL to copy it."); }
+    });
+
+    slackConnectButton.addEventListener("click", async () => {
+      slackConnectButton.disabled = true; setSlackStatus("Starting secure Slack authorization…");
+      try {
+        const payload = await api("/api/connections/slack/authorize", { method:"POST", body:"{}" });
+        if (!payload.authorizationUrl) throw new Error("Slack authorization URL was not returned.");
+        location.assign(payload.authorizationUrl);
+      } catch (error) { setSlackStatus(error.message); slackConnectButton.disabled = false; }
+    });
+
+    slackChannelsButton.addEventListener("click", async () => {
+      slackChannelsButton.disabled = true; setSlackStatus("Loading public Slack channels…"); slackResults.innerHTML = "";
+      try {
+        const payload = await api("/api/connections/slack/channels");
+        renderSlackChannels(payload.channels || []);
+        setSlackStatus("Loaded " + (payload.channels || []).length + " public channel(s).");
+      } catch (error) { setSlackStatus(error.message); }
+      finally { slackChannelsButton.disabled = false; }
+    });
+
+    slackDisconnectButton.addEventListener("click", async () => {
+      if (!confirm("Disconnect Slack from UNBOUND AI?")) return;
+      slackDisconnectButton.disabled = true; setSlackStatus("Disconnecting Slack…");
+      try {
+        const payload = await api("/api/connections/slack", { method:"DELETE" });
+        slackResults.innerHTML = "";
+        setSlackStatus(payload.warning || "Slack disconnected.");
+        await refresh();
+      } catch (error) { setSlackStatus(error.message); }
+      finally { slackDisconnectButton.disabled = false; }
+    });
+
     const githubResult = new URLSearchParams(location.search).get("github");
     if (githubResult === "connected") setStatus("GitHub connected successfully.");
     else if (githubResult) setStatus("GitHub connection was not completed. You can try again.");
     const googleResult = new URLSearchParams(location.search).get("google");
     if (googleResult === "connected") setGoogleStatus("Google Workspace connected successfully.");
     else if (googleResult) setGoogleStatus("Google Workspace connection was not completed. You can try again.");
+    const slackResult = new URLSearchParams(location.search).get("slack");
+    if (slackResult === "connected") setSlackStatus("Slack connected successfully.");
+    else if (slackResult) setSlackStatus("Slack connection was not completed. You can try again.");
     refresh();
   </script>
 </body>
