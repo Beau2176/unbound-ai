@@ -214,16 +214,19 @@
       const encryptionReady = Boolean(google.tokenEncryptionConfigured);
       const registrationReady = Boolean(google.appRegistrationVerified);
       const scopesReady = Boolean(google.readOnlyScopesVerified);
+      const restrictedReady = Boolean(google.restrictedScopesVerified);
       const fullyReady = Boolean(google.configured);
       googleChecklist.append(
         diagnosticRow(encryptionReady, "Server-side credential encryption", encryptionReady ? "Connected Apps encryption is configured." : "Deployment encryption key is still missing."),
         diagnosticRow(registrationReady, "Google OAuth registration verified", registrationReady ? "The OAuth web application registration is verified." : "Create the Google OAuth web application with the exact callback URL shown below."),
         diagnosticRow(scopesReady, "Metadata-only read scopes verified", scopesReady ? "Gmail metadata, Calendar event read-only, and Drive metadata scopes are verified." : "Verify only the approved read-only metadata scopes before enabling the connector."),
+        diagnosticRow(restrictedReady, "Restricted-scope review verified", restrictedReady ? "Required Google restricted-scope review/compliance is marked verified." : "Gmail metadata and broad Drive metadata require Google restricted-scope compliance before production enablement."),
         diagnosticRow(fullyReady, "OAuth credentials and callback ready", fullyReady ? "Client ID, Client Secret, callback, verification flags, and encryption are ready." : "Google Workspace remains fail-closed until every required deployment setting is present.")
       );
       if (fullyReady) googleNextActionEl.textContent = "Next action: Connect Google Workspace and approve the displayed read-only scopes.";
       else if (!registrationReady) googleNextActionEl.textContent = "Next action: finish the Google OAuth web application using the exact callback URL shown here.";
-      else if (!scopesReady) googleNextActionEl.textContent = "Next action: verify the Gmail metadata, Calendar read-only, and Drive metadata scopes, then enable the verification flag.";
+      else if (!scopesReady) googleNextActionEl.textContent = "Next action: verify the Gmail metadata, Calendar read-only, and Drive metadata scopes, then enable the read-only scope verification flag.";
+      else if (!restrictedReady) googleNextActionEl.textContent = "Next action: complete the required Google restricted-scope verification/compliance before enabling production access.";
       else googleNextActionEl.textContent = "Next action: add the Google OAuth Client ID and Client Secret directly to deployment settings. Never paste the Client Secret into chat.";
     }
 
