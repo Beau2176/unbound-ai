@@ -22,8 +22,8 @@ const {
 const subject = "a".repeat(32) + "b".repeat(32);
 const baseEnv = {
   BILLING_PROVIDER: "segpay",
-  SEGPAY_PREMIUM_PAY_PAGE_REF: "premium-4999",
-  SEGPAY_ULTRA_PAY_PAGE_REF: "ultra-12999",
+  SEGPAY_PREMIUM_PAY_PAGE_REF: "premium-2999",
+  SEGPAY_ULTRA_PAY_PAGE_REF: "ultra-9999",
   SEGPAY_MAX_PAY_PAGE_REF: "max-19999",
   SEGPAY_SIGNING_KEY: "EXAMPLE000000000000000000000000000000000000=",
   SEGPAY_POSTBACK_USERNAME: "unbound-postback",
@@ -43,7 +43,7 @@ function decodeJwtPayload(token) {
   return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
 }
 
-function transactionBody({ amount = "129.99", action = "Auth", stage = "Initial", approved = "Yes", trantype = "Sale" } = {}) {
+function transactionBody({ amount = "99.99", action = "Auth", stage = "Initial", approved = "Yes", trantype = "Sale" } = {}) {
   return new URLSearchParams({
     action,
     stage,
@@ -61,14 +61,14 @@ function transactionBody({ amount = "129.99", action = "Auth", stage = "Initial"
 }
 
 async function main() {
-  assert.deepStrictEqual(PLAN_PRICES, { premium: "49.99", ultra: "129.99", max: "199.99" });
-  assert.deepStrictEqual(LEGACY_PLAN_PRICES, { premium: ["59.99"], ultra: ["114.99"], max: [] });
+  assert.deepStrictEqual(PLAN_PRICES, { premium: "29.99", ultra: "99.99", max: "199.99" });
+  assert.deepStrictEqual(LEGACY_PLAN_PRICES, { premium: ["49.99", "59.99"], ultra: ["129.99", "114.99"], max: [] });
   const config = getSegpayConfig(baseEnv);
   assert.strictEqual(config.configured, true);
-  assert.strictEqual(config.plans.premium.amount, "49.99");
-  assert.strictEqual(config.plans.ultra.amount, "129.99");
-  assert.strictEqual(config.plans.premium.payPageRef, "premium-4999");
-  assert.strictEqual(config.plans.ultra.payPageRef, "ultra-12999");
+  assert.strictEqual(config.plans.premium.amount, "29.99");
+  assert.strictEqual(config.plans.ultra.amount, "99.99");
+  assert.strictEqual(config.plans.premium.payPageRef, "premium-2999");
+  assert.strictEqual(config.plans.ultra.payPageRef, "ultra-9999");
   assert.strictEqual(config.plans.max.amount, "199.99");
   assert.strictEqual(config.plans.max.payPageRef, "max-19999");
   assert.strictEqual(config.plans.max.launchEnabled, false);
@@ -180,6 +180,8 @@ async function main() {
   assert.strictEqual(await segpayBillingAdapter.verifyWebhook({ headers: { authorization: "Basic invalid" }, env: baseEnv }), false);
 
   for (const [amount, expectedPlan] of [
+    ["29.99", "premium"],
+    ["99.99", "ultra"],
     ["49.99", "premium"],
     ["129.99", "ultra"],
     ["59.99", "premium"],
@@ -202,7 +204,7 @@ async function main() {
     env: maxEnv
   });
   assert.strictEqual(maxWebhook.planTier, "max");
-  assert.strictEqual(planFromPostback({ amount: "99.99" }), null);
+  assert.strictEqual(planFromPostback({ amount: "79.99" }), null);
 
   const cancellation = await processBillingWebhook({
     rawBody: Buffer.alloc(0),
