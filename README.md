@@ -78,6 +78,20 @@ Failover is attempted only for transient failures such as connection/time-out fa
 
 Research Mode does not use this general failover path. It follows the explicit sourced-provider routing described above.
 
+### Provider circuit breaker
+
+When an explicit fallback provider is configured, UNBOUND also enables a bounded in-memory circuit breaker by default. Three consecutive transient primary-provider failures open the circuit for 60 seconds; requests during that cooldown route directly to the configured fallback. After cooldown, one half-open primary probe is allowed. A successful probe closes the circuit; another transient failure reopens it.
+
+Optional tuning:
+
+```bash
+AI_PROVIDER_CIRCUIT_BREAKER_ENABLED=true
+AI_PROVIDER_CIRCUIT_BREAKER_FAILURES=3
+AI_PROVIDER_CIRCUIT_BREAKER_COOLDOWN_MS=60000
+```
+
+Failure thresholds are bounded to 1–10 and cooldowns to 10–300 seconds. Non-transient client/configuration/auth errors never open the circuit. Circuit state contains only availability metadata such as counts, timestamps, and sanitized error codes—never prompts, responses, credentials, or raw provider error text.
+
 ## Mobile
 
 From `mobile/`:

@@ -2,6 +2,12 @@ const openai = require("./providers/openai");
 const anthropic = require("./providers/anthropic");
 const google = require("./providers/google");
 const local = require("./providers/local");
+const {
+  getProviderCircuitSnapshot,
+  beginProviderCircuitAttempt,
+  recordProviderCircuitSuccess,
+  recordProviderCircuitFailure
+} = require("./provider-circuit-breaker");
 
 const providers = new Map([
   [openai.id, openai],
@@ -358,6 +364,10 @@ function getGatewayStatus() {
       fallbackProvider: null,
       fallbackModel: null,
       fallbackError: "active-provider-unsupported",
+      circuitBreaker: getProviderCircuitSnapshot({
+        primaryProviderId: name,
+        fallbackProviderId: null
+      }),
       fileAnalysis: false,
       error: "unsupported-provider"
     };
@@ -373,6 +383,10 @@ function getGatewayStatus() {
     throwOnError: false
   });
   const failoverEnabled = Boolean(fallbackRoute.provider);
+  const circuitBreaker = getProviderCircuitSnapshot({
+    primaryProviderId: provider.id,
+    fallbackProviderId: fallbackRoute.provider?.id || null
+  });
 
   return {
     provider: provider.id,
@@ -392,6 +406,7 @@ function getGatewayStatus() {
       ? fallbackModelForProvider(fallbackRoute.provider)
       : null,
     fallbackError: fallbackRoute.error || null,
+    circuitBreaker,
     fileAnalysis: providerSupportsFileAnalysis(provider),
     error: provider.isConfigured() ? null : "provider-not-configured"
   };
@@ -433,18 +448,48 @@ async function generateChat({
     reasoningEffort
   };
 
-  try {
-    return await generateWithProvider(route.provider, primaryOptions);
-  } catch (error) {
-    // Research Mode has its own explicit sourced-provider routing. Do not
-    // silently cross research providers if that route fails.
-    if (research?.enabled || !isRetryableProviderError(error)) throw error;
+  // Research Mode has its own sourced-provider route and intentionally does not
+  // participate in general provider failover/circuit breaking.
+  if (research?.enabled) {
+    return generateWithProvider(route.provider, primaryOptions);
+  }
 
-    const fallbackRoute = resolveFallbackProvider({
-      primaryProvider: route.provider,
-      throwOnError: false
+  const fallbackRoute = resolveFallbackProvider({
+    primaryProvider: route.provider,
+    throwOnError: false
+  });
+  const circuitAttempt = beginProviderCircuitAttempt({
+    primaryProviderId: route.provider.id,
+    fallbackProviderId: fallbackRoute.provider?.id || null
+  });
+
+  if (circuitAttempt.bypassPrimary && fallbackRoute.provider) {
+    return generateWithProvider(fallbackRoute.provider, {
+      instructions,
+      input,
+      model: fallbackModelForProvider(fallbackRoute.provider),
+      research: null,
+      reasoningEffort
     });
-    if (!fallbackRoute.provider) throw error;
+  }
+
+  try {
+    const result = await generateWithProvider(route.provider, primaryOptions);
+    recordProviderCircuitSuccess({
+      primaryProviderId: route.provider.id,
+      fallbackProviderId: fallbackRoute.provider?.id || null
+    });
+    return result;
+  } catch (error) {
+    const retryable = isRetryableProviderError(error);
+    recordProviderCircuitFailure({
+      primaryProviderId: route.provider.id,
+      fallbackProviderId: fallbackRoute.provider?.id || null,
+      retryable,
+      errorCode: nestedErrorCode(error)
+    });
+
+    if (!retryable || !fallbackRoute.provider) throw error;
 
     return generateWithProvider(fallbackRoute.provider, {
       instructions,
@@ -465,6 +510,25 @@ async function streamChat({
 }) {
   const provider = getProvider();
   const selectedModel = String(model || "").trim() || provider.getModel();
+  const fallbackRoute = resolveFallbackProvider({
+    primaryProvider: provider,
+    throwOnError: false
+  });
+  const circuitAttempt = beginProviderCircuitAttempt({
+    primaryProviderId: provider.id,
+    fallbackProviderId: fallbackRoute.provider?.id || null
+  });
+
+  if (circuitAttempt.bypassPrimary && fallbackRoute.provider) {
+    return streamWithProvider(fallbackRoute.provider, {
+      instructions,
+      input,
+      model: fallbackModelForProvider(fallbackRoute.provider),
+      onDelta,
+      reasoningEffort
+    });
+  }
+
   let emittedPrimaryOutput = false;
 
   const primaryOnDelta = async (delta) => {
@@ -473,23 +537,30 @@ async function streamChat({
   };
 
   try {
-    return await streamWithProvider(provider, {
+    const result = await streamWithProvider(provider, {
       instructions,
       input,
       model: selectedModel,
       onDelta: primaryOnDelta,
       reasoningEffort
     });
+    recordProviderCircuitSuccess({
+      primaryProviderId: provider.id,
+      fallbackProviderId: fallbackRoute.provider?.id || null
+    });
+    return result;
   } catch (error) {
+    const retryable = isRetryableProviderError(error);
+    recordProviderCircuitFailure({
+      primaryProviderId: provider.id,
+      fallbackProviderId: fallbackRoute.provider?.id || null,
+      retryable,
+      errorCode: nestedErrorCode(error)
+    });
+
     // Never restart a stream after visible output was emitted; that risks
     // duplicate/conflicting answers. Only pre-output transient failures fail over.
-    if (emittedPrimaryOutput || !isRetryableProviderError(error)) throw error;
-
-    const fallbackRoute = resolveFallbackProvider({
-      primaryProvider: provider,
-      throwOnError: false
-    });
-    if (!fallbackRoute.provider) throw error;
+    if (emittedPrimaryOutput || !retryable || !fallbackRoute.provider) throw error;
 
     return streamWithProvider(fallbackRoute.provider, {
       instructions,
