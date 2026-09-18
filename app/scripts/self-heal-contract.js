@@ -20,6 +20,8 @@ assert.ok(LOCKED_POLICY.criticalFiles.includes("http/stream-backpressure.js"));
 assert.ok(LOCKED_POLICY.criticalFiles.includes("start.js"));
 assert.ok(LOCKED_POLICY.criticalFiles.includes("security/http-security.js"));
 assert.ok(LOCKED_POLICY.criticalFiles.includes("knowledge/adaptive.js"));
+assert.ok(LOCKED_POLICY.criticalFiles.includes("usage/plan-budgets.js"));
+assert.ok(LOCKED_POLICY.criticalFiles.includes("usage/server-integration.js"));
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "unbound-self-heal-"));
 try {
