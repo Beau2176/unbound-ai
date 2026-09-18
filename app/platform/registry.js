@@ -21,6 +21,10 @@ function configured(value) {
   return Boolean(String(value || "").trim());
 }
 
+function enabled(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
 function providerCatalog(env = process.env) {
   return [
     {
@@ -64,7 +68,7 @@ function providerCatalog(env = process.env) {
 function connectorCatalog(env = process.env) {
   const remoteBrowser = configured(env.BROWSER_CDP_URL || env.REMOTE_CDP_URL);
   return [
-    { id: "github", label: "GitHub", protocol: "native_oauth", configured: configured(env.GITHUB_CLIENT_ID), read: true, write: configured(env.GITHUB_WRITE_ACTIONS_ENABLED) },
+    { id: "github", label: "GitHub", protocol: "native_oauth", configured: configured(env.GITHUB_CLIENT_ID), read: true, write: enabled(env.GITHUB_WRITE_ACTIONS_ENABLED) },
     { id: "mcp_gateway", label: "MCP Gateway", protocol: "mcp", configured: configured(env.UNBOUND_MCP_GATEWAY_URL), read: true, write: false },
     { id: "browser", label: "Computer Use Browser", protocol: "rest", configured: remoteBrowser, read: true, write: remoteBrowser },
     { id: "google_workspace", label: "Google Workspace", protocol: "native_oauth", configured: configured(env.GOOGLE_OAUTH_CLIENT_ID), read: false, write: false },
