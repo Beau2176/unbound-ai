@@ -57,7 +57,17 @@ function createRequestCancellation(req, res) {
   });
 }
 
+async function runWithRequestCancellation(req, res, operation) {
+  const cancellation = createRequestCancellation(req, res);
+  try {
+    return await operation(cancellation.signal);
+  } finally {
+    cancellation.cleanup();
+  }
+}
+
 module.exports = {
   abortReason,
-  createRequestCancellation
+  createRequestCancellation,
+  runWithRequestCancellation
 };
