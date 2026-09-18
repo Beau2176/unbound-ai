@@ -38,6 +38,32 @@ See:
 - `docs/LAUNCH_READINESS.md`
 - `docs/LAUNCH_REHEARSAL.md`
 
+## AI provider and Research Mode routing
+
+Normal chat uses `AI_PROVIDER` (`openai`, `anthropic`, `google`, or `local`).
+
+Research Mode may optionally use a separate sourced provider by setting:
+
+```bash
+AI_RESEARCH_PROVIDER=anthropic
+ANTHROPIC_API_KEY=...
+ANTHROPIC_MODEL_RESEARCH=claude-sonnet-5
+```
+
+or:
+
+```bash
+AI_RESEARCH_PROVIDER=openai
+OPENAI_API_KEY=...
+OPENAI_RESEARCH_MODEL=...
+```
+
+When `AI_RESEARCH_PROVIDER` is unset, Research Mode stays on the active provider and is available only when that provider natively supports UNBOUND's sourced-research contract. The route fails closed if the selected research provider is unsupported, lacks Research Mode capability, or is not configured.
+
+Research routing does not change standard, Creative, Work, Adult, or streaming chat-provider selection. Cross-provider Research Mode also uses the research provider's own model configuration instead of reusing another provider's model ID.
+
+Google Gemini chat and reasoning are supported, but Google-native Search grounding remains disabled until UNBOUND implements the required Google Search Suggestions display and associated storage/handling rules. Do not enable it by merely changing a capability flag.
+
 ## Mobile
 
 From `mobile/`:
