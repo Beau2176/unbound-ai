@@ -92,6 +92,12 @@ AI_PROVIDER_CIRCUIT_BREAKER_COOLDOWN_MS=60000
 
 Failure thresholds are bounded to 1–10 and cooldowns to 10–300 seconds. Non-transient client/configuration/auth errors never open the circuit. Circuit state contains only availability metadata such as counts, timestamps, and sanitized error codes—never prompts, responses, credentials, or raw provider error text.
 
+### Provider routing telemetry
+
+UNBOUND keeps process-local, privacy-minimized AI routing telemetry for operations. It records aggregate provider attempts, successes, failures, retryable failures, latency buckets, failover counts, and circuit-bypass counts. It does not record prompts, response text, user identifiers, credentials, or raw provider error messages.
+
+Detailed telemetry is exposed only through the admin operational status snapshot; public health/readiness responses keep provider telemetry out. The counters reset whenever the application process restarts. This is operational diagnostics, not billing or user analytics.
+
 ## Mobile
 
 From `mobile/`:

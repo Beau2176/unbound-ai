@@ -281,7 +281,8 @@ function aiDiagnosticSnapshot(value = {}) {
     model: ai.model || null,
     failoverEnabled: Boolean(ai.failoverEnabled),
     fallbackProvider,
-    circuitBreaker: ai.circuitBreaker || null
+    circuitBreaker: ai.circuitBreaker || null,
+    telemetry: ai.telemetry || null
   };
 }
 
