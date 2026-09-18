@@ -28,7 +28,9 @@ function integratePlatformParityServerSource(serverSource) {
     source.includes("/api/platform") &&
     source.includes("UNBOUND_PLATFORM_PARITY_ENABLED") &&
     source.includes("CREATE TABLE IF NOT EXISTS ai_projects") &&
-    source.includes("CREATE TABLE IF NOT EXISTS project_memories")
+    source.includes("CREATE TABLE IF NOT EXISTS project_memories") &&
+    source.includes("CREATE TABLE IF NOT EXISTS marketplace_skills") &&
+    source.includes("CREATE TABLE IF NOT EXISTS marketplace_skill_installs")
   ) return source;
 
   const futureImport = 'const { createFutureCoreRouter } = require("./orchestration/routes");';
