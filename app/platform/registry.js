@@ -52,8 +52,12 @@ function providerCatalog(env = process.env) {
       configured: configured(env.GEMINI_API_KEY || env.GOOGLE_AI_API_KEY),
       chat: true,
       streaming: true,
+      reasoningControls: true,
+      supportedThinkingLevels: Object.freeze(["low", "medium", "high"]),
+      defaultThinkingLevel: "medium",
+      defaultModel: "gemini-3.8-flash",
       research: false,
-      adapterState: "active-streaming-text-chat"
+      adapterState: "active-gemini-3.8-chat-streaming-thinking"
     },
     {
       id: "local",
