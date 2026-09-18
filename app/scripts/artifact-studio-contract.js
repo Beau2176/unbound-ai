@@ -162,6 +162,12 @@ async function main() {
   assert(routes.includes('router.post("/plan"'));
   assert(routes.includes('router.post("/export"'));
   assert(routes.includes("generateChat({"));
+  assert(routes.includes("runWithRequestCancellation("));
+  assert(routes.includes("handleCancelledJsonResponse(res, error)"));
+  assert.match(
+    routes,
+    /\(signal\) => generateChat\(\{[\s\S]*?reasoningEffort: "low",[\s\S]*?\bsignal\b[\s\S]*?\}\)/
+  );
   assert(routes.includes("normalizeArtifactSpec"));
   assert(routes.includes("MAX_EXPORT_BYTES"));
   assert(!routes.includes("child_process"));
