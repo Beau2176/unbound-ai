@@ -31,16 +31,36 @@ function getModelRoutingConfig(env = process.env, defaultModel = null) {
   };
 }
 
-function automaticProfile({ depthStyle, productMode } = {}) {
+function researchIntent(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return false;
+  if (/\b(do not|don't|dont|without)\s+(search|browse|look up|research|check the web|use the web)\b/i.test(text)) {
+    return false;
+  }
+  return /\b(latest|current|today|tonight|this week|this month|right now|up[- ]to[- ]date|news|search(?: the)? web|browse(?: the)? web|look (?:it )?up|look online|check online|check the web|research this|find online|verify online|web search|internet search)\b/i.test(text);
+}
+
+function deepIntent(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return false;
+  if (text.length >= 700) return true;
+  return /\b(analy[sz]e|compare|debug|diagnose|architecture|design a system|write (?:the )?code|implement|refactor|security review|threat model|business plan|strategy|forecast|model this|step[- ]by[- ]step|deep dive|prove|derive|optimi[sz]e)\b/i.test(text);
+}
+
+function automaticProfile({ depthStyle, productMode, message } = {}) {
   const mode = String(productMode || "standard").trim().toLowerCase();
-  if (mode === "research") return "research";
-  return String(depthStyle || "casual").trim().toLowerCase() === "work" ? "deep" : "fast";
+  if (mode === "research" || researchIntent(message)) return "research";
+  if (String(depthStyle || "casual").trim().toLowerCase() === "work" || deepIntent(message)) {
+    return "deep";
+  }
+  return "fast";
 }
 
 function resolveChatModel({
   requestedProfile = "auto",
   depthStyle = "casual",
   productMode = "standard",
+  message = "",
   defaultModel = null,
   enabled = false,
   env = process.env
@@ -60,7 +80,7 @@ function resolveChatModel({
   }
 
   const targetProfile = requested === "auto"
-    ? automaticProfile({ depthStyle, productMode })
+    ? automaticProfile({ depthStyle, productMode, message })
     : requested;
   const routedModel = config.profiles[targetProfile] || fallback;
 
@@ -89,6 +109,8 @@ module.exports = {
   cleanModelId,
   normalizeModelProfile,
   getModelRoutingConfig,
+  researchIntent,
+  deepIntent,
   automaticProfile,
   resolveChatModel,
   publicModelRoutingStatus

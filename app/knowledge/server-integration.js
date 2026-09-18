@@ -50,7 +50,7 @@ function integrateAdaptiveKnowledgeServerSource(serverSource) {
     "knowledge-schema"
   );
 
-  const memoryLoad = `    const memoryInstructions = persistentChat?.user\n      ? await buildMemoryPrompt(pool, persistentChat.user.id)\n      : "";`;
+  const memoryLoad = `    const memoryInstructions = persistentChat?.user\n      ? await buildMemoryPrompt(pool, persistentChat.user.id, message)\n      : "";`;
   source = replaceExpectedCount(
     source,
     memoryLoad,

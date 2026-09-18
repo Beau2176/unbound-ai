@@ -1,4 +1,5 @@
 const { generateChat, getGatewayStatus } = require("../ai/gateway");
+const { resolveChatModel } = require("../ai/model-routing");
 
 const DEFAULT_AGENT_POLL_MS = 5000;
 const MIN_AGENT_POLL_MS = 2000;
@@ -184,8 +185,10 @@ async function executeAgentRun({
   run,
   generateChatImpl = generateChat,
   getGatewayStatusImpl = getGatewayStatus,
+  resolveChatModelImpl = resolveChatModel,
   recordUsageEvent = null,
-  estimateProviderCostMicros = null
+  estimateProviderCostMicros = null,
+  env = process.env
 } = {}) {
   if (!pool || !run) return null;
   const gateway = getGatewayStatusImpl();
@@ -194,6 +197,16 @@ async function executeAgentRun({
     error.code = "AGENT_PROVIDER_NOT_CONFIGURED";
     throw error;
   }
+
+  const modelRoute = resolveChatModelImpl({
+    requestedProfile: "auto",
+    depthStyle: "work",
+    productMode: run.research_enabled ? "research" : "standard",
+    message: run.objective,
+    defaultModel: gateway.model,
+    enabled: true,
+    env
+  });
 
   let previousOutput = "";
   let finalSources = [];
@@ -227,7 +240,8 @@ async function executeAgentRun({
       previousOutput
     });
     const result = await generateChatImpl({
-      model: gateway.model,
+      model: modelRoute.model,
+      reasoningEffort: run.research_enabled ? "low" : "medium",
       instructions: AGENT_SYSTEM_PROMPT,
       input: [{ role: "user", content: prompt }],
       research: run.research_enabled

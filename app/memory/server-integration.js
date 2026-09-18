@@ -62,7 +62,7 @@ function integrateMemoryServerSource(serverSource) {
   source = replaceExpectedCount(
     source,
     styleMarker,
-    `${styleMarker}\n    const projectMemoryInstructions = buildProjectCoreMemoryPrompt();\n    const memoryInstructions = persistentChat?.user\n      ? await buildMemoryPrompt(pool, persistentChat.user.id)\n      : "";`,
+    `${styleMarker}\n    const projectMemoryInstructions = buildProjectCoreMemoryPrompt();\n    const memoryInstructions = persistentChat?.user\n      ? await buildMemoryPrompt(pool, persistentChat.user.id, message)\n      : "";`,
     2,
     "memory-chat-load"
   );

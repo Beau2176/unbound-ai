@@ -75,6 +75,7 @@ async function main() {
   assert.strictEqual(stepPublic.webSearchCalls, 2);
 
   let calls = 0;
+  const models = [];
   const queries = [];
   const fakePool = {
     query: async (sql, params = []) => {
@@ -99,8 +100,9 @@ async function main() {
       max_steps: 2
     },
     getGatewayStatusImpl: () => ({ configured: true, model: "test-model" }),
-    generateChatImpl: async ({ research }) => {
+    generateChatImpl: async ({ research, model, reasoningEffort }) => {
       calls += 1;
+      models.push({ model, reasoningEffort });
       return {
         provider: "openai",
         model: "test-model",
@@ -117,12 +119,20 @@ async function main() {
       };
     },
     recordUsageEvent: async (event) => usageEvents.push(event),
-    estimateProviderCostMicros: () => 123
+    estimateProviderCostMicros: () => 123,
+    env: {
+      AI_MODEL: "test-model",
+      AI_MODEL_DEEP: "test-model-deep",
+      AI_MODEL_RESEARCH: "test-model-research"
+    }
   });
   assert.strictEqual(result.status, "completed");
   assert.strictEqual(result.completedSteps, 2);
   assert.strictEqual(result.finalOutput, "pass-2");
   assert.strictEqual(calls, 2);
+  assert.strictEqual(models.length, 2);
+  assert.ok(models.every((item) => item.model === "test-model-research"));
+  assert.ok(models.every((item) => item.reasoningEffort === "low"));
   assert.strictEqual(usageEvents.length, 2);
   assert.ok(queries.some((item) => item.sql.includes("INSERT INTO agent_steps")));
   assert.ok(queries.some((item) => item.sql.includes("status = 'completed'")));

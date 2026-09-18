@@ -6,6 +6,8 @@ const {
   cleanModelId,
   normalizeModelProfile,
   getModelRoutingConfig,
+  researchIntent,
+  deepIntent,
   automaticProfile,
   resolveChatModel,
   publicModelRoutingStatus
@@ -44,6 +46,17 @@ function main() {
   assert.strictEqual(automaticProfile({ depthStyle: "casual", productMode: "standard" }), "fast");
   assert.strictEqual(automaticProfile({ depthStyle: "work", productMode: "standard" }), "deep");
   assert.strictEqual(automaticProfile({ depthStyle: "casual", productMode: "research" }), "research");
+  assert.strictEqual(researchIntent("What is the latest news on this?"), true);
+  assert.strictEqual(researchIntent("Explain this without searching the web."), false);
+  assert.strictEqual(deepIntent("Debug this architecture and refactor the code."), true);
+  assert.strictEqual(
+    automaticProfile({ depthStyle: "casual", productMode: "standard", message: "Compare these architectures and optimize the design." }),
+    "deep"
+  );
+  assert.strictEqual(
+    automaticProfile({ depthStyle: "casual", productMode: "standard", message: "Look up the latest release notes." }),
+    "research"
+  );
 
   const disabled = resolveChatModel({
     requestedProfile: "deep",
@@ -130,6 +143,7 @@ function main() {
   assert.strictEqual(count(integratedServer, 'item.key === "multi_model"'), 2);
   assert.strictEqual(count(integratedServer, "model: modelRoute.model,"), 2);
   assert.ok(integratedServer.includes("requestedProfile: req.body?.modelProfile"));
+  assert.ok(integratedServer.includes("message,"));
   assert.ok(integratedServer.includes("enabled: multiModelEnabled"));
   new vm.Script(integratedServer, { filename: "integrated-server-model-routing.js" });
 

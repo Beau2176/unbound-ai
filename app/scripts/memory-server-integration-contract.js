@@ -53,7 +53,7 @@ function main() {
   assert.strictEqual(count(integrated, 'requireCapability("memory")'), 2);
   assert.strictEqual(count(integrated, "CREATE TABLE IF NOT EXISTS user_memories"), 1);
   assert.strictEqual(count(integrated, "buildProjectCoreMemoryPrompt()"), 2);
-  assert.strictEqual(count(integrated, "await buildMemoryPrompt(pool, persistentChat.user.id)"), 2);
+  assert.strictEqual(count(integrated, "await buildMemoryPrompt(pool, persistentChat.user.id, message)"), 2);
   assert.strictEqual(
     count(
       integrated,
