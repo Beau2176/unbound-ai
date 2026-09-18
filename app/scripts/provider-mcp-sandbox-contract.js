@@ -4,6 +4,12 @@ const google = require("../ai/providers/google");
 const local = require("../ai/providers/local");
 const { normalizeInputMessages } = require("../ai/providers/provider-utils");
 const { providerModelEnv } = require("../ai/model-routing");
+const {
+  getGatewayStatus,
+  resolveResearchProvider,
+  resolveProviderForRequest,
+  researchModelForProvider
+} = require("../ai/gateway");
 const { publicMcpStatus, listMcpTools, callMcpTool } = require("../connections/mcp-client");
 const { publicSandboxStatus, createSandboxJob, getSandboxJob } = require("../coding/sandbox-client");
 
@@ -20,7 +26,10 @@ async function main() {
   );
 
   const trackedKeys = [
-    "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "GEMINI_API_KEY", "GEMINI_MODEL",
+    "AI_PROVIDER", "AI_RESEARCH_PROVIDER", "AI_RESEARCH_MODEL",
+    "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_MODEL_RESEARCH",
+    "OPENAI_API_KEY", "OPENAI_RESEARCH_MODEL", "AI_MODEL_RESEARCH",
+    "GEMINI_API_KEY", "GEMINI_MODEL",
     "UNBOUND_LOCAL_AI_ENDPOINT", "UNBOUND_LOCAL_AI_MODEL", "UNBOUND_LOCAL_AI_API_KEY"
   ];
   const original = Object.fromEntries(trackedKeys.map((key) => [key, process.env[key]]));
@@ -110,8 +119,111 @@ async function main() {
       ANTHROPIC_MODEL_FAST: "claude-fast",
       AI_MODEL_FAST: "gpt-should-not-leak"
     });
+
     assert.strictEqual(anthropicModels.fast, "claude-fast");
     assert.strictEqual(anthropicModels.fallback, "claude-sonnet-5");
+
+    // Research provider routing is opt-in. Normal chat may stay on Gemini/local
+    // while Research Mode uses a separately configured sourced provider.
+    process.env.AI_PROVIDER = "google";
+    process.env.GEMINI_API_KEY = "gemini-secret";
+    delete process.env.AI_RESEARCH_PROVIDER;
+
+    let researchStatus = getGatewayStatus();
+    assert.strictEqual(researchStatus.provider, "google");
+    assert.strictEqual(researchStatus.research, false);
+    assert.strictEqual(researchStatus.researchProvider, null);
+    assert.strictEqual(
+      researchStatus.researchError,
+      "active-provider-research-unsupported"
+    );
+
+    process.env.AI_RESEARCH_PROVIDER = "anthropic";
+    process.env.ANTHROPIC_API_KEY = "anthropic-secret";
+    process.env.ANTHROPIC_MODEL_RESEARCH = "claude-sonnet-5-research";
+
+    researchStatus = getGatewayStatus();
+    assert.strictEqual(researchStatus.provider, "google");
+    assert.strictEqual(researchStatus.configured, true);
+    assert.strictEqual(researchStatus.research, true);
+    assert.strictEqual(researchStatus.researchProvider, "anthropic");
+    assert.strictEqual(researchStatus.researchProviderExplicit, true);
+    assert.strictEqual(researchStatus.researchModel, "claude-sonnet-5-research");
+    assert.strictEqual(researchStatus.researchError, null);
+
+    const resolvedResearch = resolveResearchProvider({ throwOnError: true });
+    assert.strictEqual(resolvedResearch.provider.id, "anthropic");
+    assert.strictEqual(resolvedResearch.explicit, true);
+    assert.strictEqual(
+      researchModelForProvider(resolvedResearch.provider),
+      "claude-sonnet-5-research"
+    );
+
+    const researchRequestRoute = resolveProviderForRequest({
+      research: { enabled: true },
+      model: "gemini-3.8-flash"
+    });
+    assert.strictEqual(researchRequestRoute.provider.id, "anthropic");
+    assert.strictEqual(researchRequestRoute.model, "claude-sonnet-5-research");
+    assert.strictEqual(researchRequestRoute.researchProviderExplicit, true);
+
+    const normalRequestRoute = resolveProviderForRequest({
+      research: null,
+      model: "gemini-3.8-flash"
+    });
+    assert.strictEqual(normalRequestRoute.provider.id, "google");
+    assert.strictEqual(normalRequestRoute.model, "gemini-3.8-flash");
+
+    process.env.AI_RESEARCH_PROVIDER = "google";
+    researchStatus = getGatewayStatus();
+    assert.strictEqual(researchStatus.research, false);
+    assert.strictEqual(
+      researchStatus.researchError,
+      "research-provider-capability-unsupported"
+    );
+    assert.throws(
+      () => resolveResearchProvider({ throwOnError: true }),
+      (error) =>
+        error &&
+        error.code === "AI_RESEARCH_PROVIDER_CAPABILITY_UNSUPPORTED"
+    );
+
+    process.env.AI_RESEARCH_PROVIDER = "made-up-provider";
+    researchStatus = getGatewayStatus();
+    assert.strictEqual(researchStatus.research, false);
+    assert.strictEqual(
+      researchStatus.researchError,
+      "research-provider-unsupported"
+    );
+    assert.throws(
+      () => resolveResearchProvider({ throwOnError: true }),
+      (error) => error && error.code === "AI_RESEARCH_PROVIDER_UNSUPPORTED"
+    );
+
+    process.env.AI_RESEARCH_PROVIDER = "anthropic";
+    delete process.env.ANTHROPIC_API_KEY;
+    researchStatus = getGatewayStatus();
+    assert.strictEqual(researchStatus.research, false);
+    assert.strictEqual(
+      researchStatus.researchError,
+      "research-provider-not-configured"
+    );
+    assert.throws(
+      () => resolveResearchProvider({ throwOnError: true }),
+      (error) => error && error.code === "AI_RESEARCH_PROVIDER_NOT_CONFIGURED"
+    );
+
+    process.env.ANTHROPIC_API_KEY = "anthropic-secret";
+    process.env.AI_PROVIDER = "anthropic";
+    delete process.env.AI_RESEARCH_PROVIDER;
+    researchStatus = getGatewayStatus();
+    assert.strictEqual(researchStatus.research, true);
+    assert.strictEqual(researchStatus.researchProvider, "anthropic");
+    assert.strictEqual(researchStatus.researchProviderExplicit, false);
+    assert.strictEqual(researchStatus.researchError, null);
+
+    process.env.AI_PROVIDER = "google";
+    process.env.AI_RESEARCH_PROVIDER = "anthropic";
 
     const mcpEnv = {
       UNBOUND_MCP_GATEWAY_URL: "https://mcp.example.test/mcp",
@@ -191,7 +303,7 @@ async function main() {
     const synced = await getSandboxJob("job_123", { env: sandboxEnv, fetchImpl: sandboxFetch });
     assert.strictEqual(synced.status, "completed");
 
-    console.log("PASS provider/MCP/sandbox parity contract: Anthropic, Gemini, local AI, provider-aware routing, stateless MCP approvals, and fail-closed coding sandbox.");
+    console.log("PASS provider/MCP/sandbox parity contract: Anthropic, Gemini, local AI, explicit cross-provider Research Mode routing, provider-aware model routing, stateless MCP approvals, and fail-closed coding sandbox.");
   } finally {
     for (const key of trackedKeys) {
       if (original[key] === undefined) delete process.env[key];
