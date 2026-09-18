@@ -92,6 +92,9 @@ const {
   integrateNativeShellServerSource
 } = require("./ui/native-shell-server-integration");
 const {
+  integrateUsageBudgetServerSource
+} = require("./usage/server-integration");
+const {
   startSelfHealingSupervisor
 } = require("./ops/self-heal");
 const {
@@ -135,6 +138,7 @@ function compileIntegratedServer({
   integratedSource = integrateLawEnforcementServerSource(integratedSource);
   integratedSource = integrateAdultStepUpServerSource(integratedSource);
   integratedSource = integrateNativeShellServerSource(integratedSource);
+  integratedSource = integrateUsageBudgetServerSource(integratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
   runtimeModule.filename = serverPath;
