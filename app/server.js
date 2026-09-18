@@ -96,7 +96,9 @@ const {
   buildReadinessStatus
 } = require("./ops/runtime-status");
 const {
-  runWithRequestCancellation
+  runWithRequestCancellation,
+  abortAllRequestCancellations,
+  shutdownAbortReason
 } = require("./ops/request-cancellation");
 const {
   getDatabaseResilienceConfig,
@@ -301,6 +303,42 @@ function sendStatusJson(res, statusCode, payload) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   return res.status(statusCode).json(payload);
+}
+
+function handleCancelledAiResponse(res, error, { streaming = false } = {}) {
+  if (error?.code !== "AI_REQUEST_ABORTED") return false;
+  if (res.destroyed || res.writableEnded) return true;
+
+  if (error?.cause?.code !== "SERVER_SHUTDOWN") {
+    return true;
+  }
+
+  const message = "UNBOUND AI is restarting. Please retry shortly.";
+
+  if (res.headersSent) {
+    if (streaming) {
+      try {
+        res.write(
+          JSON.stringify({
+            type: "error",
+            error: message,
+            retryable: true,
+            reason: "server-restart"
+          }) + "\n"
+        );
+      } catch (_) {}
+    }
+    try { res.end(); } catch (_) {}
+    return true;
+  }
+
+  res.setHeader("Retry-After", "5");
+  res.status(503).json({
+    error: message,
+    retryable: true,
+    reason: "server-restart"
+  });
+  return true;
 }
 
 app.get("/healthz", (req, res) => {
@@ -6988,7 +7026,8 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
       conversationId: persistentChat?.conversationId || null
     });
   } catch (error) {
-    if (error?.code === "AI_REQUEST_ABORTED" || res.destroyed) return;
+    if (handleCancelledAiResponse(res, error)) return;
+    if (res.destroyed) return;
     console.error("UNBOUND AI ERROR:", error);
     if (res.writableEnded) return;
 
@@ -7150,7 +7189,8 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
     });
     res.end();
   } catch (error) {
-    if (error?.code === "AI_REQUEST_ABORTED" || res.destroyed) return;
+    if (handleCancelledAiResponse(res, error, { streaming: true })) return;
+    if (res.destroyed) return;
     console.error("UNBOUND AI STREAM ERROR:", error);
     if (res.writableEnded) return;
 
@@ -7195,6 +7235,11 @@ async function shutdownGracefully(signal) {
   }
 
   console.log(`UNBOUND AI received ${signal}; beginning graceful shutdown.`);
+
+  const drainedAi = abortAllRequestCancellations(shutdownAbortReason(signal));
+  console.log(
+    `UNBOUND AI graceful shutdown cancelled ${drainedAi.abortedCount} active AI request(s); ${drainedAi.activeAfterAbort} remain registered.`
+  );
 
   shutdownTimer = setTimeout(() => {
     console.error("UNBOUND AI graceful shutdown timed out; forcing exit.");

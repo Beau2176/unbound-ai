@@ -30,8 +30,12 @@ const {
   resetProviderTelemetry
 } = require("../ai/provider-telemetry");
 const {
+  REQUEST_CANCELLATION_VERSION,
   createRequestCancellation,
-  runWithRequestCancellation
+  runWithRequestCancellation,
+  shutdownAbortReason,
+  abortAllRequestCancellations,
+  getRequestCancellationSnapshot
 } = require("../ops/request-cancellation");
 
 function fakeRequest() {
@@ -130,6 +134,37 @@ async function main() {
     }
 
     {
+      assert.strictEqual(REQUEST_CANCELLATION_VERSION, "v1.1");
+      const before = getRequestCancellationSnapshot();
+      const reqA = fakeRequest();
+      const resA = fakeResponse();
+      const reqB = fakeRequest();
+      const resB = fakeResponse();
+      const first = createRequestCancellation(reqA, resA);
+      const second = createRequestCancellation(reqB, resB);
+
+      const active = getRequestCancellationSnapshot();
+      assert.strictEqual(active.active, before.active + 2);
+
+      const shutdownReason = shutdownAbortReason("SIGTERM");
+      assert.strictEqual(shutdownReason.code, "SERVER_SHUTDOWN");
+      assert.strictEqual(shutdownReason.signalName, "SIGTERM");
+
+      const drained = abortAllRequestCancellations(shutdownReason);
+      assert.strictEqual(drained.abortedCount, 2);
+      assert.strictEqual(drained.activeAfterAbort, 0);
+      assert.strictEqual(first.signal.aborted, true);
+      assert.strictEqual(second.signal.aborted, true);
+      assert.strictEqual(first.signal.reason?.code, "SERVER_SHUTDOWN");
+      assert.strictEqual(second.signal.reason?.code, "SERVER_SHUTDOWN");
+
+      const after = getRequestCancellationSnapshot();
+      assert.strictEqual(after.active, 0);
+      assert.strictEqual(after.shutdownAborts, before.shutdownAborts + 2);
+      assert.strictEqual(after.lastAbortReason, "SERVER_SHUTDOWN");
+    }
+
+    {
       const external = new AbortController();
       const pending = runWithProviderDeadline(
         "chat",
@@ -189,11 +224,14 @@ async function main() {
       });
       await Promise.resolve();
       assert.strictEqual(getProviderBulkheadSnapshot("google", env).queued, 1);
-      external.abort();
+      external.abort(shutdownAbortReason("SIGTERM"));
 
       await assert.rejects(
         () => queued,
-        (error) => error && error.code === "AI_REQUEST_ABORTED"
+        (error) =>
+          error &&
+          error.code === "AI_REQUEST_ABORTED" &&
+          error.cause?.code === "SERVER_SHUTDOWN"
       );
 
       const snapshot = getProviderBulkheadSnapshot("google", env);
@@ -450,16 +488,25 @@ async function main() {
       path.join(__dirname, "..", "server.js"),
       "utf8"
     );
-    assert.ok(
-      serverSource.includes(
-        'const {\n  runWithRequestCancellation\n} = require("./ops/request-cancellation");'
-      )
-    );
+    assert.ok(serverSource.includes("runWithRequestCancellation,"));
+    assert.ok(serverSource.includes("abortAllRequestCancellations,"));
+    assert.ok(serverSource.includes("shutdownAbortReason"));
     assert.strictEqual(
       (serverSource.match(/await runWithRequestCancellation\(/g) || []).length,
       2
     );
-    assert.ok(serverSource.includes('error?.code === "AI_REQUEST_ABORTED"'));
+    assert.ok(serverSource.includes("function handleCancelledAiResponse"));
+    assert.ok(serverSource.includes('error?.cause?.code !== "SERVER_SHUTDOWN"'));
+    assert.ok(serverSource.includes('res.setHeader("Retry-After", "5")'));
+
+    const abortAllIndex = serverSource.indexOf(
+      "abortAllRequestCancellations(shutdownAbortReason(signal))"
+    );
+    const serverCloseIndex = serverSource.indexOf("server.close(async");
+    assert.ok(
+      abortAllIndex >= 0 && serverCloseIndex > abortAllIndex,
+      "Active AI requests must be cancelled before HTTP shutdown waits for open responses."
+    );
 
     const selfHealSource = fs.readFileSync(
       path.join(__dirname, "..", "ops", "self-heal.js"),
@@ -468,7 +515,7 @@ async function main() {
     assert.ok(selfHealSource.includes('"ops/request-cancellation.js"'));
 
     console.log(
-      "PASS request cancellation: HTTP lifecycle abort/cleanup, external deadline cancellation, queued admission removal, active and half-open gateway cancellation without fallback/circuit poisoning, separate cancellation telemetry, streaming cancellation, provider signal propagation, server wiring, and self-heal protection."
+      "PASS request cancellation: HTTP lifecycle abort/cleanup, external deadline cancellation, active-request registry, graceful shutdown broadcast, queued shutdown-cause propagation, active and half-open gateway cancellation without fallback/circuit poisoning, separate cancellation telemetry, streaming cancellation, provider signal propagation, shutdown-before-server-close ordering, and self-heal protection."
     );
   } finally {
     google.generateChat = originalGoogleGenerate;
