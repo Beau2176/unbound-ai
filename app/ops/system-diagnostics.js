@@ -255,8 +255,19 @@ function aiDiagnosticSnapshot(value = {}) {
   const configured = Boolean(ai.configured);
   const circuitState = String(ai?.circuitBreaker?.state || "disabled");
   const circuitDegraded = circuitState === "open" || circuitState === "half-open";
-  const status = configured ? (circuitDegraded ? "yellow" : "green") : "yellow";
   const fallbackProvider = ai.fallbackProvider || null;
+  const provider = ai.provider || null;
+  const primaryBulkhead = provider && ai.bulkheads?.[provider]
+    ? ai.bulkheads[provider]
+    : null;
+  const capacityDegraded = Boolean(
+    primaryBulkhead &&
+    Number(primaryBulkhead.maxConcurrent || 0) > 0 &&
+    Number(primaryBulkhead.active || 0) >= Number(primaryBulkhead.maxConcurrent || 0)
+  );
+  const status = configured
+    ? (circuitDegraded || capacityDegraded ? "yellow" : "green")
+    : "yellow";
 
   let summary;
   if (!configured) {
@@ -269,6 +280,10 @@ function aiDiagnosticSnapshot(value = {}) {
     summary = fallbackProvider
       ? `Primary AI provider is being recovery-tested while fallback ${fallbackProvider} remains available.`
       : "Primary AI provider is being recovery-tested.";
+  } else if (capacityDegraded) {
+    summary = Number(primaryBulkhead.queued || 0) > 0
+      ? `Primary AI provider is at its configured concurrency limit with ${Number(primaryBulkhead.queued)} queued request(s).`
+      : "Primary AI provider is at its configured concurrency limit.";
   } else {
     summary = "AI provider is configured.";
   }
@@ -277,12 +292,13 @@ function aiDiagnosticSnapshot(value = {}) {
     status,
     summary,
     configured,
-    provider: ai.provider || null,
+    provider,
     model: ai.model || null,
     failoverEnabled: Boolean(ai.failoverEnabled),
     fallbackProvider,
     circuitBreaker: ai.circuitBreaker || null,
-    telemetry: ai.telemetry || null
+    telemetry: ai.telemetry || null,
+    bulkheads: ai.bulkheads || null
   };
 }
 
