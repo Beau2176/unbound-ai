@@ -1,6 +1,7 @@
 const {
   combineSystemAndMessages,
   retryAfterMsFromHeaders,
+  assertProviderReplySize,
   providerError
 } = require("./provider-utils");
 const {
@@ -130,6 +131,10 @@ function extractAnthropicResponses(payloads) {
       if (block?.type !== "text" || typeof block.text !== "string") continue;
 
       const startIndex = reply.length;
+      assertProviderReplySize(reply.length, block.text.length, {
+        code: "ANTHROPIC_REPLY_TOO_LARGE",
+        label: "Anthropic"
+      });
       reply += block.text;
       const endIndex = reply.length;
 

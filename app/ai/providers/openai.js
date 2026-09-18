@@ -1,4 +1,8 @@
 const {
+  assertProviderReplySize,
+  boundedProviderReply
+} = require("./provider-utils");
+const {
   runWithProviderDeadline
 } = require("../provider-deadline");
 
@@ -237,7 +241,12 @@ async function generateChat({
       return {
         provider: "openai",
         model: response.model || selectedModel,
-        reply: response.output_text || "",
+        reply: boundedProviderReply(response.output_text || "", {
+          code: research?.enabled
+            ? "OPENAI_RESEARCH_REPLY_TOO_LARGE"
+            : "OPENAI_REPLY_TOO_LARGE",
+          label: research?.enabled ? "OpenAI Research Mode" : "OpenAI"
+        }),
         usage: response.usage || null,
         responseId: response.id || null,
         research: research?.enabled
@@ -289,6 +298,10 @@ async function streamChat({
 
       for await (const event of stream) {
         if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
+          assertProviderReplySize(reply.length, event.delta.length, {
+            code: "OPENAI_STREAM_REPLY_TOO_LARGE",
+            label: "OpenAI streaming"
+          });
           reply += event.delta;
           if (onDelta) {
             await onDelta(event.delta);
@@ -350,7 +363,10 @@ async function analyzeFile({
       return {
         provider: "openai",
         model: response.model || request.model,
-        reply: response.output_text || "",
+        reply: boundedProviderReply(response.output_text || "", {
+          code: "OPENAI_FILE_ANALYSIS_REPLY_TOO_LARGE",
+          label: "OpenAI file analysis"
+        }),
         usage: response.usage || null,
         responseId: response.id || null
       };
