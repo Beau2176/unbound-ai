@@ -38,8 +38,7 @@ function integrateMemoryServerSource(serverSource) {
   source = replaceExactlyOnce(
     source,
     agentImports,
-    `${agentImports}\nconst { createMemoryRouter, sendMemoryPage } = require("./memory/routes");\nconst { buildMemoryPrompt } = require("./memory/context");\nconst { buildProjectCoreMemoryPrompt, getProjectIdentity } = require("./project/identity");\nconst { buildProjectContext } = require("./platform/project-memory");
-const { buildProjectContext } = require("./platform/project-memory");`,
+    `${agentImports}\nconst { createMemoryRouter, sendMemoryPage } = require("./memory/routes");\nconst { buildMemoryPrompt } = require("./memory/context");\nconst { buildProjectCoreMemoryPrompt, getProjectIdentity } = require("./project/identity");\nconst { buildProjectContext } = require("./platform/project-memory");`,
     "memory-imports"
   );
 
