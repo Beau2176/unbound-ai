@@ -11,12 +11,47 @@ function normalizeModelProfile(value) {
   return PROFILE_IDS.includes(profile) ? profile : "auto";
 }
 
+function providerModelEnv(env = process.env) {
+  const provider = String(env.AI_PROVIDER || "openai").trim().toLowerCase();
+  if (provider === "anthropic") {
+    return {
+      fallback: env.ANTHROPIC_MODEL,
+      fast: env.ANTHROPIC_MODEL_FAST,
+      deep: env.ANTHROPIC_MODEL_DEEP,
+      research: env.ANTHROPIC_MODEL_RESEARCH
+    };
+  }
+  if (provider === "google") {
+    return {
+      fallback: env.GEMINI_MODEL || env.GOOGLE_AI_MODEL,
+      fast: env.GEMINI_MODEL_FAST || env.GOOGLE_AI_MODEL_FAST,
+      deep: env.GEMINI_MODEL_DEEP || env.GOOGLE_AI_MODEL_DEEP,
+      research: env.GEMINI_MODEL_RESEARCH || env.GOOGLE_AI_MODEL_RESEARCH
+    };
+  }
+  if (provider === "local") {
+    return {
+      fallback: env.UNBOUND_LOCAL_AI_MODEL,
+      fast: env.UNBOUND_LOCAL_AI_MODEL_FAST,
+      deep: env.UNBOUND_LOCAL_AI_MODEL_DEEP,
+      research: env.UNBOUND_LOCAL_AI_MODEL_RESEARCH
+    };
+  }
+  return {
+    fallback: env.OPENAI_MODEL || env.AI_MODEL,
+    fast: env.AI_MODEL_FAST || env.OPENAI_FAST_MODEL,
+    deep: env.AI_MODEL_DEEP || env.OPENAI_DEEP_MODEL,
+    research: env.AI_MODEL_RESEARCH || env.OPENAI_RESEARCH_MODEL
+  };
+}
+
 function getModelRoutingConfig(env = process.env, defaultModel = null) {
-  const fallback = cleanModelId(defaultModel || env.OPENAI_MODEL || env.AI_MODEL);
+  const providerEnv = providerModelEnv(env);
+  const fallback = cleanModelId(defaultModel || providerEnv.fallback);
   const profiles = {
-    fast: cleanModelId(env.AI_MODEL_FAST || env.OPENAI_FAST_MODEL),
-    deep: cleanModelId(env.AI_MODEL_DEEP || env.OPENAI_DEEP_MODEL),
-    research: cleanModelId(env.AI_MODEL_RESEARCH || env.OPENAI_RESEARCH_MODEL)
+    fast: cleanModelId(providerEnv.fast),
+    deep: cleanModelId(providerEnv.deep),
+    research: cleanModelId(providerEnv.research)
   };
   const configuredProfiles = Object.entries(profiles)
     .filter(([, model]) => Boolean(model))
@@ -108,6 +143,7 @@ module.exports = {
   PROFILE_IDS,
   cleanModelId,
   normalizeModelProfile,
+  providerModelEnv,
   getModelRoutingConfig,
   researchIntent,
   deepIntent,
