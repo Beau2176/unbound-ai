@@ -26,6 +26,9 @@ function enabled(value) {
 }
 
 function providerCatalog(env = process.env) {
+  const googleGroundingApproved = enabled(
+    env.UNBOUND_GOOGLE_SEARCH_GROUNDING_APPROVED
+  );
   return [
     {
       id: "openai",
@@ -63,8 +66,15 @@ function providerCatalog(env = process.env) {
       supportedThinkingLevels: Object.freeze(["low", "medium", "high"]),
       defaultThinkingLevel: "medium",
       defaultModel: "gemini-3.8-flash",
-      research: false,
-      adapterState: "active-gemini-3.8-chat-streaming-thinking"
+      research: googleGroundingApproved,
+      researchImplemented: true,
+      researchLaunchGated: !googleGroundingApproved,
+      researchLaunchGate: "UNBOUND_GOOGLE_SEARCH_GROUNDING_APPROVED",
+      researchTool: "google_search",
+      researchDisplay: "search-suggestions-plus-citations",
+      researchHistoryStorage: "text-only-no-links-or-suggestions",
+      googleGroundingRetentionDays: 30,
+      adapterState: "active-gemini-3.8-chat-streaming-thinking-grounded-research-gated"
     },
     {
       id: "local",

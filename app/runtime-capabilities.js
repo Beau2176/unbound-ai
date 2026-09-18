@@ -117,7 +117,11 @@
       type: 'done', depthStyle: data?.depthStyle, productMode: data?.productMode,
       aiStyle: data?.aiStyle, provider: data?.provider, model: data?.model,
       conversationId: data?.conversationId || null, sources: data?.sources || [],
-      citations: data?.citations || [], webSearchCalls: data?.webSearchCalls || 0
+      citations: data?.citations || [], webSearchCalls: data?.webSearchCalls || 0,
+      searchSuggestionsHtml: data?.searchSuggestionsHtml || null,
+      groundingProvider: data?.groundingProvider || null,
+      providerRetentionDays: data?.providerRetentionDays || null,
+      researchStorage: data?.researchStorage || null
     };
     const text = [
       JSON.stringify(meta),

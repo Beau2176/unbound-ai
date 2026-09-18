@@ -700,6 +700,13 @@
       white-space: nowrap;
     }
 
+    .google-search-suggestions {
+      max-width: 100%;
+      margin-top: 10px;
+      overflow-x: auto;
+      border-radius: 10px;
+    }
+
     .message.error {
       color: #ffd4d4;
       border-color: rgba(255, 118, 118, 0.32);
@@ -2804,18 +2811,46 @@
       }
     }
 
+    function isSafeGoogleSearchSuggestionsHtml(value) {
+      const html = typeof value === "string" ? value.trim() : "";
+      if (!html || html.length > 200000) return false;
+      if (/<\s*(script|iframe|object|embed|form|input|button|textarea|select|meta|base)\b/i.test(html)) {
+        return false;
+      }
+      if (/\son[a-z]+\s*=/i.test(html) || /javascript\s*:/i.test(html)) {
+        return false;
+      }
+      return true;
+    }
+
+    function appendGoogleSearchSuggestions(bubble, value) {
+      if (!isSafeGoogleSearchSuggestionsHtml(value)) return false;
+      const container = document.createElement("div");
+      container.className = "google-search-suggestions";
+      container.setAttribute("aria-label", "Google Search suggestions");
+      // Google requires its returned Search Suggestions to be displayed with
+      // the associated grounded result. Keep the provider HTML unchanged.
+      container.innerHTML = value.trim();
+      bubble.appendChild(container);
+      return true;
+    }
+
     function addMessage(
       role,
       content,
       extraClass = "",
       sources = [],
-      citations = []
+      citations = [],
+      searchSuggestionsHtml = ""
     ) {
       const bubble = document.createElement("div");
       bubble.className = `message ${role} ${extraClass}`.trim();
 
       if (role === "assistant") {
         bubble.innerHTML = renderAssistantHtml(content, sources, citations);
+        if (searchSuggestionsHtml) {
+          appendGoogleSearchSuggestions(bubble, searchSuggestionsHtml);
+        }
         appendSourceLinks(bubble, sources);
       } else {
         bubble.textContent = content;
@@ -2959,14 +2994,51 @@
           reply = data.reply || "No response returned.";
           const sources = Array.isArray(data.sources) ? data.sources : [];
           const citations = Array.isArray(data.citations) ? data.citations : [];
-          assistantBubble = addMessage("assistant", reply, "", sources, citations);
+          const groundingProvider = String(data.groundingProvider || "");
+          const searchSuggestionsHtml =
+            typeof data.searchSuggestionsHtml === "string"
+              ? data.searchSuggestionsHtml
+              : "";
+          const isGoogleGrounded = groundingProvider === "google_search";
+          if (
+            isGoogleGrounded &&
+            !isSafeGoogleSearchSuggestionsHtml(searchSuggestionsHtml)
+          ) {
+            throw new Error(
+              "Google-grounded research could not be displayed with the required Search Suggestions."
+            );
+          }
+
+          assistantBubble = addMessage(
+            "assistant",
+            reply,
+            "",
+            sources,
+            citations,
+            searchSuggestionsHtml
+          );
+
+          const persistSources =
+            data.researchStorage?.persistSources === false ? [] : sources;
+          const persistCitations =
+            data.researchStorage?.persistCitations === false ? [] : citations;
           conversationHistory.push({
             role: "assistant",
             content: reply,
-            sources,
-            citations
+            sources: persistSources,
+            citations: persistCitations
           });
           saveConversation();
+
+          if (isGoogleGrounded) {
+            const retentionDays = Math.max(
+              1,
+              Number(data.providerRetentionDays || 30)
+            );
+            productStatus.textContent =
+              `Research Mode — Google Search grounding · Google retains grounded search data for ${retentionDays} days`;
+          }
+
           updateGoDeeperVisibility();
           return;
         }
@@ -3002,6 +3074,12 @@
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
+        let streamedSources = [];
+        let streamedCitations = [];
+        let streamedSearchSuggestionsHtml = "";
+        let streamedGroundingProvider = "";
+        let streamedProviderRetentionDays = null;
+        let streamedResearchStorage = null;
 
         const handleStreamLine = (line) => {
           if (!line.trim()) return;
@@ -3009,6 +3087,22 @@
 
           if ((event.type === "meta" || event.type === "done") && event.conversationId) {
             activeConversationId = String(event.conversationId);
+          }
+
+          if (event.type === "done") {
+            streamedSources = Array.isArray(event.sources) ? event.sources : [];
+            streamedCitations = Array.isArray(event.citations) ? event.citations : [];
+            streamedSearchSuggestionsHtml =
+              typeof event.searchSuggestionsHtml === "string"
+                ? event.searchSuggestionsHtml
+                : "";
+            streamedGroundingProvider = String(event.groundingProvider || "");
+            streamedProviderRetentionDays =
+              Number(event.providerRetentionDays) || null;
+            streamedResearchStorage =
+              event.researchStorage && typeof event.researchStorage === "object"
+                ? event.researchStorage
+                : null;
           }
 
           if (event.type === "delta" && typeof event.delta === "string") {
@@ -3054,8 +3148,62 @@
           }
         }
 
-        conversationHistory.push({ role: "assistant", content: reply });
+        const streamIsGoogleGrounded =
+          streamedGroundingProvider === "google_search";
+        if (
+          streamIsGoogleGrounded &&
+          !isSafeGoogleSearchSuggestionsHtml(streamedSearchSuggestionsHtml)
+        ) {
+          throw new Error(
+            "Google-grounded research could not be displayed with the required Search Suggestions."
+          );
+        }
+
+        if (
+          assistantBubble &&
+          (streamedSources.length ||
+            streamedCitations.length ||
+            streamedSearchSuggestionsHtml)
+        ) {
+          assistantBubble.innerHTML = renderAssistantHtml(
+            reply,
+            streamedSources,
+            streamedCitations
+          );
+          if (streamedSearchSuggestionsHtml) {
+            appendGoogleSearchSuggestions(
+              assistantBubble,
+              streamedSearchSuggestionsHtml
+            );
+          }
+          appendSourceLinks(assistantBubble, streamedSources);
+        }
+
+        const historySources =
+          streamedResearchStorage?.persistSources === false
+            ? []
+            : streamedSources;
+        const historyCitations =
+          streamedResearchStorage?.persistCitations === false
+            ? []
+            : streamedCitations;
+        conversationHistory.push({
+          role: "assistant",
+          content: reply,
+          sources: historySources,
+          citations: historyCitations
+        });
         saveConversation();
+
+        if (streamIsGoogleGrounded) {
+          const retentionDays = Math.max(
+            1,
+            Number(streamedProviderRetentionDays || 30)
+          );
+          productStatus.textContent =
+            `Research Mode — Google Search grounding · Google retains grounded search data for ${retentionDays} days`;
+        }
+
         updateGoDeeperVisibility();
       } catch (error) {
         typingBubble.remove();
