@@ -45,7 +45,7 @@ function buildIntegratedSource() {
 }
 
 function main() {
-  assert.strictEqual(INTEGRATION_VERSION, "v0.97");
+  assert.strictEqual(INTEGRATION_VERSION, "v0.98");
   assert.strictEqual(normalizeKnowledgeQuery("  Hello   WORLD  "), "hello world");
   assert.strictEqual(queryKey("Hello world"), queryKey("  hello   WORLD "));
   assert.ok(freshnessHoursForQuery("weather today") <= 12);
@@ -111,6 +111,10 @@ function main() {
   assert.strictEqual(count(integrated, "projectContextInstructions, styleInstructions, memoryInstructions, adaptiveKnowledgeInstructions, depthInstructions"), 2);
   assert.strictEqual(count(integrated, "selectDirectKnowledgeAnswer({"), 2);
   assert.strictEqual(count(integrated, "knowledgeCacheHit: true"), 2);
+  assert.ok(
+    count(integrated, "await writeEvent({") >= 5,
+    "adaptive knowledge direct streaming must preserve awaited backpressure writes"
+  );
   assert.strictEqual(count(integrated, "void learnFromResearch(pool"), 1);
   assert.strictEqual(count(integrated, '"/api/knowledge"'), 1);
   assert.strictEqual(count(integrated, '"/knowledge.html"'), 1);
@@ -127,7 +131,7 @@ function main() {
   assert.ok(page.includes("/api/knowledge/preferences"));
   assert.ok(page.includes("/api/knowledge/feedback"));
 
-  console.log("UNBOUND AI Adaptive Knowledge Engine v0.97 contract checks passed.");
+  console.log("UNBOUND AI Adaptive Knowledge Engine v0.98 contract checks passed.");
 }
 
 main();

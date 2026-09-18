@@ -101,6 +101,9 @@ const {
   shutdownAbortReason
 } = require("./ops/request-cancellation");
 const {
+  writeNdjsonEvent
+} = require("./http/stream-backpressure");
+const {
   getDatabaseResilienceConfig,
   databaseRetryDelay
 } = require("./ops/database-resilience");
@@ -7144,13 +7147,9 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
 
-    const writeEvent = (event) => {
-      if (!res.writableEnded && !res.destroyed) {
-        res.write(JSON.stringify(event) + "\n");
-      }
-    };
+    const writeEvent = (event) => writeNdjsonEvent(res, event);
 
-    writeEvent({
+    await writeEvent({
       type: "meta",
       depthStyle,
       productMode,
@@ -7170,7 +7169,7 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
           .join("\n\n"),
         input,
         onDelta: async (delta) => {
-          writeEvent({ type: "delta", delta });
+          await writeEvent({ type: "delta", delta });
         },
         signal
       })
@@ -7207,7 +7206,7 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
       }
     }
 
-    writeEvent({
+    await writeEvent({
       type: "done",
       depthStyle,
       productMode,
