@@ -49,15 +49,15 @@ function injectInterruptedStreamRecovery(source) {
 
   output = replaceExactlyOnce(
     output,
-    `        const reader = response.body.getReader();\n        const decoder = new TextDecoder();\n        let buffer = "";\n\n        const handleStreamLine = (line) => {`,
-    `        const reader = response.body.getReader();\n        const decoder = new TextDecoder();\n        let buffer = "";\n        let streamCompleted = false;\n\n        const handleStreamLine = (line) => {`,
+    `        let buffer = "";`,
+    `        let buffer = "";\n        let streamCompleted = false;`,
     "stream completion state"
   );
 
   output = replaceExactlyOnce(
     output,
-    `          if ((event.type === "meta" || event.type === "done") && event.conversationId) {\n            activeConversationId = String(event.conversationId);\n          }\n\n          if (event.type === "delta" && typeof event.delta === "string") {`,
-    `          if (event.type === "done") {\n            streamCompleted = true;\n          }\n\n          if ((event.type === "meta" || event.type === "done") && event.conversationId) {\n            activeConversationId = String(event.conversationId);\n          }\n\n          if (event.type === "delta" && typeof event.delta === "string") {`,
+    `          const event = JSON.parse(line);`,
+    `          const event = JSON.parse(line);\n\n          if (event.type === "done") {\n            streamCompleted = true;\n          }`,
     "done-event tracking"
   );
 
