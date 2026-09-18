@@ -54,6 +54,53 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
     }
   });
 
+  router.get("/projects/:id/skills", async (req, res) => {
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid project ID." });
+    try {
+      const project = await getPool().query("SELECT id FROM ai_projects WHERE id = $1::uuid AND user_id = $2 LIMIT 1", [req.params.id, req.user.id]);
+      if (!project.rows[0]) return res.status(404).json({ error: "Project not found." });
+      const result = await getPool().query(
+        `SELECT skill_id, enabled, updated_at
+         FROM project_skill_settings
+         WHERE project_id = $1::uuid AND user_id = $2
+         ORDER BY skill_id ASC`,
+        [req.params.id, req.user.id]
+      );
+      return res.json({ settings: result.rows });
+    } catch (error) {
+      console.error("UNBOUND PROJECT SKILLS LIST ERROR:", error);
+      return res.status(500).json({ error: "Could not load project skills." });
+    }
+  });
+
+  router.put("/projects/:id/skills/:skillId", async (req, res) => {
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid project ID." });
+    const catalog = publicPlatformCatalog(env);
+    const skill = catalog.skills.find((item) => item.id === String(req.params.skillId || ""));
+    if (!skill) return res.status(404).json({ error: "Unknown skill." });
+    try {
+      const pool = getPool();
+      const project = await pool.query("SELECT id FROM ai_projects WHERE id = $1::uuid AND user_id = $2 LIMIT 1", [req.params.id, req.user.id]);
+      if (!project.rows[0]) return res.status(404).json({ error: "Project not found." });
+      const enabled = req.body?.enabled !== false;
+      const result = await pool.query(
+        `INSERT INTO project_skill_settings (project_id, user_id, skill_id, enabled, updated_at)
+         VALUES ($1::uuid, $2, $3, $4, NOW())
+         ON CONFLICT (project_id, skill_id) DO UPDATE SET
+           enabled = EXCLUDED.enabled,
+           updated_at = NOW()
+         WHERE project_skill_settings.user_id = EXCLUDED.user_id
+         RETURNING skill_id, enabled, updated_at`,
+        [req.params.id, req.user.id, skill.id, enabled]
+      );
+      await writeAuditEvent(pool, req.user.id, "project.skill.update", { projectId: req.params.id, skillId: skill.id, enabled });
+      return res.json({ setting: result.rows[0] });
+    } catch (error) {
+      console.error("UNBOUND PROJECT SKILLS UPDATE ERROR:", error);
+      return res.status(500).json({ error: "Could not update that project skill." });
+    }
+  });
+
   router.get("/projects/:id/assets", async (req, res) => {
     if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid project ID." });
     try {
@@ -100,6 +147,23 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
       if (String(error?.code || "").startsWith("VAULT_")) return res.status(error.statusCode || 400).json({ error: error.message, code: error.code });
       console.error("UNBOUND VAULT CREATE ERROR:", error);
       return res.status(500).json({ error: "Could not register vault asset." });
+    }
+  });
+
+  router.get("/coding/jobs", async (req, res) => {
+    try {
+      const result = await getPool().query(
+        `SELECT id, project_id, objective, status, provider_job_id, created_at, updated_at, completed_at
+         FROM coding_workspace_jobs
+         WHERE user_id = $1
+         ORDER BY updated_at DESC
+         LIMIT 100`,
+        [req.user.id]
+      );
+      return res.json({ jobs: result.rows });
+    } catch (error) {
+      console.error("UNBOUND CODING JOB LIST ERROR:", error);
+      return res.status(500).json({ error: "Could not load coding workspace jobs." });
     }
   });
 
