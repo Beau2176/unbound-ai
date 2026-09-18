@@ -55,9 +55,11 @@ function emptyState() {
     failures: 0,
     openedAt: null,
     openUntil: null,
+    openReason: null,
     lastFailureAt: null,
     lastSuccessAt: null,
     lastErrorCode: null,
+    lastRetryAfterMs: null,
     halfOpenProbeInFlight: false
   };
 }
@@ -72,6 +74,18 @@ function cleanErrorCode(value) {
   return /^[A-Z0-9_.:-]{1,120}$/.test(code) ? code : null;
 }
 
+function normalizeRetryAfterMs(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.min(
+    Math.max(
+      Math.round(parsed),
+      DEFAULT_CIRCUIT_POLICY.minCooldownMs
+    ),
+    DEFAULT_CIRCUIT_POLICY.maxCooldownMs
+  );
+}
+
 function publicState(state, policy, now) {
   if (!policy.enabled) {
     return {
@@ -80,11 +94,14 @@ function publicState(state, policy, now) {
       failures: 0,
       failureThreshold: policy.failureThreshold,
       cooldownMs: policy.cooldownMs,
+      activeCooldownMs: 0,
       openedAt: null,
       openUntil: null,
+      openReason: null,
       lastFailureAt: null,
       lastSuccessAt: null,
       lastErrorCode: null,
+      lastRetryAfterMs: null,
       halfOpenProbeInFlight: false
     };
   }
@@ -102,11 +119,17 @@ function publicState(state, policy, now) {
     failures: state.failures,
     failureThreshold: policy.failureThreshold,
     cooldownMs: policy.cooldownMs,
+    activeCooldownMs:
+      state.openedAt && state.openUntil
+        ? Math.max(0, Number(state.openUntil) - Number(state.openedAt))
+        : 0,
     openedAt: state.openedAt ? new Date(state.openedAt).toISOString() : null,
     openUntil: state.openUntil ? new Date(state.openUntil).toISOString() : null,
+    openReason: state.openReason,
     lastFailureAt: state.lastFailureAt ? new Date(state.lastFailureAt).toISOString() : null,
     lastSuccessAt: state.lastSuccessAt ? new Date(state.lastSuccessAt).toISOString() : null,
     lastErrorCode: state.lastErrorCode,
+    lastRetryAfterMs: state.lastRetryAfterMs,
     halfOpenProbeInFlight: Boolean(state.halfOpenProbeInFlight)
   };
 }
@@ -220,8 +243,10 @@ function recordProviderCircuitSuccess({
   state.failures = 0;
   state.openedAt = null;
   state.openUntil = null;
+  state.openReason = null;
   state.lastSuccessAt = timestamp;
   state.lastErrorCode = null;
+  state.lastRetryAfterMs = null;
   state.halfOpenProbeInFlight = false;
   return publicState(state, policy, timestamp);
 }
@@ -231,6 +256,7 @@ function recordProviderCircuitFailure({
   fallbackProviderId,
   retryable,
   errorCode = null,
+  retryAfterMs = null,
   env = process.env,
   now = Date.now()
 } = {}) {
@@ -254,8 +280,10 @@ function recordProviderCircuitFailure({
     state.failures = 0;
     state.openedAt = null;
     state.openUntil = null;
+    state.openReason = null;
     state.lastSuccessAt = timestamp;
     state.lastErrorCode = null;
+    state.lastRetryAfterMs = null;
     state.halfOpenProbeInFlight = false;
     return publicState(state, policy, timestamp);
   }
@@ -263,11 +291,20 @@ function recordProviderCircuitFailure({
   state.failures += 1;
   state.lastFailureAt = timestamp;
   state.lastErrorCode = cleanErrorCode(errorCode);
+  const hintedCooldownMs = normalizeRetryAfterMs(retryAfterMs);
+  state.lastRetryAfterMs = hintedCooldownMs;
   const wasHalfOpen = Boolean(state.openUntil && timestamp >= state.openUntil);
 
-  if (wasHalfOpen || state.failures >= policy.failureThreshold) {
+  if (hintedCooldownMs) {
+    state.openedAt = timestamp;
+    state.openUntil = timestamp + hintedCooldownMs;
+    state.openReason = "retry-after";
+  } else if (wasHalfOpen || state.failures >= policy.failureThreshold) {
     state.openedAt = timestamp;
     state.openUntil = timestamp + policy.cooldownMs;
+    state.openReason = wasHalfOpen
+      ? "half-open-failure"
+      : "failure-threshold";
   }
   state.halfOpenProbeInFlight = false;
 
@@ -281,6 +318,7 @@ function resetProviderCircuitBreakers() {
 module.exports = {
   DEFAULT_CIRCUIT_POLICY,
   getProviderCircuitPolicy,
+  normalizeRetryAfterMs,
   getProviderCircuitSnapshot,
   beginProviderCircuitAttempt,
   cancelProviderCircuitAttempt,
