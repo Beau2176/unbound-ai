@@ -1,5 +1,6 @@
 const {
   combineSystemAndMessages,
+  retryAfterMsFromHeaders,
   providerError
 } = require("./provider-utils");
 const {
@@ -273,7 +274,8 @@ async function generateChat({
           throw providerError(
             "ANTHROPIC_REQUEST_FAILED",
             errorPayload?.error?.message || "Anthropic request failed.",
-            response.status || 502
+            response.status || 502,
+            { retryAfterMs: retryAfterMsFromHeaders(response.headers) }
           );
         }
         return response.json().catch(() => ({}));
@@ -387,7 +389,12 @@ async function streamChat({
 
       if (!response.ok) {
         const payload = await parseErrorPayload(response);
-        throw providerError("ANTHROPIC_STREAM_REQUEST_FAILED", payload?.error?.message || "Anthropic streaming request failed.", response.status || 502);
+        throw providerError(
+          "ANTHROPIC_STREAM_REQUEST_FAILED",
+          payload?.error?.message || "Anthropic streaming request failed.",
+          response.status || 502,
+          { retryAfterMs: retryAfterMsFromHeaders(response.headers) }
+        );
       }
       if (!response.body) {
         throw providerError("ANTHROPIC_STREAM_BODY_MISSING", "Anthropic streaming response did not include a response body.", 502);

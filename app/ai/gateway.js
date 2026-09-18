@@ -3,6 +3,9 @@ const anthropic = require("./providers/anthropic");
 const google = require("./providers/google");
 const local = require("./providers/local");
 const {
+  retryAfterMsFromHeaders
+} = require("./providers/provider-utils");
+const {
   getProviderCircuitSnapshot,
   beginProviderCircuitAttempt,
   cancelProviderCircuitAttempt,
@@ -283,6 +286,24 @@ function nestedErrorCode(error) {
     error?.cause?.cause?.code ||
     ""
   ).trim().toUpperCase();
+}
+
+function providerRetryAfterMs(error) {
+  const direct = Number(
+    error?.retryAfterMs ??
+    error?.cause?.retryAfterMs ??
+    error?.cause?.cause?.retryAfterMs
+  );
+  if (Number.isFinite(direct) && direct > 0) {
+    return Math.min(Math.max(Math.round(direct), 1), 300000);
+  }
+
+  return retryAfterMsFromHeaders(
+    error?.headers ||
+    error?.cause?.headers ||
+    error?.cause?.cause?.headers ||
+    null
+  );
 }
 
 function isRetryableProviderError(error) {
@@ -576,7 +597,8 @@ async function generateChat({
         primaryProviderId: route.provider.id,
         fallbackProviderId: fallbackRoute.provider?.id || null,
         retryable,
-        errorCode: nestedErrorCode(error)
+        errorCode: nestedErrorCode(error),
+        retryAfterMs: providerRetryAfterMs(error)
       });
     }
 
@@ -678,7 +700,8 @@ async function streamChat({
         primaryProviderId: provider.id,
         fallbackProviderId: fallbackRoute.provider?.id || null,
         retryable,
-        errorCode: nestedErrorCode(error)
+        errorCode: nestedErrorCode(error),
+        retryAfterMs: providerRetryAfterMs(error)
       });
     }
 
@@ -729,5 +752,6 @@ module.exports = {
   resolveResearchProvider,
   resolveFallbackProvider,
   isRetryableProviderError,
+  providerRetryAfterMs,
   resolveProviderForRequest
 };

@@ -24,6 +24,7 @@ const LOCKED_POLICY = Object.freeze({
     "capabilities/runtime.js",
     "capabilities/server-integration.js",
     "ai/gateway.js",
+    "ai/providers/provider-utils.js",
     "ai/provider-circuit-breaker.js",
     "ai/provider-telemetry.js",
     "ai/provider-deadline.js",

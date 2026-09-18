@@ -1,5 +1,6 @@
 const {
   combineSystemAndMessages,
+  retryAfterMsFromHeaders,
   providerError,
   normalizeHttpEndpoint
 } = require("./provider-utils");
@@ -109,7 +110,8 @@ async function generateChat({
         throw providerError(
           "LOCAL_AI_REQUEST_FAILED",
           payload?.error?.message || "Local AI request failed.",
-          response.status || 502
+          response.status || 502,
+          { retryAfterMs: retryAfterMsFromHeaders(response.headers) }
         );
       }
       return publicResult(payload, body.model);
@@ -165,7 +167,8 @@ async function streamChat({
         throw providerError(
           "LOCAL_AI_STREAM_REQUEST_FAILED",
           payload?.error?.message || "Local AI streaming request failed.",
-          response.status || 502
+          response.status || 502,
+          { retryAfterMs: retryAfterMsFromHeaders(response.headers) }
         );
       }
 
