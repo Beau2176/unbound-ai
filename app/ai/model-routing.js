@@ -1,4 +1,10 @@
 const PROFILE_IDS = Object.freeze(["auto", "fast", "deep", "research"]);
+const PROVIDER_IDS = Object.freeze(["openai", "anthropic", "gemini", "local"]);
+
+function cleanProviderId(value) {
+  const provider = String(value || "").trim().toLowerCase();
+  return PROVIDER_IDS.includes(provider) ? provider : null;
+}
 
 function cleanModelId(value) {
   const model = String(value || "").trim();
@@ -11,23 +17,33 @@ function normalizeModelProfile(value) {
   return PROFILE_IDS.includes(profile) ? profile : "auto";
 }
 
-function getModelRoutingConfig(env = process.env, defaultModel = null) {
+function getModelRoutingConfig(env = process.env, defaultModel = null, defaultProvider = null) {
   const fallback = cleanModelId(defaultModel || env.OPENAI_MODEL || env.AI_MODEL);
+  const providerFallback = cleanProviderId(defaultProvider || env.AI_PROVIDER) || "openai";
   const profiles = {
     fast: cleanModelId(env.AI_MODEL_FAST || env.OPENAI_FAST_MODEL),
     deep: cleanModelId(env.AI_MODEL_DEEP || env.OPENAI_DEEP_MODEL),
     research: cleanModelId(env.AI_MODEL_RESEARCH || env.OPENAI_RESEARCH_MODEL)
+  };
+  const providerProfiles = {
+    fast: cleanProviderId(env.AI_PROVIDER_FAST),
+    deep: cleanProviderId(env.AI_PROVIDER_DEEP),
+    research: cleanProviderId(env.AI_PROVIDER_RESEARCH)
   };
   const configuredProfiles = Object.entries(profiles)
     .filter(([, model]) => Boolean(model))
     .map(([profile]) => profile);
   const uniqueModels = new Set([fallback, ...Object.values(profiles)].filter(Boolean));
 
+  const uniqueProviders = new Set([providerFallback, ...Object.values(providerProfiles)].filter(Boolean));
   return {
     defaultModel: fallback,
+    defaultProvider: providerFallback,
     profiles,
+    providerProfiles,
     configuredProfiles,
-    multipleModelsConfigured: uniqueModels.size >= 2
+    multipleModelsConfigured: uniqueModels.size >= 2,
+    multipleProvidersConfigured: uniqueProviders.size >= 2
   };
 }
 
@@ -62,16 +78,18 @@ function resolveChatModel({
   productMode = "standard",
   message = "",
   defaultModel = null,
+  defaultProvider = null,
   enabled = false,
   env = process.env
 } = {}) {
-  const config = getModelRoutingConfig(env, defaultModel);
+  const config = getModelRoutingConfig(env, defaultModel, defaultProvider);
   const fallback = config.defaultModel || cleanModelId(defaultModel);
   const requested = normalizeModelProfile(requestedProfile);
 
   if (!enabled) {
     return {
       model: fallback,
+      provider: config.defaultProvider,
       profile: "default",
       requestedProfile: requested,
       routed: false,
@@ -82,23 +100,35 @@ function resolveChatModel({
   const targetProfile = requested === "auto"
     ? automaticProfile({ depthStyle, productMode, message })
     : requested;
-  const routedModel = config.profiles[targetProfile] || fallback;
+  const routedProvider = config.providerProfiles[targetProfile] || config.defaultProvider;
+  const routedModel = config.profiles[targetProfile] || (
+    routedProvider === config.defaultProvider ? fallback : null
+  );
+  const profileConfigured = Boolean(config.profiles[targetProfile] || config.providerProfiles[targetProfile]);
 
   return {
     model: routedModel,
-    profile: config.profiles[targetProfile] ? targetProfile : "default",
+    provider: routedProvider,
+    profile: profileConfigured ? targetProfile : "default",
     requestedProfile: requested,
-    routed: Boolean(config.profiles[targetProfile] && routedModel !== fallback),
-    reason: config.profiles[targetProfile] ? "profile-configured" : "profile-fallback"
+    routed: Boolean(
+      profileConfigured &&
+      (routedModel !== fallback || routedProvider !== config.defaultProvider)
+    ),
+    reason: profileConfigured ? "profile-configured" : "profile-fallback"
   };
 }
 
-function publicModelRoutingStatus(env = process.env, defaultModel = null) {
-  const config = getModelRoutingConfig(env, defaultModel);
+function publicModelRoutingStatus(env = process.env, defaultModel = null, defaultProvider = null) {
+  const config = getModelRoutingConfig(env, defaultModel, defaultProvider);
   return {
     implemented: true,
     multipleModelsConfigured: config.multipleModelsConfigured,
+    multipleProvidersConfigured: config.multipleProvidersConfigured,
     configuredProfiles: [...config.configuredProfiles],
+    configuredProviderProfiles: Object.entries(config.providerProfiles)
+      .filter(([, provider]) => Boolean(provider))
+      .map(([profile]) => profile),
     rawModelIdsExposed: false,
     browserSuppliedModelIdsAccepted: false
   };
@@ -106,6 +136,8 @@ function publicModelRoutingStatus(env = process.env, defaultModel = null) {
 
 module.exports = {
   PROFILE_IDS,
+  PROVIDER_IDS,
+  cleanProviderId,
   cleanModelId,
   normalizeModelProfile,
   getModelRoutingConfig,
