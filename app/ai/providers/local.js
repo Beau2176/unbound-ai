@@ -89,6 +89,7 @@ async function generateChat({
   instructions,
   input,
   model,
+  signal: requestSignal = null,
   fetchImpl = fetch
 } = {}) {
   assertConfigured();
@@ -114,6 +115,7 @@ async function generateChat({
       return publicResult(payload, body.model);
     },
     {
+      externalSignal: requestSignal,
       code: "LOCAL_AI_REQUEST_TIMEOUT",
       label: "Local AI request"
     }
@@ -140,6 +142,7 @@ async function streamChat({
   input,
   model,
   onDelta,
+  signal: requestSignal = null,
   fetchImpl = fetch
 } = {}) {
   assertConfigured();
@@ -290,6 +293,7 @@ async function streamChat({
       };
     },
     {
+      externalSignal: requestSignal,
       code: "LOCAL_AI_STREAM_TIMEOUT",
       label: "Local AI streaming request"
     }
