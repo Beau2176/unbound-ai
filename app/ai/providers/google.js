@@ -26,8 +26,16 @@ function isConfigured() {
   return Boolean(apiKey());
 }
 
+function googleGroundingApproved(env = process.env) {
+  return ["1", "true", "yes", "on"].includes(
+    String(env.UNBOUND_GOOGLE_SEARCH_GROUNDING_APPROVED || "")
+      .trim()
+      .toLowerCase()
+  );
+}
+
 function supportsResearch() {
-  return true;
+  return googleGroundingApproved();
 }
 
 function supportsFileAnalysis() {
@@ -281,6 +289,13 @@ async function generateChat({
   fetchImpl = fetch
 } = {}) {
   assertConfigured();
+  if (research?.enabled && !googleGroundingApproved()) {
+    throw providerError(
+      "GEMINI_GROUNDING_APPROVAL_REQUIRED",
+      "Google Search grounding is launch-gated until commercial-use approval is recorded.",
+      503
+    );
+  }
   const selectedModel = String(model || getModel()).trim() || getModel();
   const response = await fetchImpl(geminiEndpoint(selectedModel), {
     method: "POST",
@@ -487,6 +502,7 @@ module.exports = {
   MAX_STREAM_REPLY_CHARS,
   getModel,
   isConfigured,
+  googleGroundingApproved,
   supportsResearch,
   supportsFileAnalysis,
   toGeminiContents,
