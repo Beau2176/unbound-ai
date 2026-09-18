@@ -79,7 +79,12 @@ async function fetchJson(url, {
     if (length > MAX_A2A_RESPONSE_BYTES) {
       throw a2aError("A2A_RESPONSE_TOO_LARGE", "A2A peer response exceeded the allowed size.", 502);
     }
-    const payload = await response.json().catch(() => null);
+    const raw = await response.text();
+    if (Buffer.byteLength(raw, "utf8") > MAX_A2A_RESPONSE_BYTES) {
+      throw a2aError("A2A_RESPONSE_TOO_LARGE", "A2A peer response exceeded the allowed size.", 502);
+    }
+    let payload = null;
+    try { payload = JSON.parse(raw); } catch (_) {}
     if (!response.ok) {
       const remoteMessage =
         payload?.error?.message ||
@@ -182,10 +187,7 @@ function selectInterface(card, cardUrl, env = process.env) {
       };
     })
     .filter(Boolean)
-    .sort((a, b) => {
-      const rank = (value) => value === "HTTP+JSON" ? 0 : 1;
-      return rank(a.binding) - rank(b.binding) || a.index - b.index;
-    });
+    .sort((a, b) => a.index - b.index);
   if (!candidates.length) {
     throw a2aError(
       "A2A_NO_SUPPORTED_INTERFACE",
