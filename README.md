@@ -148,6 +148,8 @@ UNBOUND propagates HTTP client disconnects through the gateway, provider bulkhea
 
 Client cancellation is not treated as a provider outage: it does not trigger fallback, does not increment or reset the provider circuit breaker, and is recorded separately from provider failures in process-local telemetry. This applies to normal chat, streaming chat, Research Mode, and file-analysis provider calls when a request signal is supplied.
 
+File Analysis and Artifact Studio planning now create request-scoped cancellation signals at their HTTP routes, so their gateway/provider work is cancelled automatically on disconnect or graceful restart instead of relying on callers to supply a signal manually. Local artifact export remains provider-free and does not need an upstream cancellation signal.
+
 ### Graceful AI shutdown drain
 
 During SIGTERM/SIGINT shutdown, UNBOUND marks the process unready, broadcasts a `SERVER_SHUTDOWN` cancellation to every registered AI request, and only then waits for the HTTP server to close. This releases provider bulkhead slots and aborts active upstream requests instead of leaving long AI calls alive until the forced-exit deadline.
