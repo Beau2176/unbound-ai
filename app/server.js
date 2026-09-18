@@ -6930,6 +6930,22 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
       citations: [],
       webSearchCalls: 0
     };
+    const researchStoragePolicy =
+      researchMetadata?.storagePolicy &&
+      typeof researchMetadata.storagePolicy === "object"
+        ? researchMetadata.storagePolicy
+        : null;
+    const persistedResearchMetadata = {
+      sources:
+        researchStoragePolicy?.persistSources === false
+          ? []
+          : researchMetadata.sources,
+      citations:
+        researchStoragePolicy?.persistCitations === false
+          ? []
+          : researchMetadata.citations,
+      webSearchCalls: 0
+    };
 
     if (persistentChat) {
       await persistAssistantMessage(
@@ -6937,7 +6953,7 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
         aiResponse.reply,
         depthStyle,
         productMode,
-        researchMetadata
+        persistedResearchMetadata
       );
     }
 
@@ -6977,6 +6993,19 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
       sources: researchMetadata.sources,
       citations: researchMetadata.citations,
       webSearchCalls: researchMetadata.webSearchCalls,
+      searchSuggestionsHtml: researchMetadata.searchSuggestionsHtml || null,
+      groundingProvider: researchMetadata.groundingProvider || null,
+      providerRetentionDays:
+        Number(researchMetadata.providerRetentionDays) || null,
+      researchStorage: researchStoragePolicy
+        ? {
+            persistText: researchStoragePolicy.persistText !== false,
+            persistSources: researchStoragePolicy.persistSources !== false,
+            persistCitations: researchStoragePolicy.persistCitations !== false,
+            persistSearchSuggestions:
+              researchStoragePolicy.persistSearchSuggestions !== false
+          }
+        : null,
       conversationId: persistentChat?.conversationId || null
     });
   } catch (error) {
