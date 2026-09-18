@@ -158,6 +158,21 @@ ${chatRoute.replace(", async (req, res) => {", ", enforceChatUsageBudget, async 
     "image-tools-budget"
   );
 
+  const agentRouter = `createAgentRouter({
+    getPool: () => pool,
+    createRunRateLimit: agentRunRateLimit
+  })`;
+  source = replaceExactlyOnce(
+    source,
+    agentRouter,
+    `createAgentRouter({
+    getPool: () => pool,
+    createRunRateLimit: agentRunRateLimit,
+    assertUsageBudget: enforceUsageBudgetForUser
+  })`,
+    "agent-router-budget"
+  );
+
   const voiceRouter = `createVoiceRouter({
     getPool: () => pool
   })`;
