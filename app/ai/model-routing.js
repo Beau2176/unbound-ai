@@ -60,6 +60,7 @@ function resolveChatModel({
   requestedProfile = "auto",
   depthStyle = "casual",
   productMode = "standard",
+  message = "",
   defaultModel = null,
   enabled = false,
   env = process.env
@@ -79,7 +80,7 @@ function resolveChatModel({
   }
 
   const targetProfile = requested === "auto"
-    ? automaticProfile({ depthStyle, productMode, message: arguments[0]?.message })
+    ? automaticProfile({ depthStyle, productMode, message })
     : requested;
   const routedModel = config.profiles[targetProfile] || fallback;
 
