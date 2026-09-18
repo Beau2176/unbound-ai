@@ -70,6 +70,7 @@ async function main() {
   const missing = getBillingGatewayStatus({});
   assert.equal(missing.configured, false);
   assert.deepEqual(missing.paidPlans, ["premium", "ultra"]);
+  assert.deepEqual(missing.futurePlans, ["max"]);
 
   const env = {
     BILLING_PROVIDER: provider,
@@ -78,6 +79,7 @@ async function main() {
   const ready = getBillingGatewayStatus(env);
   assert.equal(ready.configured, true);
   assert.deepEqual(ready.paidPlans, ["premium", "ultra"]);
+  assert.deepEqual(ready.futurePlans, ["max"]);
 
   for (const planTier of ["premium", "ultra"]) {
     const checkout = await startBillingCheckoutSession({
@@ -96,6 +98,29 @@ async function main() {
     assert.ok(checkout.checkoutUrl.includes(planTier));
     assert.ok(!JSON.stringify(checkout).includes("DO_NOT_LEAK"));
   }
+
+  await assert.rejects(
+    () => startBillingCheckoutSession({
+      subject: "subject-opaque-123",
+      email: "user@example.com",
+      planTier: "max",
+      env
+    }),
+    (error) => error?.code === "BILLING_CHECKOUT_INPUT_INVALID"
+  );
+
+  const maxEnv = { ...env, UNBOUND_MAX_LAUNCH_ENABLED: "true" };
+  const maxGateway = getBillingGatewayStatus(maxEnv);
+  assert.deepEqual(maxGateway.paidPlans, ["premium", "ultra", "max"]);
+  assert.deepEqual(maxGateway.futurePlans, []);
+  const maxCheckout = await startBillingCheckoutSession({
+    subject: "subject-opaque-123",
+    email: "user@example.com",
+    planTier: "max",
+    env: maxEnv
+  });
+  assert.equal(maxCheckout.planTier, "max");
+  assert.equal(checkoutInput.planTier, "max");
 
   const legacyCheckout = await startBillingCheckoutSession({
     subject: "subject-opaque-123",
@@ -129,6 +154,14 @@ async function main() {
     });
     assert.equal(webhook.planTier, expectedPlan);
   }
+
+  webhookPlanTier = "max";
+  const maxWebhook = await processBillingWebhook({
+    rawBody: Buffer.from("{}"),
+    headers: { "x-contract-signature": "valid" },
+    env: maxEnv
+  });
+  assert.equal(maxWebhook.planTier, "max");
 
   webhookPlanTier = "top";
   const legacyWebhook = await processBillingWebhook({
@@ -187,7 +220,7 @@ async function main() {
     );
   }
 
-  console.log("PASS billing contract: Premium/Ultra checkout, legacy TOP alias, safe planless lifecycle webhooks.");
+  console.log("PASS billing contract: revised Premium/Ultra checkout, launch-gated Max, legacy TOP alias, safe lifecycle webhooks.");
 }
 
 main().catch((error) => {
