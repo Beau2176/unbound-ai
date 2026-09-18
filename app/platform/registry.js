@@ -40,33 +40,33 @@ function providerCatalog(env = process.env) {
       label: "Anthropic",
       kind: "cloud",
       configured: configured(env.ANTHROPIC_API_KEY),
-      chat: false,
+      chat: true,
       research: false,
-      adapterState: "credential-detected-adapter-not-yet-active"
+      adapterState: "active-text-adapter"
     },
     {
       id: "google",
       label: "Google Gemini",
       kind: "cloud",
       configured: configured(env.GEMINI_API_KEY || env.GOOGLE_AI_API_KEY),
-      chat: false,
+      chat: true,
       research: false,
-      adapterState: "credential-detected-adapter-not-yet-active"
+      adapterState: "active-text-adapter"
     },
     {
       id: "local",
       label: "Local / Private Model",
       kind: "local",
       configured: configured(env.UNBOUND_LOCAL_AI_ENDPOINT),
-      chat: false,
+      chat: true,
       research: false,
-      adapterState: "endpoint-detected-adapter-not-yet-active"
+      adapterState: "active-openai-compatible-adapter"
     }
   ];
 }
 
 function connectorCatalog(env = process.env) {
-  const remoteBrowser = configured(env.BROWSER_CDP_URL || env.REMOTE_CDP_URL);
+  const remoteBrowser = configured(env.UNBOUND_BROWSER_CDP_URL || env.BROWSER_WS_ENDPOINT);
   return [
     { id: "github", label: "GitHub", protocol: "native_oauth", configured: configured(env.GITHUB_CLIENT_ID), read: true, write: enabled(env.GITHUB_WRITE_ACTIONS_ENABLED) },
     { id: "mcp_gateway", label: "MCP Gateway", protocol: "mcp", configured: configured(env.UNBOUND_MCP_GATEWAY_URL), read: true, write: false },
