@@ -1,3 +1,7 @@
+const {
+  runWithProviderDeadline
+} = require("../provider-deadline");
+
 const DEFAULT_MODEL = "gpt-5.6-luna";
 const REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 let clientPromise = null;
@@ -193,11 +197,11 @@ async function generateChat({
   input,
   model,
   research = null,
-  reasoningEffort = null
+  reasoningEffort = null,
+  clientFactory = createClient
 }) {
   assertConfigured();
 
-  const client = await createClient();
   const selectedModel = String(model || getModel()).trim() || getModel();
   const request = {
     model: selectedModel,
@@ -218,18 +222,33 @@ async function generateChat({
     );
   }
 
-  const response = await client.responses.create(request);
+  const kind = research?.enabled ? "research" : "chat";
+  return runWithProviderDeadline(
+    kind,
+    async ({ signal, timeoutMs }) => {
+      const client = await clientFactory();
+      const response = await client.responses.create(request, {
+        timeout: timeoutMs,
+        maxRetries: 0,
+        signal
+      });
 
-  return {
-    provider: "openai",
-    model: response.model || selectedModel,
-    reply: response.output_text || "",
-    usage: response.usage || null,
-    responseId: response.id || null,
-    research: research?.enabled
-      ? extractWebResearchMetadata(response)
-      : { sources: [], citations: [], webSearchCalls: 0 }
-  };
+      return {
+        provider: "openai",
+        model: response.model || selectedModel,
+        reply: response.output_text || "",
+        usage: response.usage || null,
+        responseId: response.id || null,
+        research: research?.enabled
+          ? extractWebResearchMetadata(response)
+          : { sources: [], citations: [], webSearchCalls: 0 }
+      };
+    },
+    {
+      code: research?.enabled ? "OPENAI_RESEARCH_TIMEOUT" : "OPENAI_REQUEST_TIMEOUT",
+      label: research?.enabled ? "OpenAI Research Mode request" : "OpenAI request"
+    }
+  );
 }
 
 async function streamChat({
@@ -237,11 +256,11 @@ async function streamChat({
   input,
   model,
   onDelta,
-  reasoningEffort = null
+  reasoningEffort = null,
+  clientFactory = createClient
 }) {
   assertConfigured();
 
-  const client = await createClient();
   const selectedModel = String(model || getModel()).trim() || getModel();
   const request = {
     model: selectedModel,
@@ -253,31 +272,45 @@ async function streamChat({
   const effort = normalizeReasoningEffort(reasoningEffort);
   if (effort) request.reasoning = { effort };
 
-  const stream = await client.responses.create(request);
-  let reply = "";
-  let completedResponse = null;
+  return runWithProviderDeadline(
+    "stream",
+    async ({ signal, timeoutMs }) => {
+      const client = await clientFactory();
+      const stream = await client.responses.create(request, {
+        timeout: timeoutMs,
+        maxRetries: 0,
+        signal
+      });
+      let reply = "";
+      let completedResponse = null;
 
-  for await (const event of stream) {
-    if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
-      reply += event.delta;
-      if (onDelta) {
-        await onDelta(event.delta);
+      for await (const event of stream) {
+        if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
+          reply += event.delta;
+          if (onDelta) {
+            await onDelta(event.delta);
+          }
+        }
+
+        if (event.type === "response.completed" && event.response) {
+          completedResponse = event.response;
+        }
       }
-    }
 
-    if (event.type === "response.completed" && event.response) {
-      completedResponse = event.response;
+      return {
+        provider: "openai",
+        model: completedResponse?.model || selectedModel,
+        reply,
+        usage: completedResponse?.usage || null,
+        responseId: completedResponse?.id || null,
+        research: { sources: [], citations: [], webSearchCalls: 0 }
+      };
+    },
+    {
+      code: "OPENAI_STREAM_TIMEOUT",
+      label: "OpenAI streaming request"
     }
-  }
-
-  return {
-    provider: "openai",
-    model: completedResponse?.model || selectedModel,
-    reply,
-    usage: completedResponse?.usage || null,
-    responseId: completedResponse?.id || null,
-    research: { sources: [], citations: [], webSearchCalls: 0 }
-  };
+  );
 }
 
 async function analyzeFile({
@@ -299,16 +332,29 @@ async function analyzeFile({
     detail,
     model
   });
-  const client = await clientFactory();
-  const response = await client.responses.create(request);
+  return runWithProviderDeadline(
+    "file",
+    async ({ signal, timeoutMs }) => {
+      const client = await clientFactory();
+      const response = await client.responses.create(request, {
+        timeout: timeoutMs,
+        maxRetries: 0,
+        signal
+      });
 
-  return {
-    provider: "openai",
-    model: response.model || request.model,
-    reply: response.output_text || "",
-    usage: response.usage || null,
-    responseId: response.id || null
-  };
+      return {
+        provider: "openai",
+        model: response.model || request.model,
+        reply: response.output_text || "",
+        usage: response.usage || null,
+        responseId: response.id || null
+      };
+    },
+    {
+      code: "OPENAI_FILE_ANALYSIS_TIMEOUT",
+      label: "OpenAI file-analysis request"
+    }
+  );
 }
 
 module.exports = {
