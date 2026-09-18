@@ -33,10 +33,20 @@ function integrateImageUnderstandingServerSource(serverSource) {
   );
 
   const fileParserBypass = `app.use((req, res, next) => {\n  const fileAnalysisPath =\n    req.path === "/api/file-analysis" ||\n    req.path.startsWith("/api/file-analysis/");\n  if (RAW_WEBHOOK_PATHS.has(req.path) || fileAnalysisPath) return next();\n  return jsonBodyParser(req, res, next);\n});`;
+  const artifactParserBypass = `app.use((req, res, next) => {\n  const fileAnalysisPath =\n    req.path === "/api/file-analysis" ||\n    req.path.startsWith("/api/file-analysis/");\n  const artifactPath =\n    req.path === "/api/artifacts" ||\n    req.path.startsWith("/api/artifacts/");\n  if (RAW_WEBHOOK_PATHS.has(req.path) || fileAnalysisPath || artifactPath) return next();\n  return jsonBodyParser(req, res, next);\n});`;
+
+  let parserMarker = fileParserBypass;
+  let parserReplacement = `app.use((req, res, next) => {\n  const fileAnalysisPath =\n    req.path === "/api/file-analysis" ||\n    req.path.startsWith("/api/file-analysis/");\n  const imageUnderstandingPath =\n    req.path === "/api/image-understanding" ||\n    req.path.startsWith("/api/image-understanding/");\n  const imageToolsPath =\n    req.path === "/api/image-tools" ||\n    req.path.startsWith("/api/image-tools/");\n  if (\n    RAW_WEBHOOK_PATHS.has(req.path) ||\n    fileAnalysisPath ||\n    imageUnderstandingPath ||\n    imageToolsPath\n  ) return next();\n  return jsonBodyParser(req, res, next);\n});`;
+
+  if (!source.includes(fileParserBypass) && source.includes(artifactParserBypass)) {
+    parserMarker = artifactParserBypass;
+    parserReplacement = `app.use((req, res, next) => {\n  const fileAnalysisPath =\n    req.path === "/api/file-analysis" ||\n    req.path.startsWith("/api/file-analysis/");\n  const artifactPath =\n    req.path === "/api/artifacts" ||\n    req.path.startsWith("/api/artifacts/");\n  const imageUnderstandingPath =\n    req.path === "/api/image-understanding" ||\n    req.path.startsWith("/api/image-understanding/");\n  const imageToolsPath =\n    req.path === "/api/image-tools" ||\n    req.path.startsWith("/api/image-tools/");\n  if (\n    RAW_WEBHOOK_PATHS.has(req.path) ||\n    fileAnalysisPath ||\n    artifactPath ||\n    imageUnderstandingPath ||\n    imageToolsPath\n  ) return next();\n  return jsonBodyParser(req, res, next);\n});`;
+  }
+
   source = replaceExactlyOnce(
     source,
-    fileParserBypass,
-    `app.use((req, res, next) => {\n  const fileAnalysisPath =\n    req.path === "/api/file-analysis" ||\n    req.path.startsWith("/api/file-analysis/");\n  const imageUnderstandingPath =\n    req.path === "/api/image-understanding" ||\n    req.path.startsWith("/api/image-understanding/");\n  const imageToolsPath =\n    req.path === "/api/image-tools" ||\n    req.path.startsWith("/api/image-tools/");\n  if (\n    RAW_WEBHOOK_PATHS.has(req.path) ||\n    fileAnalysisPath ||\n    imageUnderstandingPath ||\n    imageToolsPath\n  ) return next();\n  return jsonBodyParser(req, res, next);\n});`,
+    parserMarker,
+    parserReplacement,
     "image-json-parser-bypass"
   );
 

@@ -5,6 +5,7 @@ const vm = require("vm");
 const { integrateEmailVerificationServerSource } = require("../email/server-integration");
 const { integrateBillingServerSource } = require("../billing/server-integration");
 const { integrateFileAnalysisServerSource } = require("../files/server-integration");
+const { integrateArtifactServerSource } = require("../artifacts/server-integration");
 const {
   INTEGRATION_VERSION,
   integrateImageUnderstandingServerSource
@@ -62,6 +63,14 @@ function main() {
 
   new vm.Script(`(function(require,module,exports,__dirname,__filename){\n${integrated}\n})`);
 
+  const artifactIntegrated = integrateArtifactServerSource(fileIntegrated);
+  const combinedIntegrated = integrateImageUnderstandingServerSource(artifactIntegrated);
+  assert.strictEqual(count(combinedIntegrated, 'req.path === "/api/artifacts"'), 1);
+  assert.strictEqual(count(combinedIntegrated, 'req.path === "/api/image-understanding"'), 1);
+  assert.strictEqual(count(combinedIntegrated, 'req.path === "/api/image-tools"'), 1);
+  assert.ok(combinedIntegrated.includes("artifactPath ||"));
+  assert.ok(combinedIntegrated.includes("imageUnderstandingPath ||"));
+
   expectCode(
     () => integrateImageUnderstandingServerSource(
       fileIntegrated.replace(
@@ -76,8 +85,15 @@ function main() {
   const emailIndex = startSource.indexOf("integrateEmailVerificationServerSource(source)");
   const billingIndex = startSource.indexOf("integrateBillingServerSource(emailIntegratedSource)");
   const fileIndex = startSource.indexOf("integrateFileAnalysisServerSource(billingIntegratedSource)");
-  const imageIndex = startSource.indexOf("integrateImageUnderstandingServerSource(fileIntegratedSource)");
-  assert.ok(emailIndex >= 0 && billingIndex > emailIndex && fileIndex > billingIndex && imageIndex > fileIndex);
+  const artifactIndex = startSource.indexOf("integrateArtifactServerSource(fileIntegratedSource)");
+  const imageIndex = startSource.indexOf("integrateImageUnderstandingServerSource(artifactIntegratedSource)");
+  assert.ok(
+    emailIndex >= 0 &&
+    billingIndex > emailIndex &&
+    fileIndex > billingIndex &&
+    artifactIndex > fileIndex &&
+    imageIndex > artifactIndex
+  );
   assert.ok(startSource.includes("runtimeModule._compile(integratedSource, serverPath)"));
 
   console.log("UNBOUND AI image-understanding server integration checks passed.");

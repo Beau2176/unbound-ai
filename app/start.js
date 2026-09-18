@@ -11,6 +11,9 @@ const {
   integrateFileAnalysisServerSource
 } = require("./files/server-integration");
 const {
+  integrateArtifactServerSource
+} = require("./artifacts/server-integration");
+const {
   integrateImageUnderstandingServerSource
 } = require("./images/server-integration");
 const {
@@ -105,7 +108,8 @@ function compileIntegratedServer({
   const emailIntegratedSource = integrateEmailVerificationServerSource(source);
   const billingIntegratedSource = integrateBillingServerSource(emailIntegratedSource);
   const fileIntegratedSource = integrateFileAnalysisServerSource(billingIntegratedSource);
-  let integratedSource = integrateImageUnderstandingServerSource(fileIntegratedSource);
+  const artifactIntegratedSource = integrateArtifactServerSource(fileIntegratedSource);
+  let integratedSource = integrateImageUnderstandingServerSource(artifactIntegratedSource);
   integratedSource = integrateVoiceServerSource(integratedSource);
   integratedSource = integrateCommandCenterServerSource(integratedSource);
   integratedSource = integrateScheduledTasksServerSource(integratedSource);

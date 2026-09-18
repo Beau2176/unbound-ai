@@ -24,6 +24,7 @@ const CAPABILITY_CATALOG = Object.freeze({
   web_research: Object.freeze({ label: "Web research", description: "Live source-driven web research using the configured AI provider.", implemented: true, minimumPlan: "premium" }),
   citations: Object.freeze({ label: "Research citations", description: "Source citations and source metadata attached to Research Mode answers.", implemented: true, minimumPlan: "premium" }),
   file_analysis: Object.freeze({ label: "File analysis", description: "Upload and analyze supported documents and data files without storing the raw upload in UNBOUND AI.", implemented: true, minimumPlan: "premium" }),
+  artifact_creation: Object.freeze({ label: "Artifact Studio", description: "Use AI to plan and export real DOCX, XLSX, and PPTX files with bounded server-side Office Open XML generation.", implemented: true, minimumPlan: "premium" }),
   image_understanding: Object.freeze({ label: "Image understanding", description: "Upload or capture an image for visual analysis without storing the raw upload in UNBOUND AI.", implemented: true, minimumPlan: "premium" }),
   voice: Object.freeze({ label: "Voice conversation", description: "Natural spoken conversation with UNBOUND AI.", implemented: true, minimumPlan: "premium" }),
   memory: Object.freeze({ label: "User-controlled Memory", description: "Explicit saved context that the user can review, pause, edit, or delete and that is used only in signed-in chat when enabled.", implemented: true, minimumPlan: "premium" }),

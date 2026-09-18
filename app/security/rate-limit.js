@@ -18,6 +18,7 @@ function getRateLimitPolicy(env = process.env) {
     accountChat: Object.freeze({ scope: "chat_account", limit: positiveIntEnv(env, "RATE_LIMIT_ACCOUNT_CHAT_PER_HOUR", 300, { max: 10000 }), windowSeconds: 60 * 60 }),
     research: Object.freeze({ scope: "research_account", limit: positiveIntEnv(env, "RATE_LIMIT_RESEARCH_PER_HOUR", 60, { max: 10000 }), windowSeconds: 60 * 60 }),
     fileAnalysis: Object.freeze({ scope: "file_analysis_account", limit: positiveIntEnv(env, "RATE_LIMIT_FILE_ANALYSIS_PER_HOUR", 30, { max: 1000 }), windowSeconds: 60 * 60 }),
+    artifacts: Object.freeze({ scope: "artifact_account", limit: positiveIntEnv(env, "RATE_LIMIT_ARTIFACTS_PER_HOUR", 30, { max: 1000 }), windowSeconds: 60 * 60 }),
     imageUnderstanding: Object.freeze({ scope: "image_understanding_account", limit: positiveIntEnv(env, "RATE_LIMIT_IMAGE_UNDERSTANDING_PER_HOUR", 30, { max: 1000 }), windowSeconds: 60 * 60 }),
     imageTools: Object.freeze({ scope: "image_tools_account", limit: positiveIntEnv(env, "RATE_LIMIT_IMAGE_TOOLS_PER_HOUR", 20, { max: 500 }), windowSeconds: 60 * 60 }),
     voiceSessions: Object.freeze({ scope: "voice_account", limit: positiveIntEnv(env, "RATE_LIMIT_VOICE_SPEECH_PER_HOUR", 120, { max: 5000 }), windowSeconds: 60 * 60 }),

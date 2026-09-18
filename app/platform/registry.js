@@ -3,7 +3,7 @@ const PLATFORM_PARITY_VERSION = "v1.0";
 const BUILT_IN_SKILLS = Object.freeze([
   Object.freeze({ id: "research", label: "Research", category: "knowledge", tools: ["web_research"], requires: ["web_research"] }),
   Object.freeze({ id: "coding", label: "Coding Agent", category: "builder", tools: ["code_workspace"], requires: ["code_workspace"] }),
-  Object.freeze({ id: "documents", label: "Documents", category: "artifact", tools: ["file_analysis"], requires: ["file_analysis"] }),
+  Object.freeze({ id: "documents", label: "Documents & Artifacts", category: "artifact", tools: ["file_analysis", "artifact_creation"], requires: ["file_analysis", "artifact_creation"] }),
   Object.freeze({ id: "projects", label: "Project Workspace", category: "workspace", tools: ["project_memory", "vault_metadata"], requires: [] }),
   Object.freeze({ id: "automation", label: "Automations", category: "agent", tools: ["scheduled_tasks", "future_core"], requires: ["future_core"] }),
   Object.freeze({ id: "computer_use", label: "Computer Use", category: "action", tools: ["browser_control"], requires: ["browser_control"] }),
@@ -116,6 +116,8 @@ function workspaceStatus(env = process.env) {
     codeWorkspace: configured(env.UNBOUND_CODE_SANDBOX_URL),
     futureCore: String(env.UNBOUND_FUTURE_CORE_V2_ENABLED || "").toLowerCase() === "true",
     nativeMultimodalBridge: true,
+    artifactStudio: true,
+    artifactExports: Object.freeze(["docx", "xlsx", "pptx"]),
     marketplaceRegistry: true,
     marketplaceEnabled: enabled(env.UNBOUND_SKILL_MARKETPLACE_ENABLED),
     creatorMarketplace: enabled(env.UNBOUND_SKILL_CREATOR_ENABLED),

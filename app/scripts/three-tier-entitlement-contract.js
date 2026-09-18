@@ -37,7 +37,7 @@ function main() {
   for (const capability of ["chat", "casual_mode", "work_mode", "creative_mode", "unbound_mode"]) {
     assert.strictEqual(free.get(capability).usable, true, `${capability} must remain Free`);
   }
-  for (const capability of ["web_research", "citations", "file_analysis", "image_understanding", "voice", "memory"]) {
+  for (const capability of ["web_research", "citations", "file_analysis", "artifact_creation", "image_understanding", "voice", "memory"]) {
     assert.strictEqual(free.get(capability).usable, false, `${capability} must not be Free`);
     assert.strictEqual(premium.get(capability).usable, true, `${capability} must be Premium`);
   }

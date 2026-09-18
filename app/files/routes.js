@@ -16,6 +16,7 @@ const {
 
 const INDEX_NAV_MARKER = '<a class="account-button advertiser-link" href="/advertisers.html">ADVERTISE</a>';
 const FILES_NAV_LINK = '<a class="account-button advertiser-link" href="/files.html">FILES</a>';
+const ARTIFACTS_NAV_LINK = '<a class="account-button advertiser-link" href="/artifact-studio.html">CREATE</a>';
 const IMAGES_NAV_LINK = '<a class="account-button advertiser-link" href="/images.html">IMAGES</a>';
 const IMAGE_STUDIO_NAV_LINK = '<a class="account-button advertiser-link" href="/image-tools.html">STUDIO</a>';
 const VOICE_NAV_LINK = '<a class="account-button advertiser-link" href="/voice.html">VOICE</a>';
@@ -169,7 +170,7 @@ function buildFileAwareIndexHtml(indexHtml) {
   source = replaceExactlyOnce(
     source,
     INDEX_NAV_MARKER,
-    `${INDEX_NAV_MARKER}\n      ${FILES_NAV_LINK}\n      ${IMAGES_NAV_LINK}\n      ${IMAGE_STUDIO_NAV_LINK}\n      ${VOICE_NAV_LINK}\n      ${TASKS_NAV_LINK}\n      ${AGENTS_NAV_LINK}\n      ${MEMORY_NAV_LINK}\n      ${MODES_NAV_LINK}\n      ${COMMAND_CENTER_NAV_LINK}`,
+    `${INDEX_NAV_MARKER}\n      ${FILES_NAV_LINK}\n      ${ARTIFACTS_NAV_LINK}\n      ${IMAGES_NAV_LINK}\n      ${IMAGE_STUDIO_NAV_LINK}\n      ${VOICE_NAV_LINK}\n      ${TASKS_NAV_LINK}\n      ${AGENTS_NAV_LINK}\n      ${MEMORY_NAV_LINK}\n      ${MODES_NAV_LINK}\n      ${COMMAND_CENTER_NAV_LINK}`,
     "product-navigation"
   );
   source = replaceExactlyOnce(
@@ -206,6 +207,7 @@ function sendFileAwareIndex(req, res) {
 module.exports = {
   INDEX_NAV_MARKER,
   FILES_NAV_LINK,
+  ARTIFACTS_NAV_LINK,
   IMAGES_NAV_LINK,
   IMAGE_STUDIO_NAV_LINK,
   VOICE_NAV_LINK,
