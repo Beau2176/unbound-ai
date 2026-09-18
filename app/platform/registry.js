@@ -61,8 +61,9 @@ function providerCatalog(env = process.env) {
       kind: "local",
       configured: configured(env.UNBOUND_LOCAL_AI_ENDPOINT),
       chat: true,
+      streaming: true,
       research: false,
-      adapterState: "active-openai-compatible-chat"
+      adapterState: "active-openai-compatible-streaming-chat"
     }
   ];
 }
