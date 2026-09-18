@@ -52,7 +52,7 @@ async function recordNaturalVoiceUsage(getPool, userId) {
   );
 }
 
-function createVoiceRouter({ env = process.env, getPool = null } = {}) {
+function createVoiceRouter({ env = process.env, getPool = null, assertUsageBudget = null } = {}) {
   const router = express.Router();
 
   router.get("/status", (req, res) => {
