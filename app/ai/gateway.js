@@ -1,6 +1,14 @@
 const openai = require("./providers/openai");
+const anthropic = require("./providers/anthropic");
+const google = require("./providers/google");
+const local = require("./providers/local");
 
-const providers = new Map([[openai.id, openai]]);
+const providers = new Map([
+  [openai.id, openai],
+  [anthropic.id, anthropic],
+  [google.id, google],
+  [local.id, local]
+]);
 
 function normalizeProviderName(value) {
   return String(value || "openai").trim().toLowerCase();
