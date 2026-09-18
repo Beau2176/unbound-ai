@@ -18,6 +18,10 @@ function tokenize(value) {
   )].filter((token) => token.length >= 3 && !STOP_WORDS.has(token));
 }
 
+function validProjectId(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+}
+
 function normalizeProjectMemoryInput(body = {}) {
   const content = String(body.content || "").trim();
   if (!content || content.length > MAX_PROJECT_MEMORY_CHARS) {
@@ -53,7 +57,7 @@ function rankProjectMemories(memories, query, limit = MAX_PROJECT_CONTEXT_ITEMS)
 }
 
 async function loadProjectMemories(pool, userId, projectId) {
-  if (!pool || !userId || !projectId) return [];
+  if (!pool || !userId || !validProjectId(projectId)) return [];
   const result = await pool.query(
     `SELECT id, project_id, content, enabled, created_at, updated_at
      FROM project_memories
@@ -73,7 +77,7 @@ async function loadProjectMemories(pool, userId, projectId) {
 }
 
 async function buildProjectContext(pool, userId, projectId, query = "") {
-  if (!projectId) return "";
+  if (!pool || !userId || !validProjectId(projectId)) return "";
   const projectResult = await pool.query(
     `SELECT id, name, description, status
      FROM ai_projects
@@ -108,6 +112,7 @@ module.exports = {
   MAX_PROJECT_CONTEXT_ITEMS,
   MAX_PROJECT_CONTEXT_CHARS,
   tokenize,
+  validProjectId,
   normalizeProjectMemoryInput,
   score,
   rankProjectMemories,
