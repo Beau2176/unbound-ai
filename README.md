@@ -62,7 +62,15 @@ When `AI_RESEARCH_PROVIDER` is unset, Research Mode stays on the active provider
 
 Research routing does not change standard, Creative, Work, Adult, or streaming chat-provider selection. Cross-provider Research Mode also uses the research provider's own model configuration instead of reusing another provider's model ID.
 
-Google Gemini chat and reasoning are supported, but Google-native Search grounding remains disabled until UNBOUND implements the required Google Search Suggestions display and associated storage/handling rules. Do not enable it by merely changing a capability flag.
+Google Gemini chat, reasoning, and Google Search grounding are implemented. Google grounding remains **launch-gated off by default** because Google's current Grounding with Google Search terms include commercial-use restrictions that require provider/legal review for UNBOUND's intended paid offering.
+
+After appropriate approval is documented, enable it explicitly:
+
+```bash
+UNBOUND_GOOGLE_SEARCH_GROUNDING_APPROVED=true
+```
+
+When enabled, UNBOUND displays Google's returned Search Suggestions with the live grounded result, maps grounding supports into visible citations, and keeps Google source Links and Search Suggestions ephemeral. Only the displayed answer text is persisted to that end user's chat history. UNBOUND does not click-track Google Grounded Results or Search Suggestions. Google states that prompts, contextual information, and generated output used for Grounding with Google Search are retained by Google for 30 days for grounding/debugging/testing purposes.
 
 ### Optional transient provider failover
 
