@@ -2,6 +2,9 @@ const {
   combineSystemAndMessages,
   providerError
 } = require("./provider-utils");
+const {
+  runWithProviderDeadline
+} = require("../provider-deadline");
 
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_MODEL = "claude-sonnet-5";
@@ -250,70 +253,85 @@ async function generateChat({
     model,
     { reasoningEffort, research }
   );
-  async function send(requestBody) {
-    const response = await fetchImpl(ANTHROPIC_MESSAGES_URL, {
-      method: "POST",
-      headers: anthropicHeaders(),
-      redirect: "error",
-      body: JSON.stringify(requestBody)
-    });
+  const kind = research?.enabled ? "research" : "chat";
 
-    if (!response.ok) {
-      const errorPayload = await parseErrorPayload(response);
-      throw providerError(
-        "ANTHROPIC_REQUEST_FAILED",
-        errorPayload?.error?.message || "Anthropic request failed.",
-        response.status || 502
-      );
+  return runWithProviderDeadline(
+    kind,
+    async ({ signal }) => {
+      async function send(requestBody) {
+        const response = await fetchImpl(ANTHROPIC_MESSAGES_URL, {
+          method: "POST",
+          headers: anthropicHeaders(),
+          redirect: "error",
+          signal,
+          body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+          const errorPayload = await parseErrorPayload(response);
+          throw providerError(
+            "ANTHROPIC_REQUEST_FAILED",
+            errorPayload?.error?.message || "Anthropic request failed.",
+            response.status || 502
+          );
+        }
+        return response.json().catch(() => ({}));
+      }
+
+      const payloads = [];
+      const continuationMessages = [...body.messages];
+      let payload = await send(body);
+      payloads.push(payload);
+      let continuationCount = 0;
+
+      while (
+        research?.enabled &&
+        payload?.stop_reason === "pause_turn" &&
+        continuationCount < MAX_RESEARCH_CONTINUATIONS
+      ) {
+        continuationMessages.push({
+          role: "assistant",
+          content: Array.isArray(payload.content) ? payload.content : []
+        });
+        payload = await send({
+          ...body,
+          messages: continuationMessages
+        });
+        payloads.push(payload);
+        continuationCount += 1;
+      }
+
+      if (research?.enabled && payload?.stop_reason === "pause_turn") {
+        throw providerError(
+          "ANTHROPIC_RESEARCH_CONTINUATION_LIMIT",
+          "Anthropic research did not complete within the allowed continuation limit.",
+          502
+        );
+      }
+
+      const extracted = extractAnthropicResponses(payloads);
+
+      return {
+        provider: "anthropic",
+        model: payload.model || body.model,
+        reply: extracted.reply,
+        usage: mergeAnthropicUsage(payloads),
+        responseId: payload.id || payloads[0]?.id || null,
+        research: research?.enabled
+          ? extracted.research
+          : { sources: [], citations: [], webSearchCalls: 0 }
+      };
+    },
+    {
+      code: research?.enabled
+        ? "ANTHROPIC_RESEARCH_TIMEOUT"
+        : "ANTHROPIC_REQUEST_TIMEOUT",
+      label: research?.enabled
+        ? "Anthropic Research Mode request"
+        : "Anthropic request"
     }
-    return response.json().catch(() => ({}));
-  }
-
-  const payloads = [];
-  const continuationMessages = [...body.messages];
-  let payload = await send(body);
-  payloads.push(payload);
-  let continuationCount = 0;
-
-  while (
-    research?.enabled &&
-    payload?.stop_reason === "pause_turn" &&
-    continuationCount < MAX_RESEARCH_CONTINUATIONS
-  ) {
-    continuationMessages.push({
-      role: "assistant",
-      content: Array.isArray(payload.content) ? payload.content : []
-    });
-    payload = await send({
-      ...body,
-      messages: continuationMessages
-    });
-    payloads.push(payload);
-    continuationCount += 1;
-  }
-
-  if (research?.enabled && payload?.stop_reason === "pause_turn") {
-    throw providerError(
-      "ANTHROPIC_RESEARCH_CONTINUATION_LIMIT",
-      "Anthropic research did not complete within the allowed continuation limit.",
-      502
-    );
-  }
-
-  const extracted = extractAnthropicResponses(payloads);
-
-  return {
-    provider: "anthropic",
-    model: payload.model || body.model,
-    reply: extracted.reply,
-    usage: mergeAnthropicUsage(payloads),
-    responseId: payload.id || payloads[0]?.id || null,
-    research: research?.enabled
-      ? extracted.research
-      : { sources: [], citations: [], webSearchCalls: 0 }
-  };
+  );
 }
-
 function parseAnthropicSseEvent(block) {
   const lines = String(block || "").split(/\r?\n/);
   const event = lines
@@ -343,120 +361,132 @@ async function streamChat({
   reasoningEffort = null,
   fetchImpl = fetch
 } = {}) {
-  assertConfigured();
-  const body = buildAnthropicRequestBody(
-    instructions,
-    input,
-    model,
-    { streaming: true, reasoningEffort }
-  );
-  const headers = anthropicHeaders();
-  headers.accept = "text/event-stream";
-
-  const response = await fetchImpl(ANTHROPIC_MESSAGES_URL, {
-    method: "POST",
-    headers,
-    redirect: "error",
-    body: JSON.stringify(body)
-  });
-
-  if (!response.ok) {
-    const payload = await parseErrorPayload(response);
-    throw providerError("ANTHROPIC_STREAM_REQUEST_FAILED", payload?.error?.message || "Anthropic streaming request failed.", response.status || 502);
-  }
-  if (!response.body) {
-    throw providerError("ANTHROPIC_STREAM_BODY_MISSING", "Anthropic streaming response did not include a response body.", 502);
-  }
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let reply = "";
-  let usage = null;
-  let responseId = null;
-  let responseModel = body.model;
-
-  async function handleEvent(item) {
-    if (!item) return;
-    const payload = item.payload || {};
-
-    if (payload.type === "error" || item.event === "error") {
-      throw providerError(
-        "ANTHROPIC_STREAM_REMOTE_ERROR",
-        String(payload?.error?.message || "Anthropic streaming request failed.").slice(0, 1000),
-        502
+  return runWithProviderDeadline(
+    "stream",
+    async ({ signal }) => {
+      assertConfigured();
+      const body = buildAnthropicRequestBody(
+        instructions,
+        input,
+        model,
+        { streaming: true, reasoningEffort }
       );
-    }
+      const headers = anthropicHeaders();
+      headers.accept = "text/event-stream";
 
-    if (payload.type === "message_start") {
-      responseId = payload?.message?.id || responseId;
-      responseModel = payload?.message?.model || responseModel;
-      if (payload?.message?.usage) usage = { ...payload.message.usage };
-      return;
-    }
+      const response = await fetchImpl(ANTHROPIC_MESSAGES_URL, {
+        method: "POST",
+        headers,
+        redirect: "error",
+        signal,
+        body: JSON.stringify(body)
+      });
 
-    if (payload.type === "content_block_delta" && payload?.delta?.type === "text_delta") {
-      const delta = String(payload.delta.text || "");
-      if (!delta) return;
-      if (reply.length + delta.length > MAX_STREAM_REPLY_CHARS) {
-        throw providerError("ANTHROPIC_STREAM_REPLY_TOO_LARGE", "Anthropic streaming reply exceeded the allowed size.", 502);
+      if (!response.ok) {
+        const payload = await parseErrorPayload(response);
+        throw providerError("ANTHROPIC_STREAM_REQUEST_FAILED", payload?.error?.message || "Anthropic streaming request failed.", response.status || 502);
       }
-      reply += delta;
-      if (onDelta) await onDelta(delta);
-      return;
-    }
-
-    if (payload.type === "message_delta" && payload.usage && typeof payload.usage === "object") {
-      usage = { ...(usage || {}), ...payload.usage };
-    }
-  }
-
-  async function consumeText(text, flush = false) {
-    buffer += String(text || "");
-    if (Buffer.byteLength(buffer, "utf8") > MAX_STREAM_BUFFER_BYTES) {
-      throw providerError("ANTHROPIC_STREAM_BUFFER_TOO_LARGE", "Anthropic streaming event buffer exceeded the allowed size.", 502);
-    }
-
-    const blocks = buffer.split(/\r?\n\r?\n/);
-    if (!flush) {
-      buffer = blocks.pop() || "";
-    } else {
-      buffer = "";
-    }
-
-    for (const block of blocks) {
-      await handleEvent(parseAnthropicSseEvent(block));
-    }
-  }
-
-  if (typeof response.body.getReader === "function") {
-    const reader = response.body.getReader();
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        await consumeText(decoder.decode(value, { stream: true }));
+      if (!response.body) {
+        throw providerError("ANTHROPIC_STREAM_BODY_MISSING", "Anthropic streaming response did not include a response body.", 502);
       }
-      await consumeText(decoder.decode(), true);
-    } finally {
-      try { reader.releaseLock(); } catch (_) {}
-    }
-  } else if (Symbol.asyncIterator in Object(response.body)) {
-    for await (const chunk of response.body) {
-      await consumeText(typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true }));
-    }
-    await consumeText(decoder.decode(), true);
-  } else {
-    throw providerError("ANTHROPIC_STREAM_UNREADABLE", "Anthropic streaming response body is not readable.", 502);
-  }
 
-  return {
-    provider: "anthropic",
-    model: responseModel,
-    reply,
-    usage,
-    responseId,
-    research: { sources: [], citations: [], webSearchCalls: 0 }
-  };
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let reply = "";
+      let usage = null;
+      let responseId = null;
+      let responseModel = body.model;
+
+      async function handleEvent(item) {
+        if (!item) return;
+        const payload = item.payload || {};
+
+        if (payload.type === "error" || item.event === "error") {
+          throw providerError(
+            "ANTHROPIC_STREAM_REMOTE_ERROR",
+            String(payload?.error?.message || "Anthropic streaming request failed.").slice(0, 1000),
+            502
+          );
+        }
+
+        if (payload.type === "message_start") {
+          responseId = payload?.message?.id || responseId;
+          responseModel = payload?.message?.model || responseModel;
+          if (payload?.message?.usage) usage = { ...payload.message.usage };
+          return;
+        }
+
+        if (payload.type === "content_block_delta" && payload?.delta?.type === "text_delta") {
+          const delta = String(payload.delta.text || "");
+          if (!delta) return;
+          if (reply.length + delta.length > MAX_STREAM_REPLY_CHARS) {
+            throw providerError("ANTHROPIC_STREAM_REPLY_TOO_LARGE", "Anthropic streaming reply exceeded the allowed size.", 502);
+          }
+          reply += delta;
+          if (onDelta) await onDelta(delta);
+          return;
+        }
+
+        if (payload.type === "message_delta" && payload.usage && typeof payload.usage === "object") {
+          usage = { ...(usage || {}), ...payload.usage };
+        }
+      }
+
+      async function consumeText(text, flush = false) {
+        buffer += String(text || "");
+        if (Buffer.byteLength(buffer, "utf8") > MAX_STREAM_BUFFER_BYTES) {
+          throw providerError("ANTHROPIC_STREAM_BUFFER_TOO_LARGE", "Anthropic streaming event buffer exceeded the allowed size.", 502);
+        }
+
+        const blocks = buffer.split(/\r?\n\r?\n/);
+        if (!flush) {
+          buffer = blocks.pop() || "";
+        } else {
+          buffer = "";
+        }
+
+        for (const block of blocks) {
+          await handleEvent(parseAnthropicSseEvent(block));
+        }
+      }
+
+      if (typeof response.body.getReader === "function") {
+        const reader = response.body.getReader();
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            await consumeText(decoder.decode(value, { stream: true }));
+          }
+          await consumeText(decoder.decode(), true);
+        } finally {
+          try { reader.releaseLock(); } catch (_) {}
+        }
+      } else if (Symbol.asyncIterator in Object(response.body)) {
+        for await (const chunk of response.body) {
+          await consumeText(typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true }));
+        }
+        await consumeText(decoder.decode(), true);
+      } else {
+        throw providerError("ANTHROPIC_STREAM_UNREADABLE", "Anthropic streaming response body is not readable.", 502);
+      }
+
+      return {
+        provider: "anthropic",
+        model: responseModel,
+        reply,
+        usage,
+        responseId,
+        research: { sources: [], citations: [], webSearchCalls: 0 }
+      };
+    }
+
+    },
+    {
+      code: "ANTHROPIC_STREAM_TIMEOUT",
+      label: "Anthropic streaming request"
+    }
+  );
 }
 
 module.exports = {
