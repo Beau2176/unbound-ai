@@ -12,9 +12,19 @@ const {
   listAuthorizedRepositories
 } = require("./providers/github");
 const { encryptSecret, decryptSecret } = require("./token-vault");
+const {
+  REFRESH_SKEW_MS,
+  secretAad: connectionSecretAad,
+  publicConnection,
+  loadConnection: loadStoredConnection,
+  listConnections,
+  saveTokens: saveStoredTokens,
+  getUsableAccessToken: getStoredUsableAccessToken,
+  markConnectionUsed,
+  deleteConnection
+} = require("./store");
 
 const OAUTH_STATE_TTL_MINUTES = 10;
-const REFRESH_SKEW_MS = 5 * 60 * 1000;
 
 function stateHash(value) {
   return crypto.createHash("sha256").update(String(value || ""), "utf8").digest("hex");
@@ -29,129 +39,22 @@ function createPkceVerifier() {
   return crypto.randomBytes(32).toString("base64url");
 }
 
-function publicConnection(row) {
-  if (!row) return null;
-  return {
-    provider: row.provider,
-    accountId: row.provider_account_id,
-    accountLogin: row.provider_account_login,
-    connectedAt: row.connected_at,
-    updatedAt: row.updated_at,
-    lastUsedAt: row.last_used_at,
-    expiresAt: row.access_token_expires_at,
-    refreshExpiresAt: row.refresh_token_expires_at,
-    writeActionsEnabled: false
-  };
-}
-
 function secretAad(userId, kind) {
-  return `unbound:github:${String(userId)}:${kind}`;
+  return connectionSecretAad("github", userId, kind);
 }
 
-async function loadConnection(pool, userId, { forUpdate = false } = {}) {
-  const result = await pool.query(
-    `SELECT provider, provider_account_id, provider_account_login,
-            access_token_ciphertext, refresh_token_ciphertext,
-            access_token_expires_at, refresh_token_expires_at,
-            connected_at, updated_at, last_used_at
-     FROM connected_app_connections
-     WHERE user_id = $1 AND provider = 'github'
-     ${forUpdate ? "FOR UPDATE" : ""}`,
-    [userId]
-  );
-  return result.rows[0] || null;
+async function loadConnection(pool, userId, options = {}) {
+  return loadStoredConnection(pool, userId, "github", options);
 }
 
 async function saveTokens(pool, userId, account, tokens) {
-  const accessCiphertext = encryptSecret(tokens.accessToken, {
-    aad: secretAad(userId, "access")
-  });
-  const refreshCiphertext = tokens.refreshToken
-    ? encryptSecret(tokens.refreshToken, { aad: secretAad(userId, "refresh") })
-    : null;
-
-  const result = await pool.query(
-    `INSERT INTO connected_app_connections (
-       user_id, provider, provider_account_id, provider_account_login,
-       access_token_ciphertext, refresh_token_ciphertext,
-       access_token_expires_at, refresh_token_expires_at,
-       connected_at, updated_at, last_used_at
-     ) VALUES ($1, 'github', $2, $3, $4, $5, $6, $7, NOW(), NOW(), NULL)
-     ON CONFLICT (user_id, provider)
-     DO UPDATE SET
-       provider_account_id = EXCLUDED.provider_account_id,
-       provider_account_login = EXCLUDED.provider_account_login,
-       access_token_ciphertext = EXCLUDED.access_token_ciphertext,
-       refresh_token_ciphertext = EXCLUDED.refresh_token_ciphertext,
-       access_token_expires_at = EXCLUDED.access_token_expires_at,
-       refresh_token_expires_at = EXCLUDED.refresh_token_expires_at,
-       updated_at = NOW(),
-       last_used_at = NULL
-     RETURNING provider, provider_account_id, provider_account_login,
-               access_token_expires_at, refresh_token_expires_at,
-               connected_at, updated_at, last_used_at`,
-    [
-      userId,
-      account.id,
-      account.login,
-      accessCiphertext,
-      refreshCiphertext,
-      tokens.expiresAt,
-      tokens.refreshTokenExpiresAt
-    ]
-  );
-  return result.rows[0];
-}
-
-function tokenNeedsRefresh(row) {
-  if (!row?.access_token_expires_at) return false;
-  const expiresAt = new Date(row.access_token_expires_at).getTime();
-  return Number.isFinite(expiresAt) && expiresAt <= Date.now() + REFRESH_SKEW_MS;
+  return saveStoredTokens(pool, userId, "github", account, tokens);
 }
 
 async function getUsableAccessToken(pool, userId) {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    let row = await loadConnection(client, userId, { forUpdate: true });
-    if (!row) {
-      const error = new Error("GitHub is not connected.");
-      error.code = "GITHUB_CONNECTION_MISSING";
-      error.statusCode = 404;
-      throw error;
-    }
-
-    let accessToken = decryptSecret(row.access_token_ciphertext, {
-      aad: secretAad(userId, "access")
-    });
-
-    if (tokenNeedsRefresh(row)) {
-      if (!row.refresh_token_ciphertext) {
-        const error = new Error("GitHub authorization has expired. Reconnect GitHub.");
-        error.code = "GITHUB_CONNECTION_REAUTH_REQUIRED";
-        error.statusCode = 401;
-        throw error;
-      }
-      const refreshToken = decryptSecret(row.refresh_token_ciphertext, {
-        aad: secretAad(userId, "refresh")
-      });
-      const refreshed = await refreshUserToken({ refreshToken });
-      const account = {
-        id: row.provider_account_id,
-        login: row.provider_account_login
-      };
-      row = await saveTokens(client, userId, account, refreshed);
-      accessToken = refreshed.accessToken;
-    }
-
-    await client.query("COMMIT");
-    return { accessToken, row };
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw error;
-  } finally {
-    client.release();
-  }
+  return getStoredUsableAccessToken(pool, userId, "github", {
+    refreshAccessToken: refreshUserToken
+  });
 }
 
 function createConnectionsRouter({ getPool } = {}) {
@@ -162,10 +65,11 @@ function createConnectionsRouter({ getPool } = {}) {
 
   router.get("/status", async (req, res) => {
     try {
-      const row = await loadConnection(getPool(), req.user.id);
+      const connections = await listConnections(getPool(), req.user.id);
       return res.json({
         github: publicGitHubStatus(),
-        connection: publicConnection(row)
+        connection: connections.find((item) => item.provider === "github") || null,
+        connections
       });
     } catch (error) {
       console.error("UNBOUND AI CONNECTED APPS STATUS ERROR:", error?.code || error?.message || "unknown");
@@ -251,12 +155,7 @@ function createConnectionsRouter({ getPool } = {}) {
       const pool = getPool();
       const { accessToken } = await getUsableAccessToken(pool, req.user.id);
       const result = await listAuthorizedRepositories({ accessToken });
-      await pool.query(
-        `UPDATE connected_app_connections
-         SET last_used_at = NOW(), updated_at = NOW()
-         WHERE user_id = $1 AND provider = 'github'`,
-        [req.user.id]
-      );
+      await markConnectionUsed(pool, req.user.id, "github");
       return res.json({
         provider: "github",
         readOnly: true,
@@ -299,11 +198,7 @@ function createConnectionsRouter({ getPool } = {}) {
         providerWarning = "UNBOUND removed the local connection, but GitHub token revocation could not be confirmed. Review installed GitHub Apps if needed.";
         console.warn("UNBOUND AI GITHUB PROVIDER REVOCATION WARNING:", error?.code || error?.message || "unknown");
       }
-      await client.query(
-        `DELETE FROM connected_app_connections
-         WHERE user_id = $1 AND provider = 'github'`,
-        [req.user.id]
-      );
+      await deleteConnection(client, req.user.id, "github");
       await client.query(
         `DELETE FROM connected_app_oauth_states
          WHERE user_id = $1 AND provider = 'github'`,
