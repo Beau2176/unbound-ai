@@ -85,7 +85,10 @@ function workspaceStatus(env = process.env) {
     codeWorkspace: configured(env.UNBOUND_CODE_SANDBOX_URL),
     futureCore: String(env.UNBOUND_FUTURE_CORE_V2_ENABLED || "").toLowerCase() === "true",
     nativeMultimodalBridge: true,
-    marketplaceRegistry: true
+    marketplaceRegistry: true,
+    marketplaceEnabled: enabled(env.UNBOUND_SKILL_MARKETPLACE_ENABLED),
+    creatorMarketplace: enabled(env.UNBOUND_SKILL_CREATOR_ENABLED),
+    marketplaceExecution: "manifest_only"
   };
 }
 
