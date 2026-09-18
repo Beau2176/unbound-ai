@@ -25,6 +25,12 @@ function integrateFutureCoreV2ServerSource(serverSource) {
     error.code = "FUTURE_CORE_SERVER_INTEGRATION_SOURCE_EMPTY";
     throw error;
   }
+  if (
+    source.includes('createFutureCoreRouter({') &&
+    source.includes('"/api/future-core-v2"') &&
+    source.includes("UNBOUND_FUTURE_CORE_V2_ENABLED") &&
+    source.includes("CREATE TABLE IF NOT EXISTS future_core_jobs")
+  ) return source;
 
   const memoryImports = `const { createMemoryRouter, sendMemoryPage } = require("./memory/routes");
 const { buildMemoryPrompt } = require("./memory/context");
