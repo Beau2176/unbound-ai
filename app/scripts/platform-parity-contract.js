@@ -65,7 +65,7 @@ function main() {
   assert(integrated.includes("CREATE TABLE IF NOT EXISTS coding_workspace_jobs"));
   assert(integrated.includes("CREATE TABLE IF NOT EXISTS platform_audit_events"));
   assert(integrated.includes("UNBOUND_PLATFORM_PARITY_ENABLED"));
-  assert(integrated.includes('requireCapability("agents")'));
+  assert(integrated.includes("requireCapability('agents')") || integrated.includes('requireCapability("agents")'));
   assert(integrated.includes('"/api/platform"'));
   assert.strictEqual(integratePlatformParityServerSource(integrated), integrated);
 
