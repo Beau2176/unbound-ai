@@ -5,7 +5,7 @@ const net = require("net");
 const path = require("path");
 
 const DIAGNOSTIC_POLICY = Object.freeze({
-  version: "v1.2",
+  version: "v1.3",
   intervalMs: 30000,
   networkTimeoutMs: 2500,
   eventLoopSampleMs: 40,
@@ -250,6 +250,41 @@ async function networkSnapshot(host = safeProbeHost()) {
   };
 }
 
+function aiDiagnosticSnapshot(value = {}) {
+  const ai = value && typeof value === "object" ? value : {};
+  const configured = Boolean(ai.configured);
+  const circuitState = String(ai?.circuitBreaker?.state || "disabled");
+  const circuitDegraded = circuitState === "open" || circuitState === "half-open";
+  const status = configured ? (circuitDegraded ? "yellow" : "green") : "yellow";
+  const fallbackProvider = ai.fallbackProvider || null;
+
+  let summary;
+  if (!configured) {
+    summary = "AI provider is not fully configured.";
+  } else if (circuitState === "open") {
+    summary = fallbackProvider
+      ? `Primary AI provider is temporarily bypassed; fallback ${fallbackProvider} is active.`
+      : "Primary AI provider circuit is open.";
+  } else if (circuitState === "half-open") {
+    summary = fallbackProvider
+      ? `Primary AI provider is being recovery-tested while fallback ${fallbackProvider} remains available.`
+      : "Primary AI provider is being recovery-tested.";
+  } else {
+    summary = "AI provider is configured.";
+  }
+
+  return {
+    status,
+    summary,
+    configured,
+    provider: ai.provider || null,
+    model: ai.model || null,
+    failoverEnabled: Boolean(ai.failoverEnabled),
+    fallbackProvider,
+    circuitBreaker: ai.circuitBreaker || null
+  };
+}
+
 async function runDiagnostics({ rootDir, stateProvider = () => ({}) } = {}) {
   const state = stateProvider() || {};
   const [eventLoop, network] = await Promise.all([
@@ -262,7 +297,6 @@ async function runDiagnostics({ rootDir, stateProvider = () => ({}) } = {}) {
   const databaseStatus = state.databaseConfigured
     ? state.databaseReady ? "green" : "red"
     : "red";
-  const aiStatus = state.aiStatus?.configured ? "green" : "yellow";
   const selfHealStatus = state.selfHeal?.restartScheduled
     ? "red"
     : state.selfHeal?.locked
@@ -294,15 +328,7 @@ async function runDiagnostics({ rootDir, stateProvider = () => ({}) } = {}) {
       ready: Boolean(state.databaseReady),
       error: state.databaseError ? String(state.databaseError).slice(0, 160) : null
     },
-    ai: {
-      status: aiStatus,
-      summary: aiStatus === "green"
-        ? "AI provider is configured."
-        : "AI provider is not fully configured.",
-      configured: Boolean(state.aiStatus?.configured),
-      provider: state.aiStatus?.provider || null,
-      model: state.aiStatus?.model || null
-    },
+    ai: aiDiagnosticSnapshot(state.aiStatus),
     selfHeal: {
       status: selfHealStatus,
       summary: selfHealStatus === "green"
@@ -398,6 +424,7 @@ module.exports = {
   cgroupMemorySnapshot,
   hardwareSnapshot,
   networkSnapshot,
+  aiDiagnosticSnapshot,
   runDiagnostics,
   createDiagnosticsMonitor,
   worstStatus
