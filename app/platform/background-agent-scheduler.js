@@ -79,6 +79,7 @@ async function createScheduledFutureCoreJob(pool, schedule, now = new Date()) {
     plan
   });
   job.projectId = schedule.project_id ? String(schedule.project_id) : null;
+  job.background = true;
   job.trigger = {
     type: "schedule",
     scheduleId: String(schedule.id),
