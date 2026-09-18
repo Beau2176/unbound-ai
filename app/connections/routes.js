@@ -23,6 +23,17 @@ const {
   listCalendarEvents,
   listDriveMetadata
 } = require("./providers/google-workspace");
+const {
+  publicSlackStatus,
+  createPkceChallenge: createSlackPkceChallenge,
+  buildAuthorizationUrl: buildSlackAuthorizationUrl,
+  exchangeAuthorizationCode: exchangeSlackAuthorizationCode,
+  refreshUserToken: refreshSlackUserToken,
+  getAuthenticatedWorkspace,
+  listPublicChannels,
+  listChannelHistory,
+  revokeUserToken: revokeSlackUserToken
+} = require("./providers/slack");
 const { encryptSecret, decryptSecret } = require("./token-vault");
 const {
   REFRESH_SKEW_MS,
@@ -75,6 +86,12 @@ async function getGoogleWorkspaceAccessToken(pool, userId) {
   });
 }
 
+async function getSlackAccessToken(pool, userId) {
+  return getStoredUsableAccessToken(pool, userId, "slack", {
+    refreshAccessToken: refreshSlackUserToken
+  });
+}
+
 function createConnectionsRouter({ getPool } = {}) {
   if (typeof getPool !== "function") {
     throw new Error("Connected Apps requires a database pool provider.");
@@ -87,6 +104,7 @@ function createConnectionsRouter({ getPool } = {}) {
       return res.json({
         github: publicGitHubStatus(),
         googleWorkspace: publicGoogleWorkspaceStatus(),
+        slack: publicSlackStatus(),
         connection: connections.find((item) => item.provider === "github") || null,
         connections
       });
@@ -319,6 +337,204 @@ function createConnectionsRouter({ getPool } = {}) {
       await client.query("ROLLBACK").catch(() => {});
       console.error("UNBOUND AI GOOGLE DISCONNECT ERROR:", error?.code || error?.message || "unknown");
       return res.status(500).json({ error: "Could not disconnect Google Workspace." });
+    } finally {
+      client.release();
+    }
+  });
+
+
+  router.post("/slack/authorize", async (req, res) => {
+    try {
+      if (!publicSlackStatus().configured) {
+        return res.status(503).json({
+          error: "Slack Connected Apps is not configured yet.",
+          provider: publicSlackStatus()
+        });
+      }
+      const rawState = crypto.randomBytes(32).toString("base64url");
+      const codeVerifier = createPkceVerifier();
+      const codeChallenge = createSlackPkceChallenge(codeVerifier);
+      const verifierCiphertext = encryptSecret(codeVerifier, {
+        aad: connectionSecretAad("slack", req.user.id, "pkce")
+      });
+      const hash = stateHash(rawState);
+      const pool = getPool();
+      await pool.query(
+        `DELETE FROM connected_app_oauth_states
+         WHERE user_id = $1 AND provider = $2`,
+        [req.user.id, "slack"]
+      );
+      await pool.query(
+        `INSERT INTO connected_app_oauth_states (
+           user_id, provider, state_hash, pkce_verifier_ciphertext, expires_at, created_at
+         ) VALUES ($1, $2, $3, $4, NOW() + INTERVAL '10 minutes', NOW())`,
+        [req.user.id, "slack", hash, verifierCiphertext]
+      );
+      return res.json({
+        authorizationUrl: buildSlackAuthorizationUrl({
+          state: rawState,
+          codeChallenge
+        }),
+        expiresInSeconds: OAUTH_STATE_TTL_MINUTES * 60
+      });
+    } catch (error) {
+      console.error("UNBOUND AI SLACK AUTHORIZE ERROR:", error?.code || error?.message || "unknown");
+      return res.status(Number(error?.statusCode) || 500).json({
+        error: "Could not start Slack authorization.",
+        code: error?.code || "SLACK_AUTHORIZE_FAILED"
+      });
+    }
+  });
+
+  router.get("/slack/callback", async (req, res) => {
+    const code = String(req.query.code || "").trim();
+    const state = cleanState(req.query.state);
+    if (!code || !state) {
+      return res.redirect("/connected-apps.html?slack=invalid_callback");
+    }
+
+    const pool = getPool();
+    try {
+      const stateResult = await pool.query(
+        `DELETE FROM connected_app_oauth_states
+         WHERE user_id = $1
+           AND provider = $2
+           AND state_hash = $3
+           AND expires_at > NOW()
+         RETURNING id, pkce_verifier_ciphertext`,
+        [req.user.id, "slack", stateHash(state)]
+      );
+      const stateRow = stateResult.rows[0];
+      if (!stateRow?.pkce_verifier_ciphertext) {
+        return res.redirect("/connected-apps.html?slack=state_rejected");
+      }
+
+      const codeVerifier = decryptSecret(stateRow.pkce_verifier_ciphertext, {
+        aad: connectionSecretAad("slack", req.user.id, "pkce")
+      });
+      const exchanged = await exchangeSlackAuthorizationCode({ code, codeVerifier });
+      const account = await getAuthenticatedWorkspace({
+        accessToken: exchanged.tokens.accessToken
+      });
+      await saveStoredTokens(
+        pool,
+        req.user.id,
+        "slack",
+        account,
+        exchanged.tokens
+      );
+      return res.redirect("/connected-apps.html?slack=connected");
+    } catch (error) {
+      console.error("UNBOUND AI SLACK CALLBACK ERROR:", error?.code || error?.message || "unknown");
+      return res.redirect("/connected-apps.html?slack=failed");
+    }
+  });
+
+  router.get("/slack/channels", async (req, res) => {
+    try {
+      const pool = getPool();
+      const { accessToken } = await getSlackAccessToken(pool, req.user.id);
+      const result = await listPublicChannels({ accessToken });
+      await markConnectionUsed(pool, req.user.id, "slack");
+      return res.json({
+        provider: "slack",
+        readOnly: true,
+        ...result
+      });
+    } catch (error) {
+      const statusCode = Number(error?.statusCode) || 502;
+      console.error("UNBOUND AI SLACK CHANNEL LIST ERROR:", error?.code || error?.message || "unknown");
+      return res.status(statusCode).json({
+        error: statusCode === 401
+          ? "Slack authorization expired. Reconnect Slack."
+          : statusCode === 404
+            ? "Slack is not connected."
+            : statusCode === 429
+              ? "Slack is rate limiting channel access. Try again shortly."
+              : "Could not load Slack channels.",
+        code: error?.code || "SLACK_CHANNEL_LIST_FAILED"
+      });
+    }
+  });
+
+  router.get("/slack/history", async (req, res) => {
+    try {
+      const pool = getPool();
+      const { accessToken } = await getSlackAccessToken(pool, req.user.id);
+      const result = await listChannelHistory({
+        accessToken,
+        channelId: req.query.channel
+      });
+      await markConnectionUsed(pool, req.user.id, "slack");
+      return res.json({
+        provider: "slack",
+        readOnly: true,
+        channelId: String(req.query.channel || ""),
+        ...result
+      });
+    } catch (error) {
+      const statusCode = Number(error?.statusCode) || 502;
+      console.error("UNBOUND AI SLACK HISTORY ERROR:", error?.code || error?.message || "unknown");
+      return res.status(statusCode).json({
+        error: statusCode === 400
+          ? "Slack channel ID is invalid."
+          : statusCode === 401
+            ? "Slack authorization expired. Reconnect Slack."
+            : statusCode === 404
+              ? "Slack is not connected."
+              : statusCode === 429
+                ? "Slack is rate limiting channel history. Try again shortly."
+                : "Could not load Slack channel history.",
+        code: error?.code || "SLACK_CHANNEL_HISTORY_FAILED"
+      });
+    }
+  });
+
+  router.delete("/slack", async (req, res) => {
+    const pool = getPool();
+    const client = await pool.connect();
+    let providerRevoked = false;
+    let providerWarning = null;
+    try {
+      await client.query("BEGIN");
+      const row = await loadStoredConnection(
+        client,
+        req.user.id,
+        "slack",
+        { forUpdate: true }
+      );
+      if (!row) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "Slack is not connected." });
+      }
+      const accessToken = decryptSecret(row.access_token_ciphertext, {
+        aad: connectionSecretAad("slack", req.user.id, "access")
+      });
+      try {
+        const revoked = await revokeSlackUserToken({ accessToken });
+        providerRevoked = Boolean(revoked.revoked);
+      } catch (error) {
+        providerWarning = "UNBOUND removed the local Slack connection, but provider revocation could not be confirmed. Review your Slack app authorizations if needed.";
+        console.warn("UNBOUND AI SLACK PROVIDER REVOCATION WARNING:", error?.code || error?.message || "unknown");
+      }
+      await deleteConnection(client, req.user.id, "slack");
+      await client.query(
+        `DELETE FROM connected_app_oauth_states
+         WHERE user_id = $1 AND provider = $2`,
+        [req.user.id, "slack"]
+      );
+      await client.query("COMMIT");
+      return res.json({
+        ok: true,
+        provider: "slack",
+        localConnectionRemoved: true,
+        providerRevoked,
+        warning: providerWarning
+      });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      console.error("UNBOUND AI SLACK DISCONNECT ERROR:", error?.code || error?.message || "unknown");
+      return res.status(500).json({ error: "Could not disconnect Slack." });
     } finally {
       client.release();
     }
