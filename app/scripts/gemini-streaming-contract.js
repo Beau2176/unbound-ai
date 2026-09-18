@@ -21,7 +21,8 @@ async function main() {
     "GEMINI_API_KEY",
     "GOOGLE_AI_API_KEY",
     "GEMINI_MODEL",
-    "GOOGLE_AI_MODEL"
+    "GOOGLE_AI_MODEL",
+    "UNBOUND_GOOGLE_SEARCH_GROUNDING_APPROVED"
   ];
   const original = Object.fromEntries(tracked.map((key) => [key, process.env[key]]));
 
@@ -30,8 +31,27 @@ async function main() {
     process.env.GEMINI_API_KEY = "gemini-test-key";
     delete process.env.GEMINI_MODEL;
     delete process.env.GOOGLE_AI_MODEL;
+    delete process.env.UNBOUND_GOOGLE_SEARCH_GROUNDING_APPROVED;
 
     assert.strictEqual(google.DEFAULT_MODEL, "gemini-3.8-flash");
+    assert.strictEqual(google.googleGroundingApproved(), false);
+    assert.strictEqual(google.supportsResearch(), false);
+    await assert.rejects(
+      () => google.generateChat({
+        instructions: "research",
+        input: [{ role: "user", content: "latest" }],
+        research: { enabled: true },
+        fetchImpl: async () => {
+          throw new Error("Grounding gate should fail before provider fetch.");
+        }
+      }),
+      (error) =>
+        error &&
+        error.code === "GEMINI_GROUNDING_APPROVAL_REQUIRED"
+    );
+
+    process.env.UNBOUND_GOOGLE_SEARCH_GROUNDING_APPROVED = "true";
+    assert.strictEqual(google.googleGroundingApproved(), true);
     assert.strictEqual(google.getModel(), "gemini-3.8-flash");
     assert.strictEqual(
       google.geminiEndpoint("gemini-3.8-flash", { streaming: true }),
@@ -339,7 +359,8 @@ async function main() {
     assert.strictEqual(gateway.researchProvider, "google");
 
     const catalog = providerCatalog({
-      GEMINI_API_KEY: "configured"
+      GEMINI_API_KEY: "configured",
+      UNBOUND_GOOGLE_SEARCH_GROUNDING_APPROVED: "true"
     });
     const googleProvider = catalog.find((provider) => provider.id === "google");
     assert(googleProvider);
@@ -351,6 +372,12 @@ async function main() {
     assert.strictEqual(googleProvider.defaultThinkingLevel, "medium");
     assert.strictEqual(googleProvider.defaultModel, "gemini-3.8-flash");
     assert.strictEqual(googleProvider.research, true);
+    assert.strictEqual(googleProvider.researchImplemented, true);
+    assert.strictEqual(googleProvider.researchLaunchGated, false);
+    assert.strictEqual(
+      googleProvider.researchLaunchGate,
+      "UNBOUND_GOOGLE_SEARCH_GROUNDING_APPROVED"
+    );
     assert.strictEqual(googleProvider.researchTool, "google_search");
     assert.strictEqual(
       googleProvider.researchDisplay,
@@ -363,7 +390,7 @@ async function main() {
     assert.strictEqual(googleProvider.googleGroundingRetentionDays, 30);
     assert.strictEqual(
       googleProvider.adapterState,
-      "active-gemini-3.8-chat-streaming-thinking-grounded-research"
+      "active-gemini-3.8-chat-streaming-thinking-grounded-research-gated"
     );
     const anthropicProvider = catalog.find((provider) => provider.id === "anthropic");
     assert(anthropicProvider);
