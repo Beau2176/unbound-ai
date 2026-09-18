@@ -34,6 +34,17 @@ const {
   listChannelHistory,
   revokeUserToken: revokeSlackUserToken
 } = require("./providers/slack");
+const {
+  publicMicrosoft365Status,
+  createPkceChallenge: createMicrosoftPkceChallenge,
+  buildAuthorizationUrl: buildMicrosoftAuthorizationUrl,
+  exchangeAuthorizationCode: exchangeMicrosoftAuthorizationCode,
+  refreshUserToken: refreshMicrosoftUserToken,
+  getAuthenticatedUser: getMicrosoftAuthenticatedUser,
+  listMailMetadata: listMicrosoftMailMetadata,
+  listCalendarEvents: listMicrosoftCalendarEvents,
+  listOneDriveMetadata
+} = require("./providers/microsoft-365");
 const { encryptSecret, decryptSecret } = require("./token-vault");
 const {
   REFRESH_SKEW_MS,
@@ -92,6 +103,12 @@ async function getSlackAccessToken(pool, userId) {
   });
 }
 
+async function getMicrosoft365AccessToken(pool, userId) {
+  return getStoredUsableAccessToken(pool, userId, "microsoft_365", {
+    refreshAccessToken: refreshMicrosoftUserToken
+  });
+}
+
 function createConnectionsRouter({ getPool } = {}) {
   if (typeof getPool !== "function") {
     throw new Error("Connected Apps requires a database pool provider.");
@@ -105,6 +122,7 @@ function createConnectionsRouter({ getPool } = {}) {
         github: publicGitHubStatus(),
         googleWorkspace: publicGoogleWorkspaceStatus(),
         slack: publicSlackStatus(),
+        microsoft365: publicMicrosoft365Status(),
         connection: connections.find((item) => item.provider === "github") || null,
         connections
       });
@@ -342,6 +360,212 @@ function createConnectionsRouter({ getPool } = {}) {
     }
   });
 
+
+
+  router.post("/microsoft/authorize", async (req, res) => {
+    try {
+      if (!publicMicrosoft365Status().configured) {
+        return res.status(503).json({
+          error: "Microsoft 365 Connected Apps is not configured yet.",
+          provider: publicMicrosoft365Status()
+        });
+      }
+      const rawState = crypto.randomBytes(32).toString("base64url");
+      const codeVerifier = createPkceVerifier();
+      const codeChallenge = createMicrosoftPkceChallenge(codeVerifier);
+      const verifierCiphertext = encryptSecret(codeVerifier, {
+        aad: connectionSecretAad("microsoft_365", req.user.id, "pkce")
+      });
+      const pool = getPool();
+      await pool.query(
+        `DELETE FROM connected_app_oauth_states
+         WHERE user_id = $1 AND provider = $2`,
+        [req.user.id, "microsoft_365"]
+      );
+      await pool.query(
+        `INSERT INTO connected_app_oauth_states (
+           user_id, provider, state_hash, pkce_verifier_ciphertext, expires_at, created_at
+         ) VALUES ($1, $2, $3, $4, NOW() + INTERVAL '10 minutes', NOW())`,
+        [req.user.id, "microsoft_365", stateHash(rawState), verifierCiphertext]
+      );
+      return res.json({
+        authorizationUrl: buildMicrosoftAuthorizationUrl({
+          state: rawState,
+          codeChallenge
+        }),
+        expiresInSeconds: OAUTH_STATE_TTL_MINUTES * 60
+      });
+    } catch (error) {
+      console.error("UNBOUND AI MICROSOFT 365 AUTHORIZE ERROR:", error?.code || error?.message || "unknown");
+      return res.status(Number(error?.statusCode) || 500).json({
+        error: "Could not start Microsoft 365 authorization.",
+        code: error?.code || "MICROSOFT_365_AUTHORIZE_FAILED"
+      });
+    }
+  });
+
+  router.get("/microsoft/callback", async (req, res) => {
+    const code = String(req.query.code || "").trim();
+    const state = cleanState(req.query.state);
+    if (!code || !state) {
+      return res.redirect("/connected-apps.html?microsoft=invalid_callback");
+    }
+    const pool = getPool();
+    try {
+      const stateResult = await pool.query(
+        `DELETE FROM connected_app_oauth_states
+         WHERE user_id = $1
+           AND provider = $2
+           AND state_hash = $3
+           AND expires_at > NOW()
+         RETURNING id, pkce_verifier_ciphertext`,
+        [req.user.id, "microsoft_365", stateHash(state)]
+      );
+      const stateRow = stateResult.rows[0];
+      if (!stateRow?.pkce_verifier_ciphertext) {
+        return res.redirect("/connected-apps.html?microsoft=state_rejected");
+      }
+      const codeVerifier = decryptSecret(stateRow.pkce_verifier_ciphertext, {
+        aad: connectionSecretAad("microsoft_365", req.user.id, "pkce")
+      });
+      const tokens = await exchangeMicrosoftAuthorizationCode({ code, codeVerifier });
+      const account = await getMicrosoftAuthenticatedUser({
+        accessToken: tokens.accessToken
+      });
+      await saveStoredTokens(
+        pool,
+        req.user.id,
+        "microsoft_365",
+        account,
+        tokens
+      );
+      return res.redirect("/connected-apps.html?microsoft=connected");
+    } catch (error) {
+      console.error("UNBOUND AI MICROSOFT 365 CALLBACK ERROR:", error?.code || error?.message || "unknown");
+      return res.redirect("/connected-apps.html?microsoft=failed");
+    }
+  });
+
+  router.get("/microsoft/mail", async (req, res) => {
+    try {
+      const pool = getPool();
+      const { accessToken } = await getMicrosoft365AccessToken(pool, req.user.id);
+      const result = await listMicrosoftMailMetadata({ accessToken });
+      await markConnectionUsed(pool, req.user.id, "microsoft_365");
+      return res.json({
+        provider: "microsoft_365",
+        readOnly: true,
+        bodyAccessRequested: false,
+        ...result
+      });
+    } catch (error) {
+      const statusCode = Number(error?.statusCode) || 502;
+      console.error("UNBOUND AI MICROSOFT MAIL LIST ERROR:", error?.code || error?.message || "unknown");
+      return res.status(statusCode).json({
+        error: statusCode === 401
+          ? "Microsoft 365 authorization expired. Reconnect Microsoft 365."
+          : statusCode === 404
+            ? "Microsoft 365 is not connected."
+            : "Could not load Outlook mail metadata.",
+        code: error?.code || "MICROSOFT_365_MAIL_LIST_FAILED"
+      });
+    }
+  });
+
+  router.get("/microsoft/calendar", async (req, res) => {
+    try {
+      const pool = getPool();
+      const { accessToken } = await getMicrosoft365AccessToken(pool, req.user.id);
+      const result = await listMicrosoftCalendarEvents({
+        accessToken,
+        startDateTime: req.query.startDateTime,
+        endDateTime: req.query.endDateTime
+      });
+      await markConnectionUsed(pool, req.user.id, "microsoft_365");
+      return res.json({
+        provider: "microsoft_365",
+        readOnly: true,
+        bodyAccessRequested: false,
+        ...result
+      });
+    } catch (error) {
+      const statusCode = Number(error?.statusCode) || 502;
+      console.error("UNBOUND AI MICROSOFT CALENDAR LIST ERROR:", error?.code || error?.message || "unknown");
+      return res.status(statusCode).json({
+        error: statusCode === 401
+          ? "Microsoft 365 authorization expired. Reconnect Microsoft 365."
+          : statusCode === 404
+            ? "Microsoft 365 is not connected."
+            : "Could not load Outlook calendar events.",
+        code: error?.code || "MICROSOFT_365_CALENDAR_LIST_FAILED"
+      });
+    }
+  });
+
+  router.get("/microsoft/drive", async (req, res) => {
+    try {
+      const pool = getPool();
+      const { accessToken } = await getMicrosoft365AccessToken(pool, req.user.id);
+      const result = await listOneDriveMetadata({ accessToken });
+      await markConnectionUsed(pool, req.user.id, "microsoft_365");
+      return res.json({
+        provider: "microsoft_365",
+        readOnly: true,
+        metadataOnlyEndpoint: true,
+        contentEndpointEnabled: false,
+        ...result
+      });
+    } catch (error) {
+      const statusCode = Number(error?.statusCode) || 502;
+      console.error("UNBOUND AI MICROSOFT DRIVE LIST ERROR:", error?.code || error?.message || "unknown");
+      return res.status(statusCode).json({
+        error: statusCode === 401
+          ? "Microsoft 365 authorization expired. Reconnect Microsoft 365."
+          : statusCode === 404
+            ? "Microsoft 365 is not connected."
+            : "Could not load OneDrive metadata.",
+        code: error?.code || "MICROSOFT_365_DRIVE_LIST_FAILED"
+      });
+    }
+  });
+
+  router.delete("/microsoft", async (req, res) => {
+    const pool = getPool();
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const row = await loadStoredConnection(
+        client,
+        req.user.id,
+        "microsoft_365",
+        { forUpdate: true }
+      );
+      if (!row) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "Microsoft 365 is not connected." });
+      }
+      await deleteConnection(client, req.user.id, "microsoft_365");
+      await client.query(
+        `DELETE FROM connected_app_oauth_states
+         WHERE user_id = $1 AND provider = $2`,
+        [req.user.id, "microsoft_365"]
+      );
+      await client.query("COMMIT");
+      return res.json({
+        ok: true,
+        provider: "microsoft_365",
+        localConnectionRemoved: true,
+        providerRevoked: false,
+        warning: "UNBOUND removed its stored Microsoft 365 tokens. Microsoft account or tenant consent remains until you revoke the app in Microsoft."
+      });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      console.error("UNBOUND AI MICROSOFT DISCONNECT ERROR:", error?.code || error?.message || "unknown");
+      return res.status(500).json({ error: "Could not disconnect Microsoft 365." });
+    } finally {
+      client.release();
+    }
+  });
 
   router.post("/slack/authorize", async (req, res) => {
     try {
