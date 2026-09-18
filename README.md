@@ -142,6 +142,12 @@ UNBOUND propagates HTTP client disconnects through the gateway, provider bulkhea
 
 Client cancellation is not treated as a provider outage: it does not trigger fallback, does not increment or reset the provider circuit breaker, and is recorded separately from provider failures in process-local telemetry. This applies to normal chat, streaming chat, Research Mode, and file-analysis provider calls when a request signal is supplied.
 
+### Graceful AI shutdown drain
+
+During SIGTERM/SIGINT shutdown, UNBOUND marks the process unready, broadcasts a `SERVER_SHUTDOWN` cancellation to every registered AI request, and only then waits for the HTTP server to close. This releases provider bulkhead slots and aborts active upstream requests instead of leaving long AI calls alive until the forced-exit deadline.
+
+Queued and active shutdown cancellations keep the shutdown reason end-to-end. Normal JSON chat receives a retryable HTTP 503 with `Retry-After: 5` when the connection is still open; an already-started streaming response is ended with a retryable restart event. Client-disconnect cancellations remain silent and continue to be tracked separately.
+
 ## Mobile
 
 From `mobile/`:
