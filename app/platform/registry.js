@@ -79,6 +79,15 @@ function connectorCatalog(env = process.env) {
     enabled(env.GOOGLE_OAUTH_RESTRICTED_SCOPES_VERIFIED) &&
     configured(env.CONNECTED_APPS_TOKEN_KEY)
   );
+  const slackConfigured = Boolean(
+    configured(env.SLACK_CLIENT_ID) &&
+    configured(env.SLACK_REDIRECT_URL) &&
+    enabled(env.SLACK_APP_REGISTRATION_VERIFIED) &&
+    enabled(env.SLACK_PKCE_ENABLED_VERIFIED) &&
+    enabled(env.SLACK_READ_ONLY_SCOPES_VERIFIED) &&
+    enabled(env.SLACK_TOKEN_ROTATION_VERIFIED) &&
+    configured(env.CONNECTED_APPS_TOKEN_KEY)
+  );
   return [
     { id: "github", label: "GitHub", protocol: "native_oauth", configured: configured(env.GITHUB_CLIENT_ID), read: true, write: enabled(env.GITHUB_WRITE_ACTIONS_ENABLED) },
     { id: "mcp_gateway", label: "MCP Gateway", protocol: "mcp", configured: configured(env.UNBOUND_MCP_GATEWAY_URL), read: true, write: false },
@@ -86,7 +95,7 @@ function connectorCatalog(env = process.env) {
     { id: "a2a_peer", label: "A2A Peer", protocol: "a2a", configured: configured(env.UNBOUND_A2A_AGENT_CARD_URL), read: true, write: configured(env.UNBOUND_A2A_AGENT_CARD_URL), approvalRequired: true },
     { id: "google_workspace", label: "Google Workspace", protocol: "native_oauth", configured: googleWorkspaceConfigured, read: googleWorkspaceConfigured, write: false, dataAccess: "metadata-only" },
     { id: "microsoft_365", label: "Microsoft 365", protocol: "native_oauth", configured: configured(env.MICROSOFT_OAUTH_CLIENT_ID), read: false, write: false },
-    { id: "slack", label: "Slack", protocol: "native_oauth", configured: configured(env.SLACK_CLIENT_ID), read: false, write: false }
+    { id: "slack", label: "Slack", protocol: "native_oauth", configured: slackConfigured, read: slackConfigured, write: false, dataAccess: "public-channel-read-only" }
   ];
 }
 
