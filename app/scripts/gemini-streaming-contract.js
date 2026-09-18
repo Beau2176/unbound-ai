@@ -202,8 +202,16 @@ async function main() {
     );
     const anthropicProvider = catalog.find((provider) => provider.id === "anthropic");
     assert(anthropicProvider);
-    assert.strictEqual(anthropicProvider.reasoningControls, undefined);
-    assert.strictEqual(anthropicProvider.defaultModel, undefined);
+    assert.strictEqual(anthropicProvider.reasoningControls, true);
+    assert.strictEqual(anthropicProvider.supportedThinkingLevels, undefined);
+    assert.strictEqual(anthropicProvider.defaultThinkingLevel, undefined);
+    assert.deepStrictEqual(
+      Array.from(anthropicProvider.supportedEffortLevels),
+      ["low", "medium", "high", "xhigh", "max"]
+    );
+    assert.strictEqual(anthropicProvider.defaultModel, "claude-sonnet-5");
+    assert.strictEqual(googleProvider.supportedEffortLevels, undefined);
+    assert.strictEqual(googleProvider.defaultEffort, undefined);
 
     await assert.rejects(
       () => google.streamChat({
