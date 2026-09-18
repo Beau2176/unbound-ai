@@ -16,6 +16,7 @@ assert.strictEqual(
   "restore-known-good-and-restart"
 );
 assert.ok(LOCKED_POLICY.criticalFiles.includes("ops/self-heal.js"));
+assert.ok(LOCKED_POLICY.criticalFiles.includes("http/stream-backpressure.js"));
 assert.ok(LOCKED_POLICY.criticalFiles.includes("start.js"));
 assert.ok(LOCKED_POLICY.criticalFiles.includes("security/http-security.js"));
 assert.ok(LOCKED_POLICY.criticalFiles.includes("knowledge/adaptive.js"));
