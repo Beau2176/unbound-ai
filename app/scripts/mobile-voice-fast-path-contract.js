@@ -21,7 +21,12 @@ assert(mobileVoiceSource.includes("const MAX_CHUNK = 160"), 'mobile utterances m
 assert(mobileVoiceSource.includes("const FALLBACK_CHUNK = 96"), 'mobile streaming must start before a long answer completes');
 assert(mobileVoiceSource.includes("storageSet(LEGACY_AUTO_READ_STORAGE_KEY, 'false')"), 'legacy MutationObserver auto-reader must stay disabled on mobile');
 assert(!mobileVoiceSource.includes('new MutationObserver'), 'mobile voice fast path must not use a broad DOM MutationObserver');
-assert(mobileVoiceSource.includes("document.addEventListener('pointerdown', prime"), 'mobile TTS must pre-warm from a user gesture');
+assert(mobileVoiceSource.includes("document.addEventListener('pointerdown', primeFromGesture"), 'mobile TTS must pre-warm from a user gesture without stealing the manual Listen gesture');
+assert(mobileVoiceSource.includes("if (action && /Listen to last answer/i"), 'manual Listen must bypass the silent warm-up path');
+assert(mobileVoiceSource.includes("try { synth.resume(); } catch (_) {}"), 'Android speech synthesis must explicitly resume before manual playback');
+assert(mobileVoiceSource.includes("manualUseDefaultVoice"), 'manual playback must retry with the phone default voice if the selected voice fails');
+assert(mobileVoiceSource.includes("Retrying with the phone default voice"), 'manual playback must expose its fallback behavior');
+assert(mobileVoiceSource.includes("if (window.speechSynthesis.speaking || window.speechSynthesis.pending)"), 'reset must not issue an unnecessary Android cancel while the speech engine is idle');
 assert(mobileVoiceSource.includes("node.dataset.speechText"), 'manual mobile playback must prefer canonical raw answer text');
 assert(mobileVoiceSource.includes("event.stopImmediatePropagation()"), 'mobile voice controls must prevent legacy handlers from also firing');
 assert(mobileVoiceSource.includes('sawStreamDelta = true'), 'mobile streaming must record that deltas were already consumed');
@@ -41,14 +46,14 @@ const marker = 'app.use("/api", createMaintenanceMiddleware());';
 const minimalServer = `const app = { use() {}, get() {} };\n${marker}\n`;
 const integrated = integrateNativeShellServerSource(minimalServer);
 assert(integrated.includes('app.get("/voice-mobile-fast-path.js"'), 'server must expose the mobile voice runtime');
-assert(integrated.includes('voice-mobile-fast-path.js?v=2'), 'homepage must load the mobile voice runtime');
+assert(integrated.includes('voice-mobile-fast-path.js?v=3'), 'homepage must load the mobile voice runtime');
 assert(integrated.includes('injectVoiceCanonicalText'), 'homepage integration must inject canonical speech text');
 assert(integrated.includes('/Android|iPhone|iPad|iPod/i.test(userAgent)'), 'mobile user agents must skip the desktop safe bridge');
 assert(integrated.includes('__unboundSafeVoiceBridgeMobileSkipped'), 'mobile safe-bridge skip must be explicit and diagnosable');
 assert(
-  integrated.indexOf('voice-mobile-fast-path.js?v=2') < integrated.indexOf('voice-safe-bridge.js?v=200'),
+  integrated.indexOf('voice-mobile-fast-path.js?v=3') < integrated.indexOf('voice-safe-bridge.js?v=200'),
   'mobile fast path must initialize before the desktop safe bridge request'
 );
 assert.strictEqual(integrateNativeShellServerSource(integrated), integrated, 'native shell integration must remain idempotent');
 
-console.log('PASS mobile voice fast path: canonical text, progressive speech, distinct Android operating-system voice playback, TTS prewarm, no legacy observer, no duplicate completion replay.');
+console.log('PASS mobile voice fast path: canonical text, Android-safe manual Listen, default-voice retry, progressive speech, and no duplicate completion replay.');
