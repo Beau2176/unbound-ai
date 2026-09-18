@@ -29,6 +29,9 @@ const {
   integrateMemoryServerSource
 } = require("./memory/server-integration");
 const {
+  integrateFutureCoreV2ServerSource
+} = require("./orchestration/server-integration");
+const {
   integrateAdaptiveKnowledgeServerSource
 } = require("./knowledge/server-integration");
 const {
@@ -105,6 +108,7 @@ function compileIntegratedServer({
   integratedSource = integrateScheduledTasksServerSource(integratedSource);
   integratedSource = integrateAgentServerSource(integratedSource);
   integratedSource = integrateMemoryServerSource(integratedSource);
+  integratedSource = integrateFutureCoreV2ServerSource(integratedSource);
   integratedSource = integrateAdaptiveKnowledgeServerSource(integratedSource);
   integratedSource = integrateModeLibraryServerSource(integratedSource);
   integratedSource = integrateAdvertisingAnalyticsServerSource(integratedSource);
