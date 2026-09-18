@@ -87,7 +87,7 @@ async function main() {
     assert.match(researchBody.system, /Research Mode is active/);
     assert.match(researchBody.system, /Use the provided web_search tool/);
 
-    const extractedResearch = anthropic.extractAnthropicResponse({
+    const extractedResearch = anthropic.extractAnthropicResponses({
       content: [
         {
           type: "server_tool_use",
@@ -220,39 +220,52 @@ async function main() {
     assert.strictEqual(result.usage.input_tokens, 4);
     assert.strictEqual(result.usage.output_tokens, 3);
 
-    let generateRequest = null;
+    const generateRequests = [];
+    let generateCall = 0;
+    const pausedContent = [
+      { type: "thinking", thinking: "hidden internal summary" },
+      {
+        type: "server_tool_use",
+        id: "srvtoolu_generate",
+        name: "web_search",
+        input: { query: "verified answer" }
+      },
+      {
+        type: "web_search_tool_result",
+        tool_use_id: "srvtoolu_generate",
+        content: [{
+          type: "web_search_result",
+          url: "https://example.com/source",
+          title: "Verified Source",
+          encrypted_content: "encrypted"
+        }]
+      }
+    ];
     const generated = await anthropic.generateChat({
       instructions: "system instruction",
       input: [{ role: "user", content: "deep answer" }],
       reasoningEffort: "high",
       research: { enabled: true, maxToolCalls: 4 },
       fetchImpl: async (url, options) => {
-        generateRequest = { url, options };
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            id: "msg_generate",
-            model: "claude-sonnet-5",
-            content: [
-              { type: "thinking", thinking: "hidden internal summary" },
-              {
-                type: "server_tool_use",
-                id: "srvtoolu_generate",
-                name: "web_search",
-                input: { query: "verified answer" }
-              },
-              {
-                type: "web_search_tool_result",
-                tool_use_id: "srvtoolu_generate",
-                content: [{
-                  type: "web_search_result",
-                  url: "https://example.com/source",
-                  title: "Verified Source",
-                  encrypted_content: "encrypted"
-                }]
-              },
-              {
+        generateRequests.push({ url, options });
+        generateCall += 1;
+        const payload = generateCall === 1
+          ? {
+              id: "msg_paused",
+              model: "claude-sonnet-5",
+              stop_reason: "pause_turn",
+              content: pausedContent,
+              usage: {
+                input_tokens: 3,
+                output_tokens: 2,
+                server_tool_use: { web_search_requests: 1 }
+              }
+            }
+          : {
+              id: "msg_generate",
+              model: "claude-sonnet-5",
+              stop_reason: "end_turn",
+              content: [{
                 type: "text",
                 text: "Visible answer",
                 citations: [{
@@ -262,19 +275,29 @@ async function main() {
                   cited_text: "verified text",
                   encrypted_index: "index"
                 }]
+              }],
+              usage: {
+                input_tokens: 5,
+                output_tokens: 5,
+                server_tool_use: { web_search_requests: 0 }
               }
-            ],
-            usage: {
-              input_tokens: 3,
-              output_tokens: 5,
-              server_tool_use: { web_search_requests: 1 }
-            }
-          })
+            };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => payload
         };
       }
     });
-    assert.strictEqual(generateRequest.options.redirect, "error");
-    const generatedRequestBody = JSON.parse(generateRequest.options.body);
+    assert.strictEqual(generateRequests.length, 2);
+    assert.strictEqual(generateRequests[0].options.redirect, "error");
+    assert.strictEqual(generateRequests[1].options.redirect, "error");
+    const generatedRequestBody = JSON.parse(generateRequests[0].options.body);
+    const continuationRequestBody = JSON.parse(generateRequests[1].options.body);
+    assert.deepStrictEqual(
+      continuationRequestBody.messages.at(-1),
+      { role: "assistant", content: pausedContent }
+    );
     assert.strictEqual(generatedRequestBody.output_config.effort, "high");
     assert.strictEqual(generatedRequestBody.tools[0].type, "web_search_20260318");
     assert.strictEqual(generatedRequestBody.tools[0].max_uses, 4);
@@ -287,6 +310,10 @@ async function main() {
       endIndex: "Visible answer".length
     }]);
     assert.strictEqual(generated.research.webSearchCalls, 1);
+    assert.strictEqual(generated.usage.input_tokens, 8);
+    assert.strictEqual(generated.usage.output_tokens, 7);
+    assert.strictEqual(generated.usage.server_tool_use.web_search_requests, 1);
+    assert.strictEqual(generated.responseId, "msg_generate");
 
     const gateway = getGatewayStatus();
     assert.strictEqual(gateway.provider, "anthropic");
@@ -331,7 +358,7 @@ async function main() {
         /Overloaded/.test(error.message)
     );
 
-    console.log("PASS Anthropic parity: native SSE streaming, Sonnet 5 effort controls, direct web research with citations, hidden-thinking filtering, redirect hardening, remote stream error handling, and active gateway status.");
+    console.log("PASS Anthropic parity: native SSE streaming, Sonnet 5 effort controls, direct web research with citations and bounded pause-turn continuation, hidden-thinking filtering, redirect hardening, remote stream error handling, and active gateway status.");
   } finally {
     for (const key of tracked) {
       if (original[key] === undefined) delete process.env[key];
