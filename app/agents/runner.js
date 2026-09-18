@@ -351,7 +351,9 @@ async function processNextAgentRun(options = {}) {
       [
         error?.code === "AGENT_PROVIDER_NOT_CONFIGURED"
           ? "The AI provider is not configured for Agent runs."
-          : "This Agent run failed. Try again.",
+          : error?.code === "USAGE_MONTHLY_LIMIT_REACHED"
+            ? error.publicMessage || error.message || "Monthly usage allowance reached."
+            : "This Agent run failed. Try again.",
         run.id
       ]
     );
@@ -367,6 +369,7 @@ function startAgentWorker({
   isDatabaseReady = () => true,
   recordUsageEvent = null,
   estimateProviderCostMicros = null,
+  assertUsageBudget = null,
   env = process.env,
   onError = console.error
 } = {}) {
@@ -385,7 +388,8 @@ function startAgentWorker({
       await processNextAgentRun({
         getPool,
         recordUsageEvent,
-        estimateProviderCostMicros
+        estimateProviderCostMicros,
+        assertUsageBudget
       });
     } catch (error) {
       onError("UNBOUND AI AGENT WORKER ERROR:", error);
