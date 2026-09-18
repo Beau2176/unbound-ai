@@ -14,7 +14,10 @@ const {
 
 function safeImageToolError(error) {
   const code = String(error?.code || "");
-  if (code === "USAGE_MONTHLY_LIMIT_REACHED") {\n    return { statusCode: Number(error?.statusCode) || 429, code, message: error?.publicMessage || error?.message || "Monthly usage allowance reached." };\n  }\n  if (code === "IMAGE_PROVIDER_NOT_CONFIGURED") {
+  if (code === "USAGE_MONTHLY_LIMIT_REACHED") {
+    return { statusCode: Number(error?.statusCode) || 429, code, message: error?.publicMessage || error?.message || "Monthly usage allowance reached." };
+  }
+  if (code === "IMAGE_PROVIDER_NOT_CONFIGURED") {
     return {
       statusCode: 503,
       code,
@@ -122,7 +125,10 @@ function createImageToolsRouter({ recordUsageEvent = null, assertUsageBudget = n
             : "IMAGE_PROVIDER_NOT_CONFIGURED"
         });
       }
-      if (typeof assertUsageBudget === "function") {\n        await assertUsageBudget({ userId: req.user?.id || null, category: "image_tools" });\n      }\n      const input = normalizeGenerateRequest(req.body);
+      if (typeof assertUsageBudget === "function") {
+        await assertUsageBudget({ userId: req.user?.id || null, category: "image_tools" });
+      }
+      const input = normalizeGenerateRequest(req.body);
       const result = await generateImage({ ...input, env });
       await recordImageUsage({
         recordUsageEvent,
@@ -167,7 +173,10 @@ function createImageToolsRouter({ recordUsageEvent = null, assertUsageBudget = n
             : "IMAGE_PROVIDER_NOT_CONFIGURED"
         });
       }
-      if (typeof assertUsageBudget === "function") {\n        await assertUsageBudget({ userId: req.user?.id || null, category: "image_tools" });\n      }\n      const input = normalizeEditRequest(req.body, env);
+      if (typeof assertUsageBudget === "function") {
+        await assertUsageBudget({ userId: req.user?.id || null, category: "image_tools" });
+      }
+      const input = normalizeEditRequest(req.body, env);
       const malwareScan = await scanBufferForMalware({
         filename: input.filename,
         buffer: input.imageBuffer,
