@@ -8,14 +8,18 @@ function main() {
   const env = {
     OPENAI_API_KEY: "openai",
     ANTHROPIC_API_KEY: "anthropic",
+    ANTHROPIC_MODEL: "claude-test",
     GEMINI_API_KEY: "gemini",
+    GEMINI_MODEL: "gemini-test",
     UNBOUND_LOCAL_AI_ENDPOINT: "http://127.0.0.1:11434",
-    GITHUB_CLIENT_ID: "github",
+    UNBOUND_LOCAL_AI_MODEL: "local-test",
+    GITHUB_APP_CLIENT_ID: "github",
     UNBOUND_MCP_GATEWAY_URL: "https://mcp.example.test",
     BROWSER_CDP_URL: "wss://browser.example.test",
     UNBOUND_OBJECT_STORAGE_PROVIDER: "s3",
     UNBOUND_OBJECT_STORAGE_KEY: "configured",
     UNBOUND_CODE_SANDBOX_URL: "https://sandbox.example.test",
+    UNBOUND_CODE_SANDBOX_TOKEN: "sandbox-token",
     UNBOUND_FUTURE_CORE_V2_ENABLED: "true"
   };
 
