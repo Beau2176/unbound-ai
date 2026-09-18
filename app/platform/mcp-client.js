@@ -39,7 +39,7 @@ async function requestMcp(method, params = {}, {
     error.code = "MCP_GATEWAY_NOT_CONFIGURED";
     throw error;
   }
-  const requestName = clean(name || params?.name || method, 160) || method;
+  const requestName = clean(name || params?.name, 160);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.timeoutMs);
   timer.unref?.();
@@ -51,16 +51,26 @@ async function requestMcp(method, params = {}, {
       headers: {
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
+        "mcp-protocol-version": MCP_PROTOCOL_VERSION,
         "mcp-method": method,
-        "mcp-name": requestName,
+        ...(requestName ? { "mcp-name": requestName } : {}),
         ...(config.token ? { authorization: `Bearer ${config.token}` } : {})
       },
       body: JSON.stringify({
         jsonrpc: "2.0",
         id: cryptoRandomId(),
         method,
-        params,
-        _meta: { protocolVersion: MCP_PROTOCOL_VERSION }
+        params: {
+          ...(params && typeof params === "object" ? params : {}),
+          _meta: {
+            ...((params && typeof params === "object" && params._meta && typeof params._meta === "object") ? params._meta : {}),
+            "io.modelcontextprotocol/protocolVersion": MCP_PROTOCOL_VERSION,
+            "io.modelcontextprotocol/clientInfo": {
+              name: "unbound-ai",
+              version: "1.0"
+            }
+          }
+        }
       })
     });
   } catch (cause) {
@@ -97,7 +107,7 @@ function cryptoRandomId() {
 }
 
 async function listTools(options = {}) {
-  const result = await requestMcp("tools/list", {}, { ...options, name: "tools" });
+  const result = await requestMcp("tools/list", {}, options);
   return Array.isArray(result?.tools) ? result.tools : [];
 }
 
