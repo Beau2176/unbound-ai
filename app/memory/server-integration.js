@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v0.94";
+const INTEGRATION_VERSION = "v1.0";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const first = source.indexOf(marker);
@@ -38,7 +38,8 @@ function integrateMemoryServerSource(serverSource) {
   source = replaceExactlyOnce(
     source,
     agentImports,
-    `${agentImports}\nconst { createMemoryRouter, sendMemoryPage } = require("./memory/routes");\nconst { buildMemoryPrompt } = require("./memory/context");\nconst { buildProjectCoreMemoryPrompt, getProjectIdentity } = require("./project/identity");`,
+    `${agentImports}\nconst { createMemoryRouter, sendMemoryPage } = require("./memory/routes");\nconst { buildMemoryPrompt } = require("./memory/context");\nconst { buildProjectCoreMemoryPrompt, getProjectIdentity } = require("./project/identity");\nconst { buildProjectContext } = require("./platform/project-memory");
+const { buildProjectContext } = require("./platform/project-memory");`,
     "memory-imports"
   );
 
@@ -62,7 +63,7 @@ function integrateMemoryServerSource(serverSource) {
   source = replaceExpectedCount(
     source,
     styleMarker,
-    `${styleMarker}\n    const projectMemoryInstructions = buildProjectCoreMemoryPrompt();\n    const memoryInstructions = persistentChat?.user\n      ? await buildMemoryPrompt(pool, persistentChat.user.id, message)\n      : "";`,
+    `${styleMarker}\n    const projectMemoryInstructions = buildProjectCoreMemoryPrompt();\n    const memoryInstructions = persistentChat?.user\n      ? await buildMemoryPrompt(pool, persistentChat.user.id, message)\n      : "";\n    const projectContextInstructions = persistentChat?.user && req.body?.projectId\n      ? await buildProjectContext(pool, persistentChat.user.id, req.body.projectId, message)\n      : "";`,
     2,
     "memory-chat-load"
   );
@@ -71,7 +72,7 @@ function integrateMemoryServerSource(serverSource) {
   source = replaceExpectedCount(
     source,
     instructionArray,
-    `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, styleInstructions, memoryInstructions, depthInstructions, modeInstructions]`,
+    `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, projectContextInstructions, styleInstructions, memoryInstructions, depthInstructions, modeInstructions]`,
     2,
     "memory-chat-instructions"
   );
