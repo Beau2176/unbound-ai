@@ -271,8 +271,8 @@ async function refreshUserToken({
   );
 }
 
-async function revokeUserToken({ accessToken, fetchImpl = fetch } = {}) {
-  const token = safeText(accessToken, 4000);
+async function revokeUserToken({ accessToken, refreshToken, fetchImpl = fetch } = {}) {
+  const token = safeText(refreshToken, 4000) || safeText(accessToken, 4000);
   if (!token) return { revoked: false, reason: "token-missing" };
   const response = await fetchWithTimeout(
     REVOKE_URL,
