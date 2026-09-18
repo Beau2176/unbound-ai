@@ -98,6 +98,28 @@ UNBOUND keeps process-local, privacy-minimized AI routing telemetry for operatio
 
 Detailed telemetry is exposed only through the admin operational status snapshot; public health/readiness responses keep provider telemetry out. The counters reset whenever the application process restarts. This is operational diagnostics, not billing or user analytics.
 
+### Provider request deadlines
+
+UNBOUND applies one total deadline to each provider operation so a hung upstream cannot block chat indefinitely before failover/circuit logic runs.
+
+Defaults:
+
+- ordinary chat: 45 seconds
+- streaming: 120 seconds
+- Research Mode: 180 seconds
+- file analysis: 180 seconds
+
+Optional tuning:
+
+```bash
+AI_PROVIDER_TIMEOUT_MS=45000
+AI_PROVIDER_STREAM_TIMEOUT_MS=120000
+AI_RESEARCH_TIMEOUT_MS=180000
+AI_FILE_ANALYSIS_TIMEOUT_MS=180000
+```
+
+All values are bounded to 5–300 seconds. Fetch-based providers receive an abort signal for the full operation, including stream/body reading and Anthropic research continuations. OpenAI requests use the same UNBOUND deadline and set SDK retries to zero so transient failures reach UNBOUND's failover/circuit layer without hidden retry delays.
+
 ## Mobile
 
 From `mobile/`:
