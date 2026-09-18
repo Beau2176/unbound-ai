@@ -46,6 +46,10 @@ async function main() {
     assert.strictEqual(google.normalizeThinkingLevel("none"), "low");
     assert.strictEqual(google.normalizeThinkingLevel("minimal"), "low");
     assert.strictEqual(google.normalizeThinkingLevel("unsupported"), null);
+    assert.strictEqual(google.supportsResearch(), true);
+    assert.strictEqual(google.utf8ByteOffsetToStringIndex("éx", 0), 0);
+    assert.strictEqual(google.utf8ByteOffsetToStringIndex("éx", 2), 1);
+    assert.strictEqual(google.utf8ByteOffsetToStringIndex("éx", 1), null);
 
     const body = google.buildGeminiRequestBody(
       "system instruction",
@@ -59,6 +63,63 @@ async function main() {
     assert.strictEqual(body.contents[0].role, "user");
     assert.strictEqual(body.contents[1].role, "model");
     assert.strictEqual(body.contents[2].role, "user");
+
+    const researchBody = google.buildGeminiRequestBody(
+      "research instruction",
+      [{ role: "user", content: "latest facts" }],
+      "high",
+      { enabled: true }
+    );
+    assert.deepStrictEqual(researchBody.tools, [{ googleSearch: {} }]);
+    assert.strictEqual(
+      researchBody.generationConfig.thinkingConfig.thinkingLevel,
+      "high"
+    );
+
+    const groundedMetadata = google.extractGeminiResearchMetadata({
+      candidates: [{
+        content: { parts: [{ text: "Café facts" }] },
+        groundingMetadata: {
+          webSearchQueries: ["cafe facts"],
+          searchEntryPoint: {
+            renderedContent: '<div class="google-search-suggestions">Search</div>'
+          },
+          groundingChunks: [{
+            web: {
+              uri: "https://example.com/cafe",
+              title: "Cafe Source"
+            }
+          }],
+          groundingSupports: [{
+            segment: {
+              partIndex: 0,
+              startIndex: 0,
+              endIndex: 5,
+              text: "Café"
+            },
+            groundingChunkIndices: [0]
+          }]
+        }
+      }]
+    });
+    assert.strictEqual(groundedMetadata.googleGrounded, true);
+    assert.strictEqual(groundedMetadata.groundingProvider, "google_search");
+    assert.strictEqual(groundedMetadata.providerRetentionDays, 30);
+    assert.strictEqual(groundedMetadata.webSearchCalls, 1);
+    assert.deepStrictEqual(groundedMetadata.sources, [{
+      number: 1,
+      title: "Cafe Source",
+      url: "https://example.com/cafe"
+    }]);
+    assert.deepStrictEqual(groundedMetadata.citations, [{
+      sourceNumber: 1,
+      startIndex: 0,
+      endIndex: "Café".length
+    }]);
+    assert.strictEqual(groundedMetadata.storagePolicy.persistText, true);
+    assert.strictEqual(groundedMetadata.storagePolicy.persistSources, false);
+    assert.strictEqual(groundedMetadata.storagePolicy.persistCitations, false);
+    assert.strictEqual(groundedMetadata.storagePolicy.persistSearchSuggestions, false);
 
     const highThinkingBody = google.buildGeminiRequestBody(
       "system instruction",
@@ -133,6 +194,98 @@ async function main() {
     );
     assert.strictEqual(generated.reply, "answer");
 
+    let groundedRequest = null;
+    const grounded = await google.generateChat({
+      instructions: "research instruction",
+      input: [{ role: "user", content: "latest cafe facts" }],
+      reasoningEffort: "high",
+      research: { enabled: true, maxToolCalls: 4 },
+      fetchImpl: async (url, options) => {
+        groundedRequest = { url, options };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            responseId: "grounded-1",
+            candidates: [{
+              content: { parts: [{ text: "Café facts" }] },
+              groundingMetadata: {
+                webSearchQueries: ["cafe facts"],
+                searchEntryPoint: {
+                  renderedContent: '<div class="google-search-suggestions">Search</div>'
+                },
+                groundingChunks: [{
+                  web: {
+                    uri: "https://example.com/cafe",
+                    title: "Cafe Source"
+                  }
+                }],
+                groundingSupports: [{
+                  segment: {
+                    partIndex: 0,
+                    startIndex: 0,
+                    endIndex: 5,
+                    text: "Café"
+                  },
+                  groundingChunkIndices: [0]
+                }]
+              }
+            }],
+            usageMetadata: {
+              promptTokenCount: 5,
+              candidatesTokenCount: 4
+            }
+          })
+        };
+      }
+    });
+    const groundedRequestBody = JSON.parse(groundedRequest.options.body);
+    assert.deepStrictEqual(groundedRequestBody.tools, [{ googleSearch: {} }]);
+    assert.strictEqual(
+      groundedRequestBody.generationConfig.thinkingConfig.thinkingLevel,
+      "high"
+    );
+    assert.strictEqual(grounded.reply, "Café facts");
+    assert.strictEqual(grounded.research.googleGrounded, true);
+    assert.strictEqual(grounded.research.sources.length, 1);
+    assert.strictEqual(
+      grounded.research.searchSuggestionsHtml,
+      '<div class="google-search-suggestions">Search</div>'
+    );
+
+    await assert.rejects(
+      () => google.generateChat({
+        instructions: "research",
+        input: [{ role: "user", content: "latest" }],
+        research: { enabled: true },
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            candidates: [{
+              content: { parts: [{ text: "Incomplete" }] },
+              groundingMetadata: {
+                webSearchQueries: ["latest"],
+                groundingChunks: [{
+                  web: {
+                    uri: "https://example.com/incomplete",
+                    title: "Incomplete"
+                  }
+                }],
+                groundingSupports: [{
+                  segment: { partIndex: 0, startIndex: 0, endIndex: 10 },
+                  groundingChunkIndices: [0]
+                }]
+              }
+            }]
+          })
+        })
+      }),
+      (error) =>
+        error &&
+        error.code === "GEMINI_RESEARCH_GROUNDING_INCOMPLETE"
+    );
+
     let request = null;
     const deltas = [];
     const event1 = 'data: {"candidates":[{"content":{"parts":[{"text":"Hel"}]}}],"responseId":"resp-1"}\n\n';
@@ -182,7 +335,8 @@ async function main() {
     assert.strictEqual(gateway.provider, "google");
     assert.strictEqual(gateway.configured, true);
     assert.strictEqual(gateway.streaming, true);
-    assert.strictEqual(gateway.research, false);
+    assert.strictEqual(gateway.research, true);
+    assert.strictEqual(gateway.researchProvider, "google");
 
     const catalog = providerCatalog({
       GEMINI_API_KEY: "configured"
@@ -196,9 +350,20 @@ async function main() {
     assert.deepStrictEqual(Array.from(googleProvider.supportedThinkingLevels), ["low", "medium", "high"]);
     assert.strictEqual(googleProvider.defaultThinkingLevel, "medium");
     assert.strictEqual(googleProvider.defaultModel, "gemini-3.8-flash");
+    assert.strictEqual(googleProvider.research, true);
+    assert.strictEqual(googleProvider.researchTool, "google_search");
+    assert.strictEqual(
+      googleProvider.researchDisplay,
+      "search-suggestions-plus-citations"
+    );
+    assert.strictEqual(
+      googleProvider.researchHistoryStorage,
+      "text-only-no-links-or-suggestions"
+    );
+    assert.strictEqual(googleProvider.googleGroundingRetentionDays, 30);
     assert.strictEqual(
       googleProvider.adapterState,
-      "active-gemini-3.8-chat-streaming-thinking"
+      "active-gemini-3.8-chat-streaming-thinking-grounded-research"
     );
     const anthropicProvider = catalog.find((provider) => provider.id === "anthropic");
     assert(anthropicProvider);
@@ -222,7 +387,7 @@ async function main() {
       (error) => error && error.code === "GEMINI_STREAM_INVALID_EVENT"
     );
 
-    console.log("PASS Gemini streaming parity: native SSE chat streaming, bounded parsing, 3.8 reasoning controls, thought filtering, redirect hardening, and low-latency fallback.");
+    console.log("PASS Gemini parity: native SSE chat streaming, 3.8 reasoning controls, compliant Google Search grounding, UTF-8 citation mapping, required Search Suggestions, thought filtering, redirect hardening, and low-latency fallback.");
   } finally {
     for (const key of tracked) {
       if (original[key] === undefined) delete process.env[key];
