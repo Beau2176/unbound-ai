@@ -30,6 +30,19 @@ async function main() {
     process.env.ANTHROPIC_MODEL = "claude-sonnet-5";
     process.env.ANTHROPIC_MAX_TOKENS = "2048";
 
+    assert.strictEqual(anthropic.normalizeEffort("none"), "low");
+    assert.strictEqual(anthropic.normalizeEffort("minimal"), "low");
+    assert.strictEqual(anthropic.normalizeEffort("low"), "low");
+    assert.strictEqual(anthropic.normalizeEffort("medium"), "medium");
+    assert.strictEqual(anthropic.normalizeEffort("high"), "high");
+    assert.strictEqual(anthropic.normalizeEffort("xhigh"), "xhigh");
+    assert.strictEqual(anthropic.normalizeEffort("max"), "max");
+    assert.strictEqual(anthropic.normalizeEffort("maximum"), "max");
+    assert.strictEqual(anthropic.normalizeEffort("unsupported"), null);
+    assert.strictEqual(anthropic.modelSupportsEffortControls("claude-sonnet-5"), true);
+    assert.strictEqual(anthropic.modelSupportsEffortControls("claude-opus-5"), true);
+    assert.strictEqual(anthropic.modelSupportsEffortControls("claude-sonnet-4-5-20250929"), false);
+
     const body = anthropic.buildAnthropicRequestBody(
       "system instruction",
       [
@@ -38,7 +51,7 @@ async function main() {
         { role: "user", content: "continue" }
       ],
       null,
-      { streaming: true }
+      { streaming: true, reasoningEffort: "medium" }
     );
     assert.strictEqual(body.model, "claude-sonnet-5");
     assert.strictEqual(body.max_tokens, 2048);
@@ -46,6 +59,15 @@ async function main() {
     assert.strictEqual(body.stream, true);
     assert.strictEqual(body.messages[0].role, "user");
     assert.strictEqual(body.messages[1].role, "assistant");
+    assert.strictEqual(body.output_config.effort, "medium");
+
+    const legacyBody = anthropic.buildAnthropicRequestBody(
+      "",
+      [{ role: "user", content: "legacy" }],
+      "claude-sonnet-4-5-20250929",
+      { reasoningEffort: "high" }
+    );
+    assert.strictEqual(legacyBody.output_config, undefined);
 
     assert.deepStrictEqual(
       anthropic.parseAnthropicSseEvent(
@@ -68,8 +90,10 @@ async function main() {
 
     const event1 =
       'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_123","model":"claude-sonnet-5","usage":{"input_tokens":4,"output_tokens":1}}}\n\n';
+    const thinkingEvent =
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"internal reasoning"}}\n\n';
     const event2 =
-      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hel"}}\n\n';
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Hel"}}\n\n';
     const event3 =
       'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"lo"}}\n\n';
     const event4 =
@@ -77,7 +101,7 @@ async function main() {
     const event5 =
       'event: message_stop\ndata: {"type":"message_stop"}\n\n';
 
-    const stream = event1 + event2 + event3 + event4 + event5;
+    const stream = event1 + thinkingEvent + event2 + event3 + event4 + event5;
     const chunks = [
       stream.slice(0, 29),
       stream.slice(29, event1.length + 13),
@@ -90,6 +114,7 @@ async function main() {
     const result = await anthropic.streamChat({
       instructions: "system instruction",
       input: [{ role: "user", content: "hello" }],
+      reasoningEffort: "low",
       onDelta: async (delta) => deltas.push(delta),
       fetchImpl: async (url, options) => {
         request = { url, options };
@@ -102,9 +127,11 @@ async function main() {
     assert.strictEqual(request.options.headers["x-api-key"], "anthropic-test-key");
     assert.strictEqual(request.options.headers["anthropic-version"], "2023-06-01");
     assert.strictEqual(request.options.headers.accept, "text/event-stream");
+    assert.strictEqual(request.options.redirect, "error");
     const requestBody = JSON.parse(request.options.body);
     assert.strictEqual(requestBody.stream, true);
     assert.strictEqual(requestBody.system, "system instruction");
+    assert.strictEqual(requestBody.output_config.effort, "low");
 
     assert.strictEqual(result.provider, "anthropic");
     assert.strictEqual(result.model, "claude-sonnet-5");
@@ -113,6 +140,35 @@ async function main() {
     assert.strictEqual(result.responseId, "msg_123");
     assert.strictEqual(result.usage.input_tokens, 4);
     assert.strictEqual(result.usage.output_tokens, 3);
+
+    let generateRequest = null;
+    const generated = await anthropic.generateChat({
+      instructions: "system instruction",
+      input: [{ role: "user", content: "deep answer" }],
+      reasoningEffort: "high",
+      fetchImpl: async (url, options) => {
+        generateRequest = { url, options };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: "msg_generate",
+            model: "claude-sonnet-5",
+            content: [
+              { type: "thinking", thinking: "hidden internal summary" },
+              { type: "text", text: "Visible answer" }
+            ],
+            usage: { input_tokens: 3, output_tokens: 5 }
+          })
+        };
+      }
+    });
+    assert.strictEqual(generateRequest.options.redirect, "error");
+    assert.strictEqual(
+      JSON.parse(generateRequest.options.body).output_config.effort,
+      "high"
+    );
+    assert.strictEqual(generated.reply, "Visible answer");
 
     const gateway = getGatewayStatus();
     assert.strictEqual(gateway.provider, "anthropic");
@@ -127,7 +183,18 @@ async function main() {
     assert(provider);
     assert.strictEqual(provider.chat, true);
     assert.strictEqual(provider.streaming, true);
-    assert.strictEqual(provider.adapterState, "active-streaming-text-chat");
+    assert.strictEqual(provider.reasoningControls, true);
+    assert.deepStrictEqual(
+      Array.from(provider.supportedEffortLevels),
+      ["low", "medium", "high", "xhigh", "max"]
+    );
+    assert.strictEqual(provider.defaultEffort, "high");
+    assert.strictEqual(provider.defaultModel, "claude-sonnet-5");
+    assert.strictEqual(provider.adaptiveThinking, true);
+    assert.strictEqual(
+      provider.adapterState,
+      "active-sonnet-5-streaming-adaptive-thinking"
+    );
 
     await assert.rejects(
       () => anthropic.streamChat({
@@ -143,7 +210,7 @@ async function main() {
         /Overloaded/.test(error.message)
     );
 
-    console.log("PASS Anthropic streaming parity: native SSE chat streaming, fragmented-event parsing, remote stream error handling, and active gateway status.");
+    console.log("PASS Anthropic streaming parity: native SSE streaming, Sonnet 5 effort controls, hidden-thinking filtering, redirect hardening, remote stream error handling, and active gateway status.");
   } finally {
     for (const key of tracked) {
       if (original[key] === undefined) delete process.env[key];

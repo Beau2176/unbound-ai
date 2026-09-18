@@ -42,8 +42,13 @@ function providerCatalog(env = process.env) {
       configured: configured(env.ANTHROPIC_API_KEY),
       chat: true,
       streaming: true,
+      reasoningControls: true,
+      supportedEffortLevels: Object.freeze(["low", "medium", "high", "xhigh", "max"]),
+      defaultEffort: "high",
+      defaultModel: "claude-sonnet-5",
+      adaptiveThinking: true,
       research: false,
-      adapterState: "active-streaming-text-chat"
+      adapterState: "active-sonnet-5-streaming-adaptive-thinking"
     },
     {
       id: "google",
