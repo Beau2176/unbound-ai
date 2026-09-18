@@ -3125,7 +3125,7 @@
     }
 
     function accessSourceLabel(value) {
-      return ({ administrator: "Administrator", complimentary: "Complimentary TOP", subscription: "Subscription", manual: "Administrator-assigned", default: "Default account" })[value] || String(value || "Unknown");
+      return ({ administrator: "Administrator", complimentary: "Complimentary ULTRA", subscription: "Subscription", manual: "Administrator-assigned", default: "Default account" })[value] || String(value || "Unknown");
     }
 
     function subscriptionLabel(subscription) {
@@ -3567,9 +3567,9 @@
     }
 
     async function chooseResearchMode() {
-      if (!currentUser) { showToast("Research Mode requires a signed-in TOP account."); openAuth("login"); return; }
+      if (!currentUser) { showToast("Research Mode requires a signed-in PREMIUM or higher account."); openAuth("login"); return; }
       if (!accountAccess) await refreshAccountAccess({ silent: true });
-      if (!canUseCapability("web_research")) { showToast("Research Mode requires TOP access."); await openAccess(); return; }
+      if (!canUseCapability("web_research")) { showToast("Research Mode requires PREMIUM or higher access."); await openAccess(); return; }
       setProductMode("research", { announce: true });
     }
 
@@ -3602,7 +3602,7 @@
     function planLabelForUser(user) {
       if (!user) return "FREE";
       if (accountAccess?.plan?.displayName) return String(accountAccess.plan.displayName).toUpperCase();
-      if (user.complimentaryTopTier) return "COMPLIMENTARY TOP TIER";
+      if (user.complimentaryTopTier) return "COMPLIMENTARY ULTRA";
       return String(user.planTier || "free").replaceAll("_", " ").toUpperCase();
     }
 
@@ -3641,7 +3641,7 @@
         const researchAllowed = canUseCapability("web_research");
         researchModeButton.classList.toggle("locked", !researchAllowed);
         researchModeButton.setAttribute("aria-disabled", researchAllowed ? "false" : "true");
-        researchModeButton.title = researchAllowed ? "Research Mode" : "Research Mode requires TOP access";
+        researchModeButton.title = researchAllowed ? "Research Mode" : "Research Mode requires PREMIUM or higher access";
         return;
       }
 
