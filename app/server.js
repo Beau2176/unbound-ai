@@ -4924,7 +4924,7 @@ app.delete(
 
 function buildCurrentOperationalSnapshot() {
   const maintenance = getMaintenanceStatus();
-  const ai = getGatewayStatus();
+  const ai = getGatewayStatus({ includeTelemetry: true });
   const runtime = buildReadinessStatus({
     databaseConfigured: Boolean(process.env.DATABASE_URL),
     databaseReady,
