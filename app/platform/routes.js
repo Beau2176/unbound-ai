@@ -8,6 +8,8 @@ const {
   publicVaultAsset
 } = require("./projects");
 const { writeAuditEvent } = require("./audit");
+const { publicMcpStatus, listMcpTools, callMcpTool } = require("../connections/mcp-client");
+const { publicSandboxStatus, createSandboxJob, getSandboxJob } = require("../coding/sandbox-client");
 
 function validUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
@@ -18,6 +20,39 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
   const router = express.Router();
 
   router.get("/catalog", (req, res) => res.json(publicPlatformCatalog(env)));
+
+  router.get("/mcp/status", (req, res) => res.json(publicMcpStatus(env)));
+
+  router.get("/mcp/tools", async (req, res) => {
+    try {
+      return res.json(await listMcpTools({ env }));
+    } catch (error) {
+      return res.status(error.statusCode || 502).json({ error: error.message, code: error.code || "MCP_ERROR" });
+    }
+  });
+
+  router.post("/mcp/tools/:name/call", async (req, res) => {
+    try {
+      const listed = await listMcpTools({ env });
+      const tool = listed.tools.find((item) => item.name === String(req.params.name || ""));
+      if (!tool) return res.status(404).json({ error: "MCP tool not found." });
+      const result = await callMcpTool({
+        tool,
+        arguments: req.body?.arguments || {},
+        approved: req.body?.approved === true,
+        env
+      });
+      await writeAuditEvent(getPool(), req.user.id, "mcp.tool.call", {
+        tool: tool.name,
+        readOnly: tool.readOnly,
+        approved: req.body?.approved === true,
+        status: result.status
+      });
+      return res.json(result);
+    } catch (error) {
+      return res.status(error.statusCode || 502).json({ error: error.message, code: error.code || "MCP_ERROR" });
+    }
+  });
 
   router.get("/projects", async (req, res) => {
     try {
@@ -189,6 +224,81 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
     } catch (error) {
       console.error("UNBOUND CODING JOB CREATE ERROR:", error);
       return res.status(500).json({ error: "Could not create coding workspace job." });
+    }
+  });
+
+  router.get("/coding/sandbox/status", (req, res) => res.json(publicSandboxStatus(env)));
+
+  router.post("/coding/jobs/:id/dispatch", async (req, res) => {
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid coding job ID." });
+    try {
+      const pool = getPool();
+      const selected = await pool.query(
+        `SELECT id, objective, status, provider_job_id
+         FROM coding_workspace_jobs
+         WHERE id = $1::uuid AND user_id = $2
+         LIMIT 1`,
+        [req.params.id, req.user.id]
+      );
+      const job = selected.rows[0];
+      if (!job) return res.status(404).json({ error: "Coding job not found." });
+      if (job.provider_job_id) return res.status(409).json({ error: "Coding job was already dispatched." });
+
+      const remote = await createSandboxJob({
+        objective: job.objective,
+        repository: req.body?.repository || null,
+        branch: req.body?.branch || null,
+        env
+      });
+      const providerJobId = String(remote.id || remote.jobId || "").slice(0, 300);
+      if (!providerJobId) return res.status(502).json({ error: "Sandbox did not return a job ID." });
+      const status = ["queued", "running", "completed", "failed", "cancelled"].includes(String(remote.status || ""))
+        ? String(remote.status)
+        : "queued";
+      await pool.query(
+        `UPDATE coding_workspace_jobs
+         SET provider_job_id = $1, status = $2, updated_at = NOW()
+         WHERE id = $3::uuid AND user_id = $4`,
+        [providerJobId, status, req.params.id, req.user.id]
+      );
+      await writeAuditEvent(pool, req.user.id, "coding.job.dispatch", { jobId: req.params.id, status });
+      return res.status(202).json({ id: req.params.id, providerJobId, status });
+    } catch (error) {
+      return res.status(error.statusCode || 502).json({ error: error.message, code: error.code || "CODE_SANDBOX_ERROR" });
+    }
+  });
+
+  router.post("/coding/jobs/:id/sync", async (req, res) => {
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid coding job ID." });
+    try {
+      const pool = getPool();
+      const selected = await pool.query(
+        `SELECT id, provider_job_id
+         FROM coding_workspace_jobs
+         WHERE id = $1::uuid AND user_id = $2
+         LIMIT 1`,
+        [req.params.id, req.user.id]
+      );
+      const job = selected.rows[0];
+      if (!job) return res.status(404).json({ error: "Coding job not found." });
+      if (!job.provider_job_id) return res.status(409).json({ error: "Coding job has not been dispatched." });
+
+      const remote = await getSandboxJob(job.provider_job_id, { env });
+      const status = ["queued", "running", "completed", "failed", "cancelled"].includes(String(remote.status || ""))
+        ? String(remote.status)
+        : "running";
+      await pool.query(
+        `UPDATE coding_workspace_jobs
+         SET status = $1,
+             completed_at = CASE WHEN $1 IN ('completed', 'failed', 'cancelled') THEN NOW() ELSE completed_at END,
+             updated_at = NOW()
+         WHERE id = $2::uuid AND user_id = $3`,
+        [status, req.params.id, req.user.id]
+      );
+      await writeAuditEvent(pool, req.user.id, "coding.job.sync", { jobId: req.params.id, status });
+      return res.json({ id: req.params.id, status, result: remote.result || null });
+    } catch (error) {
+      return res.status(error.statusCode || 502).json({ error: error.message, code: error.code || "CODE_SANDBOX_ERROR" });
     }
   });
 
