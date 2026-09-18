@@ -1,6 +1,7 @@
 const {
   combineSystemAndMessages,
   retryAfterMsFromHeaders,
+  assertProviderReplySize,
   providerError
 } = require("./provider-utils");
 const {
@@ -100,6 +101,10 @@ function visibleGeminiParts(payload) {
   parts.forEach((part, partIndex) => {
     if (part?.thought === true || typeof part?.text !== "string") return;
     const text = part.text;
+    assertProviderReplySize(replyStartIndex, text.length, {
+      code: "GEMINI_REPLY_TOO_LARGE",
+      label: "Gemini"
+    });
     visible.push({
       partIndex,
       text,
