@@ -18,6 +18,14 @@ const {
 } = require("./background-agent-scheduler");
 const { publicMcpStatus, listMcpTools, callMcpTool } = require("../connections/mcp-client");
 const { publicSandboxStatus, createSandboxJob, getSandboxJob } = require("../coding/sandbox-client");
+const {
+  marketplaceEnabled,
+  creatorMarketplaceEnabled,
+  normalizeMarketplaceSkillInput,
+  publicMarketplaceSkill,
+  publicMarketplaceInstall,
+  canInstallMarketplaceSkill
+} = require("./skill-marketplace");
 
 function validUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
@@ -28,6 +36,14 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
   const router = express.Router();
 
   router.get("/catalog", (req, res) => res.json(publicPlatformCatalog(env)));
+
+  router.get("/marketplace/status", (req, res) => res.json({
+    enabled: marketplaceEnabled(env),
+    creatorSubmissionsEnabled: creatorMarketplaceEnabled(env),
+    executionMode: "manifest_only",
+    creatorSelfPublish: false,
+    externalWriteAccess: false
+  }));
 
   router.get("/mcp/status", (req, res) => res.json(publicMcpStatus(env)));
 
@@ -523,6 +539,202 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
     } catch (error) {
       console.error("UNBOUND BACKGROUND AGENT DELETE ERROR:", error);
       return res.status(500).json({ error: "Could not delete background Agent schedule." });
+    }
+  });
+
+
+  router.get("/marketplace/skills", async (req, res) => {
+    if (!marketplaceEnabled(env)) return res.status(404).json({ error: "Not found." });
+    try {
+      const result = await getPool().query(
+        `SELECT id, creator_user_id, slug, name, summary, category, manifest,
+                review_status, published, created_at, updated_at
+         FROM marketplace_skills
+         WHERE review_status = 'approved' AND published = TRUE
+         ORDER BY updated_at DESC, name ASC
+         LIMIT 200`
+      );
+      return res.json({ skills: result.rows.map(publicMarketplaceSkill) });
+    } catch (error) {
+      console.error("UNBOUND MARKETPLACE LIST ERROR:", error);
+      return res.status(500).json({ error: "Could not load marketplace skills." });
+    }
+  });
+
+  router.get("/marketplace/skills/mine", async (req, res) => {
+    if (!creatorMarketplaceEnabled(env)) return res.status(404).json({ error: "Not found." });
+    try {
+      const result = await getPool().query(
+        `SELECT id, creator_user_id, slug, name, summary, category, manifest,
+                review_status, published, created_at, updated_at
+         FROM marketplace_skills
+         WHERE creator_user_id = $1
+         ORDER BY updated_at DESC
+         LIMIT 200`,
+        [req.user.id]
+      );
+      return res.json({ skills: result.rows.map(publicMarketplaceSkill) });
+    } catch (error) {
+      console.error("UNBOUND CREATOR SKILL LIST ERROR:", error);
+      return res.status(500).json({ error: "Could not load creator skills." });
+    }
+  });
+
+  router.post("/marketplace/skills", async (req, res) => {
+    if (!creatorMarketplaceEnabled(env)) return res.status(404).json({ error: "Not found." });
+    try {
+      const input = normalizeMarketplaceSkillInput(req.body);
+      const pool = getPool();
+      const result = await pool.query(
+        `INSERT INTO marketplace_skills (
+           id, creator_user_id, slug, name, summary, category, manifest,
+           review_status, published, created_at, updated_at
+         )
+         VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::jsonb, 'draft', FALSE, NOW(), NOW())
+         RETURNING id, creator_user_id, slug, name, summary, category, manifest,
+                   review_status, published, created_at, updated_at`,
+        [
+          input.id,
+          req.user.id,
+          input.slug,
+          input.name,
+          input.summary,
+          input.category,
+          JSON.stringify(input.manifest)
+        ]
+      );
+      await writeAuditEvent(pool, req.user.id, "marketplace.skill.create", {
+        skillId: input.id,
+        slug: input.slug
+      });
+      return res.status(201).json({ skill: publicMarketplaceSkill(result.rows[0]) });
+    } catch (error) {
+      if (error?.code === "23505") return res.status(409).json({ error: "That skill slug is already in use." });
+      if (String(error?.code || "").startsWith("MARKETPLACE_SKILL_")) {
+        return res.status(error.statusCode || 400).json({ error: error.message, code: error.code });
+      }
+      console.error("UNBOUND CREATOR SKILL CREATE ERROR:", error);
+      return res.status(500).json({ error: "Could not create marketplace skill." });
+    }
+  });
+
+  router.post("/marketplace/skills/:id/submit", async (req, res) => {
+    if (!creatorMarketplaceEnabled(env)) return res.status(404).json({ error: "Not found." });
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid skill ID." });
+    try {
+      const pool = getPool();
+      const result = await pool.query(
+        `UPDATE marketplace_skills
+         SET review_status = 'pending_review', published = FALSE, updated_at = NOW()
+         WHERE id = $1::uuid
+           AND creator_user_id = $2
+           AND review_status IN ('draft', 'rejected')
+         RETURNING id, creator_user_id, slug, name, summary, category, manifest,
+                   review_status, published, created_at, updated_at`,
+        [req.params.id, req.user.id]
+      );
+      if (!result.rows[0]) {
+        return res.status(409).json({ error: "Only your draft or rejected skills can be submitted for review." });
+      }
+      await writeAuditEvent(pool, req.user.id, "marketplace.skill.submit", { skillId: req.params.id });
+      return res.json({ skill: publicMarketplaceSkill(result.rows[0]) });
+    } catch (error) {
+      console.error("UNBOUND CREATOR SKILL SUBMIT ERROR:", error);
+      return res.status(500).json({ error: "Could not submit marketplace skill." });
+    }
+  });
+
+  router.get("/marketplace/installs", async (req, res) => {
+    if (!marketplaceEnabled(env)) return res.status(404).json({ error: "Not found." });
+    try {
+      const result = await getPool().query(
+        `SELECT id, skill_id, project_id, scope_key, enabled, created_at, updated_at
+         FROM marketplace_skill_installs
+         WHERE user_id = $1
+         ORDER BY updated_at DESC, id DESC`,
+        [req.user.id]
+      );
+      return res.json({ installs: result.rows.map(publicMarketplaceInstall) });
+    } catch (error) {
+      console.error("UNBOUND MARKETPLACE INSTALL LIST ERROR:", error);
+      return res.status(500).json({ error: "Could not load installed skills." });
+    }
+  });
+
+  router.post("/marketplace/skills/:id/install", async (req, res) => {
+    if (!marketplaceEnabled(env)) return res.status(404).json({ error: "Not found." });
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid skill ID." });
+    const projectId = req.body?.projectId ? String(req.body.projectId) : null;
+    if (projectId && !validUuid(projectId)) return res.status(400).json({ error: "Invalid project ID." });
+    try {
+      const pool = getPool();
+      const skillResult = await pool.query(
+        `SELECT id, creator_user_id, slug, name, summary, category, manifest,
+                review_status, published, created_at, updated_at
+         FROM marketplace_skills
+         WHERE id = $1::uuid
+         LIMIT 1`,
+        [req.params.id]
+      );
+      const skill = skillResult.rows[0];
+      if (!skill || !canInstallMarketplaceSkill(skill)) {
+        return res.status(404).json({ error: "Published skill not found." });
+      }
+      if (projectId) {
+        const project = await pool.query(
+          "SELECT id FROM ai_projects WHERE id = $1::uuid AND user_id = $2 LIMIT 1",
+          [projectId, req.user.id]
+        );
+        if (!project.rows[0]) return res.status(404).json({ error: "Project not found." });
+      }
+      const scopeKey = projectId || "global";
+      const result = await pool.query(
+        `INSERT INTO marketplace_skill_installs (
+           user_id, skill_id, project_id, scope_key, enabled, created_at, updated_at
+         )
+         VALUES ($1, $2::uuid, $3::uuid, $4, TRUE, NOW(), NOW())
+         ON CONFLICT (user_id, skill_id, scope_key) DO UPDATE SET
+           enabled = TRUE,
+           updated_at = NOW()
+         RETURNING id, skill_id, project_id, scope_key, enabled, created_at, updated_at`,
+        [req.user.id, req.params.id, projectId, scopeKey]
+      );
+      await writeAuditEvent(pool, req.user.id, "marketplace.skill.install", {
+        skillId: req.params.id,
+        projectId,
+        scope: scopeKey
+      });
+      return res.status(201).json({
+        install: publicMarketplaceInstall(result.rows[0]),
+        executionMode: "manifest_only",
+        note: "Installed marketplace skills cannot execute arbitrary code or gain external-write access."
+      });
+    } catch (error) {
+      console.error("UNBOUND MARKETPLACE INSTALL ERROR:", error);
+      return res.status(500).json({ error: "Could not install marketplace skill." });
+    }
+  });
+
+  router.delete("/marketplace/installs/:id", async (req, res) => {
+    if (!marketplaceEnabled(env)) return res.status(404).json({ error: "Not found." });
+    if (!/^\d+$/.test(String(req.params.id || ""))) {
+      return res.status(400).json({ error: "Invalid install ID." });
+    }
+    try {
+      const pool = getPool();
+      const result = await pool.query(
+        "DELETE FROM marketplace_skill_installs WHERE id = $1 AND user_id = $2 RETURNING id, skill_id",
+        [req.params.id, req.user.id]
+      );
+      if (!result.rows[0]) return res.status(404).json({ error: "Installed skill not found." });
+      await writeAuditEvent(pool, req.user.id, "marketplace.skill.uninstall", {
+        installId: req.params.id,
+        skillId: String(result.rows[0].skill_id)
+      });
+      return res.json({ ok: true, id: req.params.id });
+    } catch (error) {
+      console.error("UNBOUND MARKETPLACE UNINSTALL ERROR:", error);
+      return res.status(500).json({ error: "Could not uninstall marketplace skill." });
     }
   });
 
