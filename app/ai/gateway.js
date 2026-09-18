@@ -3,6 +3,9 @@ const anthropic = require("./providers/anthropic");
 const google = require("./providers/google");
 const local = require("./providers/local");
 const {
+  getProviderDeadlinePolicy
+} = require("./provider-deadline");
+const {
   getProviderCircuitSnapshot,
   beginProviderCircuitAttempt,
   recordProviderCircuitSuccess,
@@ -368,6 +371,7 @@ function getGatewayStatus() {
         primaryProviderId: name,
         fallbackProviderId: null
       }),
+      deadlines: getProviderDeadlinePolicy(),
       fileAnalysis: false,
       error: "unsupported-provider"
     };
@@ -407,6 +411,7 @@ function getGatewayStatus() {
       : null,
     fallbackError: fallbackRoute.error || null,
     circuitBreaker,
+    deadlines: getProviderDeadlinePolicy(),
     fileAnalysis: providerSupportsFileAnalysis(provider),
     error: provider.isConfigured() ? null : "provider-not-configured"
   };
