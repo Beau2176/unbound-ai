@@ -1,4 +1,4 @@
-const REQUEST_CANCELLATION_VERSION = "v1.1";
+const REQUEST_CANCELLATION_VERSION = "v1.2";
 
 const activeCancellations = new Set();
 
@@ -120,6 +120,34 @@ async function runWithRequestCancellation(req, res, operation) {
   }
 }
 
+function handleCancelledJsonResponse(
+  res,
+  error,
+  {
+    message = "UNBOUND AI is restarting. Please retry shortly.",
+    retryAfterSeconds = 5
+  } = {}
+) {
+  if (String(error?.code || "") !== "AI_REQUEST_ABORTED") return false;
+  if (res?.destroyed || res?.writableEnded) return true;
+
+  if (error?.cause?.code !== "SERVER_SHUTDOWN") {
+    return true;
+  }
+
+  try {
+    res.setHeader?.("Retry-After", String(
+      Math.max(1, Math.min(60, Number(retryAfterSeconds) || 5))
+    ));
+    res.status(503).json({
+      error: String(message || "UNBOUND AI is restarting. Please retry shortly.").slice(0, 240),
+      retryable: true,
+      reason: "server-restart"
+    });
+  } catch (_) {}
+  return true;
+}
+
 function abortAllRequestCancellations(
   reason = shutdownAbortReason("shutdown")
 ) {
@@ -162,6 +190,7 @@ module.exports = {
   shutdownAbortReason,
   createRequestCancellation,
   runWithRequestCancellation,
+  handleCancelledJsonResponse,
   abortAllRequestCancellations,
   getRequestCancellationSnapshot
 };

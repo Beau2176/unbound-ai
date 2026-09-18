@@ -2,6 +2,10 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const { analyzeFile, getGatewayStatus } = require("../ai/gateway");
+const {
+  runWithRequestCancellation,
+  handleCancelledJsonResponse
+} = require("../ops/request-cancellation");
 const { injectEmailAccountUi } = require("../email/account-page");
 const { listAiStyles } = require("../preferences/ai-style");
 const {
@@ -126,7 +130,18 @@ function createFileAnalysisRouter({ recordUsageEvent = null, estimateProviderCos
         env
       });
       logMalwareScanResult(malwareScan, "FILE ANALYSIS");
-      const result = await analyzeFile({ filename: input.filename, mimeType: input.mimeType, fileBase64: input.fileBase64, prompt: input.prompt, detail: input.detail || "low" });
+      const result = await runWithRequestCancellation(
+        req,
+        res,
+        (signal) => analyzeFile({
+          filename: input.filename,
+          mimeType: input.mimeType,
+          fileBase64: input.fileBase64,
+          prompt: input.prompt,
+          detail: input.detail || "low",
+          signal
+        })
+      );
       if (typeof recordUsageEvent === "function") {
         const estimatedCostMicros = typeof estimateProviderCostMicros === "function" ? estimateProviderCostMicros(result.provider, result.usage) : null;
         try {
@@ -137,6 +152,7 @@ function createFileAnalysisRouter({ recordUsageEvent = null, estimateProviderCos
       }
       return res.json({ ok: true, analysis: result.reply || "", file: { name: input.filename, bytes: input.fileBytes, type: input.mimeType, pdfDetail: input.detail || null }, provider: result.provider, model: result.model, usage: result.usage ? { inputTokens: Number(result.usage.input_tokens || 0), outputTokens: Number(result.usage.output_tokens || 0), totalTokens: Number(result.usage.total_tokens || 0) } : null, privacy: { rawFileStoredByUnbound: false, providerResponseStorageRequested: false }, security: { staticUploadInspection: true, malwareScan: { mode: malwareScan.mode, scanned: malwareScan.scanned, clean: malwareScan.clean, state: malwareScan.state, engine: malwareScan.engine } } });
     } catch (error) {
+      if (handleCancelledJsonResponse(res, error)) return;
       const safe = safeProviderError(error);
       if (safe.code === "FILE_ANALYSIS_PROVIDER_FAILED") console.error("UNBOUND AI FILE ANALYSIS PROVIDER ERROR:", error?.code || error?.status || error?.name || "provider-error");
       if (safe.code === "UPLOAD_MALWARE_DETECTED") {
