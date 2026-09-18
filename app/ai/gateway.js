@@ -14,6 +14,11 @@ function normalizeProviderName(value) {
   return String(value || "openai").trim().toLowerCase();
 }
 
+function getProviderByName(value) {
+  const name = String(value || "").trim().toLowerCase();
+  return name ? providers.get(name) || null : null;
+}
+
 function getProvider() {
   const name = normalizeProviderName(process.env.AI_PROVIDER);
   const provider = providers.get(name);
@@ -35,6 +40,163 @@ function providerSupportsFileAnalysis(provider) {
   return typeof provider?.supportsFileAnalysis === "function" && provider.supportsFileAnalysis();
 }
 
+function researchModelForProvider(provider, env = process.env) {
+  if (!provider) return null;
+
+  const generic = String(env.AI_RESEARCH_MODEL || "").trim();
+  let configured = "";
+
+  if (provider.id === "openai") {
+    configured = String(
+      env.OPENAI_RESEARCH_MODEL ||
+      env.AI_MODEL_RESEARCH ||
+      generic ||
+      ""
+    ).trim();
+  } else if (provider.id === "anthropic") {
+    configured = String(env.ANTHROPIC_MODEL_RESEARCH || generic || "").trim();
+  } else if (provider.id === "google") {
+    configured = String(
+      env.GEMINI_MODEL_RESEARCH ||
+      env.GOOGLE_AI_MODEL_RESEARCH ||
+      generic ||
+      ""
+    ).trim();
+  } else if (provider.id === "local") {
+    configured = String(env.UNBOUND_LOCAL_AI_MODEL_RESEARCH || generic || "").trim();
+  }
+
+  return configured || provider.getModel();
+}
+
+function researchRouteError(code, message, statusReason) {
+  const error = new Error(message);
+  error.code = code;
+  error.statusReason = statusReason;
+  return error;
+}
+
+function resolveResearchProvider({
+  env = process.env,
+  activeProvider = null,
+  throwOnError = false
+} = {}) {
+  let active = activeProvider;
+  if (!active) {
+    const activeName = normalizeProviderName(env.AI_PROVIDER);
+    active = providers.get(activeName) || null;
+    if (!active) {
+      const error = researchRouteError(
+        "AI_PROVIDER_UNSUPPORTED",
+        `Unsupported AI provider: ${activeName}`,
+        "active-provider-unsupported"
+      );
+      if (throwOnError) throw error;
+      return { provider: null, explicit: false, error: error.statusReason };
+    }
+  }
+
+  const requestedName = String(env.AI_RESEARCH_PROVIDER || "").trim().toLowerCase();
+
+  if (!requestedName) {
+    if (!providerSupportsResearch(active)) {
+      const error = researchRouteError(
+        "AI_PROVIDER_RESEARCH_UNSUPPORTED",
+        `AI provider '${active.id}' does not support Research Mode.`,
+        "active-provider-research-unsupported"
+      );
+      if (throwOnError) throw error;
+      return { provider: null, explicit: false, error: error.statusReason };
+    }
+
+    if (!active.isConfigured()) {
+      const error = researchRouteError(
+        "AI_PROVIDER_NOT_CONFIGURED",
+        `AI provider '${active.id}' is not configured.`,
+        "active-provider-not-configured"
+      );
+      if (throwOnError) throw error;
+      return { provider: null, explicit: false, error: error.statusReason };
+    }
+
+    return { provider: active, explicit: false, error: null };
+  }
+
+  const provider = providers.get(requestedName);
+  if (!provider) {
+    const error = researchRouteError(
+      "AI_RESEARCH_PROVIDER_UNSUPPORTED",
+      `Unsupported Research Mode provider: ${requestedName}`,
+      "research-provider-unsupported"
+    );
+    if (throwOnError) throw error;
+    return { provider: null, explicit: true, error: error.statusReason };
+  }
+
+  if (!providerSupportsResearch(provider)) {
+    const error = researchRouteError(
+      "AI_RESEARCH_PROVIDER_CAPABILITY_UNSUPPORTED",
+      `AI provider '${provider.id}' does not support Research Mode.`,
+      "research-provider-capability-unsupported"
+    );
+    if (throwOnError) throw error;
+    return { provider: null, explicit: true, error: error.statusReason };
+  }
+
+  if (!provider.isConfigured()) {
+    const error = researchRouteError(
+      "AI_RESEARCH_PROVIDER_NOT_CONFIGURED",
+      `Research Mode provider '${provider.id}' is not configured.`,
+      "research-provider-not-configured"
+    );
+    if (throwOnError) throw error;
+    return { provider: null, explicit: true, error: error.statusReason };
+  }
+
+  return { provider, explicit: true, error: null };
+}
+
+function resolveProviderForRequest({
+  research = null,
+  model = null,
+  env = process.env
+} = {}) {
+  const activeName = normalizeProviderName(env.AI_PROVIDER);
+  const activeProvider = providers.get(activeName);
+
+  if (!activeProvider) {
+    const error = new Error(`Unsupported AI provider: ${activeName}`);
+    error.code = "AI_PROVIDER_UNSUPPORTED";
+    throw error;
+  }
+
+  if (!research?.enabled) {
+    return {
+      provider: activeProvider,
+      model: String(model || "").trim() || activeProvider.getModel(),
+      researchProviderExplicit: false
+    };
+  }
+
+  const route = resolveResearchProvider({
+    env,
+    activeProvider,
+    throwOnError: true
+  });
+
+  const isCrossProvider = route.provider.id !== activeProvider.id;
+  const selectedModel =
+    route.explicit || isCrossProvider
+      ? researchModelForProvider(route.provider, env)
+      : String(model || "").trim() || researchModelForProvider(route.provider, env);
+
+  return {
+    provider: route.provider,
+    model: selectedModel,
+    researchProviderExplicit: route.explicit
+  };
+}
+
 function getGatewayStatus() {
   const name = normalizeProviderName(process.env.AI_PROVIDER);
   const provider = providers.get(name);
@@ -46,17 +208,33 @@ function getGatewayStatus() {
       model: null,
       streaming: false,
       research: false,
+      researchProvider: null,
+      researchProviderExplicit: false,
+      researchModel: null,
+      researchError: "active-provider-unsupported",
       fileAnalysis: false,
       error: "unsupported-provider"
     };
   }
+
+  const researchRoute = resolveResearchProvider({
+    activeProvider: provider,
+    throwOnError: false
+  });
+  const researchReady = Boolean(researchRoute.provider);
 
   return {
     provider: provider.id,
     configured: provider.isConfigured(),
     model: provider.getModel(),
     streaming: typeof provider.streamChat === "function",
-    research: providerSupportsResearch(provider),
+    research: researchReady,
+    researchProvider: researchRoute.provider?.id || null,
+    researchProviderExplicit: Boolean(researchRoute.explicit),
+    researchModel: researchReady
+      ? researchModelForProvider(researchRoute.provider)
+      : null,
+    researchError: researchRoute.error || null,
     fileAnalysis: providerSupportsFileAnalysis(provider),
     error: provider.isConfigured() ? null : "provider-not-configured"
   };
@@ -69,18 +247,16 @@ async function generateChat({
   research = null,
   reasoningEffort = null
 }) {
-  const provider = getProvider();
+  const route = resolveProviderForRequest({
+    research,
+    model,
+    env: process.env
+  });
 
-  if (research?.enabled && !providerSupportsResearch(provider)) {
-    const error = new Error(`AI provider '${provider.id}' does not support Research Mode.`);
-    error.code = "AI_PROVIDER_RESEARCH_UNSUPPORTED";
-    throw error;
-  }
-
-  return provider.generateChat({
+  return route.provider.generateChat({
     instructions,
     input,
-    model,
+    model: route.model,
     research,
     reasoningEffort
   });
@@ -132,5 +308,10 @@ module.exports = {
   streamChat,
   analyzeFile,
   getGatewayStatus,
-  normalizeProviderName
+  normalizeProviderName,
+  getProviderByName,
+  providerSupportsResearch,
+  researchModelForProvider,
+  resolveResearchProvider,
+  resolveProviderForRequest
 };
