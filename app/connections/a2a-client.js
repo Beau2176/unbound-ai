@@ -73,6 +73,7 @@ async function fetchJson(url, {
       method,
       headers,
       signal: controller.signal,
+      redirect: "error",
       body: body === undefined ? undefined : JSON.stringify(body)
     });
     const length = Number(response.headers?.get?.("content-length") || 0);
