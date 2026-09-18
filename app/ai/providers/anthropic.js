@@ -6,6 +6,17 @@ const {
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_MODEL = "claude-sonnet-5";
 const ANTHROPIC_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
+const ANTHROPIC_WEB_SEARCH_TOOL_TYPE = "web_search_20260318";
+const ANTHROPIC_RESEARCH_SYSTEM_PROMPT = `
+UNBOUND Research Mode is active.
+- Use the provided web_search tool to investigate before answering.
+- Ground current or externally verifiable claims in the returned web sources.
+- Preserve the provider's source citations in the final response.
+- If search results are insufficient, say what could not be verified instead of inventing facts.
+`.trim();
+const MAX_RESEARCH_SOURCES = 12;
+const MAX_RESEARCH_CITATIONS = 30;
+const MAX_RESEARCH_CONTINUATIONS = 3;
 const MAX_STREAM_BUFFER_BYTES = 2 * 1024 * 1024;
 const MAX_STREAM_REPLY_CHARS = 4 * 1024 * 1024;
 
@@ -18,7 +29,7 @@ function isConfigured() {
 }
 
 function supportsResearch() {
-  return false;
+  return true;
 }
 
 function supportsFileAnalysis() {
@@ -47,11 +58,136 @@ function modelSupportsEffortControls(model) {
   return /^claude-(?:sonnet-5|opus-5|fable-5|mythos-5)(?:$|-)/.test(selected);
 }
 
+function normalizeResearchMaxUses(value) {
+  const count = Number.parseInt(String(value ?? "4"), 10);
+  return Number.isFinite(count) ? Math.min(Math.max(count, 1), 10) : 4;
+}
+
+function buildAnthropicWebSearchTool(research = {}) {
+  return {
+    type: ANTHROPIC_WEB_SEARCH_TOOL_TYPE,
+    name: "web_search",
+    max_uses: normalizeResearchMaxUses(research.maxToolCalls),
+    allowed_callers: ["direct"],
+    response_inclusion: "full"
+  };
+}
+
+function safeResearchUrl(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.toString().slice(0, 2048);
+  } catch (_) {
+    return null;
+  }
+}
+
+function extractAnthropicResponses(payloads) {
+  const sources = [];
+  const sourceNumbers = new Map();
+  const citations = [];
+  let reply = "";
+  let webSearchCalls = 0;
+
+  function addSource(rawUrl, rawTitle) {
+    const url = safeResearchUrl(rawUrl);
+    if (!url) return null;
+    if (sourceNumbers.has(url)) return sourceNumbers.get(url);
+    if (sources.length >= MAX_RESEARCH_SOURCES) return null;
+    const number = sources.length + 1;
+    sources.push({
+      number,
+      title: String(rawTitle || "Source").trim().slice(0, 220) || "Source",
+      url
+    });
+    sourceNumbers.set(url, number);
+    return number;
+  }
+
+  const list = Array.isArray(payloads) ? payloads : [payloads];
+  for (const payload of list) {
+    let observedSearchCalls = 0;
+    for (const block of Array.isArray(payload?.content) ? payload.content : []) {
+      if (block?.type === "server_tool_use" && block?.name === "web_search") {
+        observedSearchCalls += 1;
+        continue;
+      }
+
+      if (block?.type === "web_search_tool_result" && Array.isArray(block.content)) {
+        for (const result of block.content) {
+          if (result?.type === "web_search_result") {
+            addSource(result.url, result.title);
+          }
+        }
+        continue;
+      }
+
+      if (block?.type !== "text" || typeof block.text !== "string") continue;
+
+      const startIndex = reply.length;
+      reply += block.text;
+      const endIndex = reply.length;
+
+      if (endIndex <= startIndex || !Array.isArray(block.citations)) continue;
+      for (const citation of block.citations) {
+        if (
+          citations.length >= MAX_RESEARCH_CITATIONS ||
+          citation?.type !== "web_search_result_location"
+        ) continue;
+        const sourceNumber = addSource(citation.url, citation.title);
+        if (!sourceNumber) continue;
+        citations.push({ sourceNumber, startIndex, endIndex });
+      }
+    }
+
+    const reportedSearchCalls = Math.max(
+      0,
+      Number(payload?.usage?.server_tool_use?.web_search_requests || 0)
+    );
+    webSearchCalls += Math.max(reportedSearchCalls, observedSearchCalls);
+  }
+
+  return {
+    reply,
+    research: { sources, citations, webSearchCalls }
+  };
+}
+
+function mergeAnthropicUsage(payloads) {
+  const list = Array.isArray(payloads) ? payloads : [payloads];
+  const total = {};
+  let found = false;
+
+  for (const payload of list) {
+    const usage = payload?.usage;
+    if (!usage || typeof usage !== "object") continue;
+    found = true;
+    for (const [key, value] of Object.entries(usage)) {
+      if (key === "server_tool_use" && value && typeof value === "object") {
+        total.server_tool_use = total.server_tool_use || {};
+        for (const [nestedKey, nestedValue] of Object.entries(value)) {
+          if (Number.isFinite(Number(nestedValue))) {
+            total.server_tool_use[nestedKey] =
+              Number(total.server_tool_use[nestedKey] || 0) + Number(nestedValue);
+          }
+        }
+        continue;
+      }
+      if (Number.isFinite(Number(value))) {
+        total[key] = Number(total[key] || 0) + Number(value);
+      }
+    }
+  }
+
+  return found ? total : null;
+}
+
 function buildAnthropicRequestBody(
   instructions,
   input,
   model,
-  { streaming = false, reasoningEffort = null } = {}
+  { streaming = false, reasoningEffort = null, research = null } = {}
 ) {
   const selectedModel = String(model || getModel()).trim() || getModel();
   const normalized = combineSystemAndMessages(instructions, input);
@@ -62,6 +198,13 @@ function buildAnthropicRequestBody(
   };
   if (normalized.system) body.system = normalized.system;
   if (streaming) body.stream = true;
+
+  if (research?.enabled) {
+    body.system = [body.system, ANTHROPIC_RESEARCH_SYSTEM_PROMPT]
+      .filter(Boolean)
+      .join("\n\n");
+    body.tools = [buildAnthropicWebSearchTool(research)];
+  }
 
   const effort = normalizeEffort(reasoningEffort);
   if (effort && modelSupportsEffortControls(selectedModel)) {
@@ -96,6 +239,7 @@ async function generateChat({
   instructions,
   input,
   model,
+  research = null,
   reasoningEffort = null,
   fetchImpl = fetch
 } = {}) {
@@ -104,33 +248,69 @@ async function generateChat({
     instructions,
     input,
     model,
-    { reasoningEffort }
+    { reasoningEffort, research }
   );
-  const response = await fetchImpl(ANTHROPIC_MESSAGES_URL, {
-    method: "POST",
-    headers: anthropicHeaders(),
-    redirect: "error",
-    body: JSON.stringify(body)
-  });
+  async function send(requestBody) {
+    const response = await fetchImpl(ANTHROPIC_MESSAGES_URL, {
+      method: "POST",
+      headers: anthropicHeaders(),
+      redirect: "error",
+      body: JSON.stringify(requestBody)
+    });
 
-  if (!response.ok) {
-    const payload = await parseErrorPayload(response);
-    throw providerError("ANTHROPIC_REQUEST_FAILED", payload?.error?.message || "Anthropic request failed.", response.status || 502);
+    if (!response.ok) {
+      const errorPayload = await parseErrorPayload(response);
+      throw providerError(
+        "ANTHROPIC_REQUEST_FAILED",
+        errorPayload?.error?.message || "Anthropic request failed.",
+        response.status || 502
+      );
+    }
+    return response.json().catch(() => ({}));
   }
 
-  const payload = await response.json().catch(() => ({}));
-  const reply = (Array.isArray(payload.content) ? payload.content : [])
-    .filter((part) => part?.type === "text" && typeof part.text === "string")
-    .map((part) => part.text)
-    .join("");
+  const payloads = [];
+  const continuationMessages = [...body.messages];
+  let payload = await send(body);
+  payloads.push(payload);
+  let continuationCount = 0;
+
+  while (
+    research?.enabled &&
+    payload?.stop_reason === "pause_turn" &&
+    continuationCount < MAX_RESEARCH_CONTINUATIONS
+  ) {
+    continuationMessages.push({
+      role: "assistant",
+      content: Array.isArray(payload.content) ? payload.content : []
+    });
+    payload = await send({
+      ...body,
+      messages: continuationMessages
+    });
+    payloads.push(payload);
+    continuationCount += 1;
+  }
+
+  if (research?.enabled && payload?.stop_reason === "pause_turn") {
+    throw providerError(
+      "ANTHROPIC_RESEARCH_CONTINUATION_LIMIT",
+      "Anthropic research did not complete within the allowed continuation limit.",
+      502
+    );
+  }
+
+  const extracted = extractAnthropicResponses(payloads);
 
   return {
     provider: "anthropic",
     model: payload.model || body.model,
-    reply,
-    usage: payload.usage || null,
-    responseId: payload.id || null,
-    research: { sources: [], citations: [], webSearchCalls: 0 }
+    reply: extracted.reply,
+    usage: mergeAnthropicUsage(payloads),
+    responseId: payload.id || payloads[0]?.id || null,
+    research: research?.enabled
+      ? extracted.research
+      : { sources: [], citations: [], webSearchCalls: 0 }
   };
 }
 
@@ -284,6 +464,11 @@ module.exports = {
   ANTHROPIC_MESSAGES_URL,
   DEFAULT_MODEL,
   ANTHROPIC_EFFORT_LEVELS,
+  ANTHROPIC_WEB_SEARCH_TOOL_TYPE,
+  ANTHROPIC_RESEARCH_SYSTEM_PROMPT,
+  MAX_RESEARCH_SOURCES,
+  MAX_RESEARCH_CITATIONS,
+  MAX_RESEARCH_CONTINUATIONS,
   MAX_STREAM_BUFFER_BYTES,
   MAX_STREAM_REPLY_CHARS,
   getModel,
@@ -293,6 +478,10 @@ module.exports = {
   maxTokens,
   normalizeEffort,
   modelSupportsEffortControls,
+  normalizeResearchMaxUses,
+  buildAnthropicWebSearchTool,
+  extractAnthropicResponses,
+  mergeAnthropicUsage,
   buildAnthropicRequestBody,
   parseAnthropicSseEvent,
   generateChat,
