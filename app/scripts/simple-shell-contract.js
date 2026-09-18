@@ -26,6 +26,12 @@ function main() {
   assert.ok(rendered.includes("simpleAccountPanel"), "signed-in account actions should have one account panel");
   assert.ok(rendered.includes("simpleMobileToolsSection"), "mobile menu should expose tools without cluttering chat");
   assert.ok(rendered.includes("Current: "), "desktop and mobile should expose compact mode summaries");
+  assert.ok(rendered.includes("overflow-y: auto;"), "desktop panels should be vertically scrollable");
+  assert.ok(rendered.includes("scrollbar-gutter: stable;"), "desktop panels should reserve scrollbar space");
+  assert.ok(rendered.includes("overscroll-behavior: contain;"), "desktop panel scrolling should stay contained");
+  assert.ok(rendered.includes("const availableHeight = Math.max("), "desktop panels should calculate available viewport height");
+  assert.ok(rendered.includes('panel.style.maxHeight = availableHeight + "px";'), "desktop panels should cap height to the visible viewport");
+  assert.ok(rendered.includes("viewportHeight - top - edge"), "desktop panel height should account for its actual screen position");
 
   assert.throws(
     () => injectSimpleShell("<html><body></body></html>"),
