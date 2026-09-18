@@ -310,10 +310,12 @@ function isRetryableProviderError(error) {
   if (!error) return false;
   if (isProviderCancellationError(error)) return false;
 
+  const code = nestedErrorCode(error);
+  if (/_REPLY_TOO_LARGE$/.test(code)) return false;
+
   const status = retryStatus(error);
   if (status === 408 || status === 425 || status === 429) return true;
   if (status !== null && status >= 500 && status <= 599) {
-    const code = nestedErrorCode(error);
     if (code.endsWith("_STREAM_REMOTE_ERROR")) {
       return /overload|temporar|unavailable|rate.?limit|timeout|capacity|try again|server error/i.test(
         String(error.message || "")
@@ -322,7 +324,6 @@ function isRetryableProviderError(error) {
     return true;
   }
 
-  const code = nestedErrorCode(error);
   if (RETRYABLE_NETWORK_CODES.has(code)) return true;
 
   if (
