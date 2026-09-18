@@ -1,13 +1,21 @@
 const openai = require("./providers/openai");
+const anthropic = require("./providers/anthropic");
+const gemini = require("./providers/gemini");
+const local = require("./providers/local");
 
-const providers = new Map([[openai.id, openai]]);
+const providers = new Map([
+  [openai.id, openai],
+  [anthropic.id, anthropic],
+  [gemini.id, gemini],
+  [local.id, local]
+]);
 
 function normalizeProviderName(value) {
   return String(value || "openai").trim().toLowerCase();
 }
 
-function getProvider() {
-  const name = normalizeProviderName(process.env.AI_PROVIDER);
+function getProvider(providerName = null) {
+  const name = normalizeProviderName(providerName || process.env.AI_PROVIDER);
   const provider = providers.get(name);
 
   if (!provider) {
@@ -59,9 +67,10 @@ async function generateChat({
   input,
   model,
   research = null,
-  reasoningEffort = null
+  reasoningEffort = null,
+  provider: requestedProvider = null
 }) {
-  const provider = getProvider();
+  const provider = getProvider(requestedProvider);
 
   if (research?.enabled && !providerSupportsResearch(provider)) {
     const error = new Error(`AI provider '${provider.id}' does not support Research Mode.`);
@@ -83,9 +92,10 @@ async function streamChat({
   input,
   model,
   onDelta,
-  reasoningEffort = null
+  reasoningEffort = null,
+  provider: requestedProvider = null
 }) {
-  const provider = getProvider();
+  const provider = getProvider(requestedProvider);
 
   if (typeof provider.streamChat !== "function") {
     const result = await provider.generateChat({
@@ -110,7 +120,7 @@ async function streamChat({
 }
 
 async function analyzeFile(options = {}) {
-  const provider = getProvider();
+  const provider = getProvider(options.provider || null);
   if (!providerSupportsFileAnalysis(provider) || typeof provider.analyzeFile !== "function") {
     const error = new Error(`AI provider '${provider.id}' does not support file analysis.`);
     error.code = "AI_PROVIDER_FILE_ANALYSIS_UNSUPPORTED";
@@ -119,10 +129,22 @@ async function analyzeFile(options = {}) {
   return provider.analyzeFile(options);
 }
 
+function listGatewayProviders() {
+  return [...providers.values()].map((provider) => ({
+    id: provider.id,
+    configured: Boolean(provider.isConfigured()),
+    model: provider.getModel(),
+    streaming: typeof provider.streamChat === "function",
+    research: providerSupportsResearch(provider),
+    fileAnalysis: providerSupportsFileAnalysis(provider)
+  }));
+}
+
 module.exports = {
   generateChat,
   streamChat,
   analyzeFile,
   getGatewayStatus,
+  listGatewayProviders,
   normalizeProviderName
 };
