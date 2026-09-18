@@ -1,7 +1,8 @@
 const PLAN_DEFINITIONS = Object.freeze({
   free: Object.freeze({ id: "free", displayName: "FREE", rank: 0, priceMonthlyUsd: 0 }),
-  premium: Object.freeze({ id: "premium", displayName: "PREMIUM", rank: 50, priceMonthlyUsd: 59.99 }),
-  ultra: Object.freeze({ id: "ultra", displayName: "ULTRA", rank: 100, priceMonthlyUsd: 114.99 })
+  premium: Object.freeze({ id: "premium", displayName: "PREMIUM", rank: 50, priceMonthlyUsd: 49.99, commercialState: "live" }),
+  ultra: Object.freeze({ id: "ultra", displayName: "ULTRA", rank: 100, priceMonthlyUsd: 129.99, commercialState: "live" }),
+  max: Object.freeze({ id: "max", displayName: "MAX", rank: 150, priceMonthlyUsd: 199.99, commercialState: "future" })
 });
 
 const LEGACY_PLAN_ALIASES = Object.freeze({
