@@ -1,5 +1,5 @@
-const SIMPLE_SHELL_STYLE_ID = "unbound-simple-shell-v100";
-const SIMPLE_SHELL_SCRIPT_ID = "unbound-simple-shell-runtime-v100";
+const SIMPLE_SHELL_STYLE_ID = "unbound-simple-shell-v101";
+const SIMPLE_SHELL_SCRIPT_ID = "unbound-simple-shell-runtime-v101";
 
 const SIMPLE_SHELL_STYLES = `<style id="${SIMPLE_SHELL_STYLE_ID}">
 .desktop-tools-button,
@@ -87,7 +87,11 @@ const SIMPLE_SHELL_STYLES = `<style id="${SIMPLE_SHELL_STYLE_ID}">
     display: none;
     width: min(390px, calc(100vw - 28px));
     max-height: min(72vh, 680px);
+    overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    -webkit-overflow-scrolling: touch;
     padding: 14px;
     border: 1px solid rgba(107, 193, 255, 0.38);
     border-radius: 16px;
@@ -372,7 +376,10 @@ const SIMPLE_SHELL_SCRIPT = `<script id="${SIMPLE_SHELL_SCRIPT_ID}">
 
   function closePanels() {
     [toolsPanel, chatPanel, accountPanel].forEach((panel) => {
-      if (panel) panel.dataset.open = "false";
+      if (panel) {
+        panel.dataset.open = "false";
+        panel.style.maxHeight = "";
+      }
     });
     document.querySelectorAll("[data-simple-panel-trigger]").forEach((trigger) => {
       trigger.setAttribute("aria-expanded", "false");
@@ -382,14 +389,30 @@ const SIMPLE_SHELL_SCRIPT = `<script id="${SIMPLE_SHELL_SCRIPT_ID}">
   function positionPanel(panel, trigger) {
     if (!panel || !trigger) return;
     const rect = trigger.getBoundingClientRect();
-    const width = Math.min(390, window.innerWidth - 28);
+    const viewportWidth = Math.max(320, window.innerWidth || document.documentElement.clientWidth || 320);
+    const viewportHeight = Math.max(320, window.innerHeight || document.documentElement.clientHeight || 320);
+    const edge = 14;
+    const gap = 8;
+    const width = Math.min(390, viewportWidth - edge * 2);
+
     let left = rect.right - width;
-    left = Math.max(14, Math.min(left, window.innerWidth - width - 14));
-    let top = rect.bottom + 8;
-    const maxTop = Math.max(14, window.innerHeight - 120);
-    top = Math.min(top, maxTop);
+    left = Math.max(edge, Math.min(left, viewportWidth - width - edge));
+
+    let top = Math.max(edge, rect.bottom + gap);
+    const minimumVisibleHeight = Math.min(260, Math.max(180, viewportHeight - edge * 2));
+    if (viewportHeight - top - edge < minimumVisibleHeight) {
+      top = Math.max(edge, viewportHeight - minimumVisibleHeight - edge);
+    }
+
+    const availableHeight = Math.max(
+      160,
+      Math.min(680, viewportHeight - top - edge)
+    );
+
     panel.style.left = left + "px";
     panel.style.top = top + "px";
+    panel.style.maxHeight = availableHeight + "px";
+    panel.style.overflowY = "auto";
   }
 
   function openPanel(panel, trigger) {
