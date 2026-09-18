@@ -103,6 +103,7 @@ async function generateChat({
   input,
   model,
   reasoningEffort = null,
+  signal: requestSignal = null,
   fetchImpl = fetch
 } = {}) {
   assertConfigured();
@@ -142,6 +143,7 @@ async function generateChat({
       };
     },
     {
+      externalSignal: requestSignal,
       code: "GEMINI_REQUEST_TIMEOUT",
       label: "Gemini request"
     }
@@ -169,6 +171,7 @@ async function streamChat({
   model,
   onDelta,
   reasoningEffort = null,
+  signal: requestSignal = null,
   fetchImpl = fetch
 } = {}) {
   assertConfigured();
@@ -290,6 +293,7 @@ async function streamChat({
       };
     },
     {
+      externalSignal: requestSignal,
       code: "GEMINI_STREAM_TIMEOUT",
       label: "Gemini streaming request"
     }
