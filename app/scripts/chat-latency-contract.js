@@ -33,7 +33,16 @@ function main() {
   assert.strictEqual(count(providerSource, 'request.reasoning = { effort };'), 2);
   assert.ok(providerSource.includes('reasoningEffort = null'));
   assert.ok(gatewaySource.includes('reasoningEffort = null'));
-  assert.ok(gatewaySource.includes('reasoningEffort\n  });'));
+  assert.match(
+    gatewaySource,
+    /const primaryOptions\s*=\s*\{[\s\S]*?\breasoningEffort\b[\s\S]*?\};/,
+    "Non-streaming gateway requests must forward reasoningEffort."
+  );
+  assert.match(
+    gatewaySource,
+    /streamWithProvider\(provider,\s*\{[\s\S]*?\breasoningEffort\b[\s\S]*?\}\s*\)/,
+    "Streaming gateway requests must forward reasoningEffort."
+  );
 
   assert.strictEqual(count(integratedServer, 'reasoningEffort,'), 2);
   assert.ok(
