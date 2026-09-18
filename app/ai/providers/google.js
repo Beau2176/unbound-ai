@@ -2,6 +2,9 @@ const {
   combineSystemAndMessages,
   providerError
 } = require("./provider-utils");
+const {
+  runWithProviderDeadline
+} = require("../provider-deadline");
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_MODEL = "gemini-3.8-flash";
@@ -95,35 +98,55 @@ async function parseErrorPayload(response) {
   }
 }
 
-async function generateChat({ instructions, input, model, reasoningEffort = null, fetchImpl = fetch } = {}) {
+async function generateChat({
+  instructions,
+  input,
+  model,
+  reasoningEffort = null,
+  fetchImpl = fetch
+} = {}) {
   assertConfigured();
   const selectedModel = String(model || getModel()).trim() || getModel();
-  const response = await fetchImpl(geminiEndpoint(selectedModel), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-goog-api-key": apiKey()
+
+  return runWithProviderDeadline(
+    "chat",
+    async ({ signal }) => {
+      const response = await fetchImpl(geminiEndpoint(selectedModel), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-goog-api-key": apiKey()
+        },
+        redirect: "error",
+        signal,
+        body: JSON.stringify(buildGeminiRequestBody(instructions, input, reasoningEffort))
+      });
+      if (!response.ok) {
+        const payload = await parseErrorPayload(response);
+        throw providerError(
+          "GEMINI_REQUEST_FAILED",
+          payload?.error?.message || "Gemini request failed.",
+          response.status || 502
+        );
+      }
+      const payload = await response.json().catch(() => ({}));
+      const reply = extractGeminiText(payload);
+
+      return {
+        provider: "google",
+        model: selectedModel,
+        reply,
+        usage: payload.usageMetadata || null,
+        responseId: payload.responseId || null,
+        research: { sources: [], citations: [], webSearchCalls: 0 }
+      };
     },
-    redirect: "error",
-    body: JSON.stringify(buildGeminiRequestBody(instructions, input, reasoningEffort))
-  });
-  if (!response.ok) {
-    const payload = await parseErrorPayload(response);
-    throw providerError("GEMINI_REQUEST_FAILED", payload?.error?.message || "Gemini request failed.", response.status || 502);
-  }
-  const payload = await response.json().catch(() => ({}));
-  const reply = extractGeminiText(payload);
-
-  return {
-    provider: "google",
-    model: selectedModel,
-    reply,
-    usage: payload.usageMetadata || null,
-    responseId: payload.responseId || null,
-    research: { sources: [], citations: [], webSearchCalls: 0 }
-  };
+    {
+      code: "GEMINI_REQUEST_TIMEOUT",
+      label: "Gemini request"
+    }
+  );
 }
-
 function parseSseEvent(block) {
   const data = String(block || "")
     .split(/\r?\n/)
@@ -150,94 +173,128 @@ async function streamChat({
 } = {}) {
   assertConfigured();
   const selectedModel = String(model || getModel()).trim() || getModel();
-  const response = await fetchImpl(geminiEndpoint(selectedModel, { streaming: true }), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "accept": "text/event-stream",
-      "x-goog-api-key": apiKey()
+
+  return runWithProviderDeadline(
+    "stream",
+    async ({ signal }) => {
+      const response = await fetchImpl(geminiEndpoint(selectedModel, { streaming: true }), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "accept": "text/event-stream",
+          "x-goog-api-key": apiKey()
+        },
+        redirect: "error",
+        signal,
+        body: JSON.stringify(buildGeminiRequestBody(instructions, input, reasoningEffort))
+      });
+
+      if (!response.ok) {
+        const payload = await parseErrorPayload(response);
+        throw providerError(
+          "GEMINI_STREAM_REQUEST_FAILED",
+          payload?.error?.message || "Gemini streaming request failed.",
+          response.status || 502
+        );
+      }
+      if (!response.body) {
+        throw providerError(
+          "GEMINI_STREAM_BODY_MISSING",
+          "Gemini streaming response did not include a response body.",
+          502
+        );
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let reply = "";
+      let usage = null;
+      let responseId = null;
+
+      async function handlePayload(payload) {
+        const delta = extractGeminiText(payload);
+        if (delta) {
+          if (reply.length + delta.length > MAX_STREAM_REPLY_CHARS) {
+            throw providerError(
+              "GEMINI_STREAM_REPLY_TOO_LARGE",
+              "Gemini streaming reply exceeded the allowed size.",
+              502
+            );
+          }
+          reply += delta;
+          if (onDelta) await onDelta(delta);
+        }
+        if (payload?.usageMetadata) usage = payload.usageMetadata;
+        if (payload?.responseId) responseId = payload.responseId;
+      }
+
+      async function consumeText(text, flush = false) {
+        buffer += String(text || "");
+        if (Buffer.byteLength(buffer, "utf8") > MAX_STREAM_BUFFER_BYTES) {
+          throw providerError(
+            "GEMINI_STREAM_BUFFER_TOO_LARGE",
+            "Gemini streaming event buffer exceeded the allowed size.",
+            502
+          );
+        }
+
+        const blocks = buffer.split(/\r?\n\r?\n/);
+        if (!flush) {
+          buffer = blocks.pop() || "";
+        } else {
+          buffer = "";
+        }
+
+        for (const block of blocks) {
+          const payload = parseSseEvent(block);
+          if (payload) await handlePayload(payload);
+        }
+      }
+
+      if (typeof response.body.getReader === "function") {
+        const reader = response.body.getReader();
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            await consumeText(decoder.decode(value, { stream: true }));
+          }
+          await consumeText(decoder.decode(), true);
+        } finally {
+          try { reader.releaseLock(); } catch (_) {}
+        }
+      } else if (Symbol.asyncIterator in Object(response.body)) {
+        for await (const chunk of response.body) {
+          await consumeText(
+            typeof chunk === "string"
+              ? chunk
+              : decoder.decode(chunk, { stream: true })
+          );
+        }
+        await consumeText(decoder.decode(), true);
+      } else {
+        throw providerError(
+          "GEMINI_STREAM_UNREADABLE",
+          "Gemini streaming response body is not readable.",
+          502
+        );
+      }
+
+      return {
+        provider: "google",
+        model: selectedModel,
+        reply,
+        usage,
+        responseId,
+        research: { sources: [], citations: [], webSearchCalls: 0 }
+      };
     },
-    redirect: "error",
-    body: JSON.stringify(buildGeminiRequestBody(instructions, input, reasoningEffort))
-  });
-
-  if (!response.ok) {
-    const payload = await parseErrorPayload(response);
-    throw providerError("GEMINI_STREAM_REQUEST_FAILED", payload?.error?.message || "Gemini streaming request failed.", response.status || 502);
-  }
-  if (!response.body) {
-    throw providerError("GEMINI_STREAM_BODY_MISSING", "Gemini streaming response did not include a response body.", 502);
-  }
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let reply = "";
-  let usage = null;
-  let responseId = null;
-
-  async function handlePayload(payload) {
-    const delta = extractGeminiText(payload);
-    if (delta) {
-      if (reply.length + delta.length > MAX_STREAM_REPLY_CHARS) {
-        throw providerError("GEMINI_STREAM_REPLY_TOO_LARGE", "Gemini streaming reply exceeded the allowed size.", 502);
-      }
-      reply += delta;
-      if (onDelta) await onDelta(delta);
+    {
+      code: "GEMINI_STREAM_TIMEOUT",
+      label: "Gemini streaming request"
     }
-    if (payload?.usageMetadata) usage = payload.usageMetadata;
-    if (payload?.responseId) responseId = payload.responseId;
-  }
-
-  async function consumeText(text, flush = false) {
-    buffer += String(text || "");
-    if (Buffer.byteLength(buffer, "utf8") > MAX_STREAM_BUFFER_BYTES) {
-      throw providerError("GEMINI_STREAM_BUFFER_TOO_LARGE", "Gemini streaming event buffer exceeded the allowed size.", 502);
-    }
-
-    const blocks = buffer.split(/\r?\n\r?\n/);
-    if (!flush) {
-      buffer = blocks.pop() || "";
-    } else {
-      buffer = "";
-    }
-
-    for (const block of blocks) {
-      const payload = parseSseEvent(block);
-      if (payload) await handlePayload(payload);
-    }
-  }
-
-  if (typeof response.body.getReader === "function") {
-    const reader = response.body.getReader();
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        await consumeText(decoder.decode(value, { stream: true }));
-      }
-      await consumeText(decoder.decode(), true);
-    } finally {
-      try { reader.releaseLock(); } catch (_) {}
-    }
-  } else if (Symbol.asyncIterator in Object(response.body)) {
-    for await (const chunk of response.body) {
-      await consumeText(typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true }));
-    }
-    await consumeText(decoder.decode(), true);
-  } else {
-    throw providerError("GEMINI_STREAM_UNREADABLE", "Gemini streaming response body is not readable.", 502);
-  }
-
-  return {
-    provider: "google",
-    model: selectedModel,
-    reply,
-    usage,
-    responseId,
-    research: { sources: [], citations: [], webSearchCalls: 0 }
-  };
+  );
 }
-
 module.exports = {
   id: "google",
   GEMINI_BASE_URL,
