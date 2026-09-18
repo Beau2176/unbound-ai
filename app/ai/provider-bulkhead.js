@@ -26,6 +26,7 @@ function cleanProviderId(value) {
 function providerEnvPrefix(providerId) {
   const id = cleanProviderId(providerId);
   if (id === "openai") return "OPENAI";
+  if (id === "openai-image") return "OPENAI_IMAGE";
   if (id === "anthropic") return "ANTHROPIC";
   if (id === "google") return "GEMINI";
   if (id === "local") return "LOCAL_AI";
