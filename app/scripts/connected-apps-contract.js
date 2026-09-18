@@ -8,6 +8,11 @@ const {
   decryptSecret
 } = require("../connections/token-vault");
 const {
+  SUPPORTED_CONNECTED_APP_PROVIDERS,
+  normalizeProviderId,
+  secretAad: connectionSecretAad
+} = require("../connections/store");
+const {
   API_VERSION,
   normalizeCodeVerifier,
   createPkceChallenge,
@@ -61,6 +66,13 @@ async function main() {
 
   assert.strictEqual(getTokenVaultStatus({}).configured, false);
   assert.strictEqual(getTokenVaultStatus(env).configured, true);
+  assert.ok(SUPPORTED_CONNECTED_APP_PROVIDERS.includes("github"));
+  assert.ok(SUPPORTED_CONNECTED_APP_PROVIDERS.includes("google_workspace"));
+  assert.ok(SUPPORTED_CONNECTED_APP_PROVIDERS.includes("microsoft_365"));
+  assert.ok(SUPPORTED_CONNECTED_APP_PROVIDERS.includes("slack"));
+  assert.strictEqual(normalizeProviderId("SLACK"), "slack");
+  assert.strictEqual(normalizeProviderId("unknown"), null);
+  assert.strictEqual(connectionSecretAad("github", 42, "access"), "unbound:github:42:access");
   const encrypted = encryptSecret("ghu_secret-token-value", { env, aad: "test-aad" });
   assert.ok(encrypted.startsWith("v1."));
   assert.ok(!encrypted.includes("ghu_secret-token-value"));
@@ -254,7 +266,11 @@ async function main() {
   assert.ok(routeSource.includes("pkce_verifier_ciphertext"));
   assert.ok(routeSource.includes('aad: secretAad(req.user.id, "pkce")'));
   assert.ok(routeSource.includes("DELETE FROM connected_app_oauth_states"));
-  assert.ok(routeSource.includes("encryptSecret(tokens.accessToken"));
+  assert.ok(routeSource.includes('require("./store")'));
+  const storeSource = fs.readFileSync(path.join(appRoot, "connections", "store.js"), "utf8");
+  assert.ok(storeSource.includes("encryptSecret(accessToken"));
+  assert.ok(storeSource.includes("provider = $2"));
+  assert.ok(storeSource.includes("SUPPORTED_CONNECTED_APP_PROVIDERS"));
   assert.ok(routeSource.includes("revokeUserToken({ accessToken })"));
   assert.ok(!routeSource.includes("console.log(accessToken"));
   assert.ok(!routeSource.includes("res.json({ accessToken"));
