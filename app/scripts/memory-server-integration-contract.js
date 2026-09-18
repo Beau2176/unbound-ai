@@ -41,12 +41,13 @@ function buildIntegratedSource() {
 }
 
 function main() {
-  assert.strictEqual(INTEGRATION_VERSION, "v0.94");
+  assert.strictEqual(INTEGRATION_VERSION, "v1.0");
   const integrated = buildIntegratedSource();
 
   assert.strictEqual(count(integrated, 'require("./memory/routes")'), 1);
   assert.strictEqual(count(integrated, 'require("./memory/context")'), 1);
   assert.strictEqual(count(integrated, 'require("./project/identity")'), 1);
+  assert.strictEqual(count(integrated, 'require("./platform/project-memory")'), 1);
   assert.strictEqual(count(integrated, '"/memory.html"'), 1);
   assert.strictEqual(count(integrated, '"/api/memory"'), 1);
   assert.strictEqual(count(integrated, '"/api/project/identity"'), 1);
@@ -54,10 +55,11 @@ function main() {
   assert.strictEqual(count(integrated, "CREATE TABLE IF NOT EXISTS user_memories"), 1);
   assert.strictEqual(count(integrated, "buildProjectCoreMemoryPrompt()"), 2);
   assert.strictEqual(count(integrated, "await buildMemoryPrompt(pool, persistentChat.user.id, message)"), 2);
+  assert.strictEqual(count(integrated, "await buildProjectContext(pool, persistentChat.user.id, req.body.projectId, message)"), 2);
   assert.strictEqual(
     count(
       integrated,
-      "projectMemoryInstructions, styleInstructions, memoryInstructions, depthInstructions"
+      "projectMemoryInstructions, projectContextInstructions, styleInstructions, memoryInstructions, depthInstructions"
     ),
     2
   );
