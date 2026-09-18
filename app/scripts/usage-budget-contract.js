@@ -80,6 +80,10 @@ function syntheticIntegratedServerSource() {
     'createVoiceRouter({',
     '    getPool: () => pool',
     '  })',
+    'createAgentRouter({',
+    '    getPool: () => pool,',
+    '    createRunRateLimit: agentRunRateLimit',
+    '  })',
     'startAgentWorker({',
     '  getPool: () => pool,',
     '  isDatabaseReady: () => databaseReady,',
@@ -199,6 +203,7 @@ async function main() {
     "enforceChatUsageBudget",
     "enforceStreamingUsageBudget",
     "assertUsageBudget: enforceUsageBudgetForUser",
+    "agent-router-budget",
     '"/api/account/usage-budget"'
   ]) {
     assert.ok(integrated.includes(marker), `missing integrated marker: ${marker}`);
