@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const {
+  cleanProviderId,
   cleanModelId,
   normalizeModelProfile,
   getModelRoutingConfig,
@@ -26,6 +27,8 @@ function count(text, needle) {
 }
 
 function main() {
+  assert.strictEqual(cleanProviderId("ANTHROPIC"), "anthropic");
+  assert.strictEqual(cleanProviderId("browser-supplied-provider"), null);
   assert.strictEqual(cleanModelId("gpt-example-fast"), "gpt-example-fast");
   assert.strictEqual(cleanModelId("provider/model:2026-09"), "provider/model:2026-09");
   assert.strictEqual(cleanModelId("model with spaces"), null);
@@ -37,7 +40,10 @@ function main() {
     AI_MODEL: "model-default",
     AI_MODEL_FAST: "model-fast",
     AI_MODEL_DEEP: "model-deep",
-    AI_MODEL_RESEARCH: "model-research"
+    AI_MODEL_RESEARCH: "model-research",
+    AI_PROVIDER: "openai",
+    AI_PROVIDER_DEEP: "anthropic",
+    AI_PROVIDER_RESEARCH: "openai"
   };
   const config = getModelRoutingConfig(env);
   assert.strictEqual(config.defaultModel, "model-default");
@@ -88,6 +94,7 @@ function main() {
     env
   });
   assert.strictEqual(autoDeep.model, "model-deep");
+  assert.strictEqual(autoDeep.provider, "anthropic");
   assert.strictEqual(autoDeep.profile, "deep");
 
   const autoResearch = resolveChatModel({
@@ -123,6 +130,8 @@ function main() {
   const status = publicModelRoutingStatus(env, "model-default");
   assert.strictEqual(status.implemented, true);
   assert.strictEqual(status.multipleModelsConfigured, true);
+  assert.strictEqual(status.multipleProvidersConfigured, true);
+  assert(status.configuredProviderProfiles.includes("deep"));
   assert.strictEqual(status.rawModelIdsExposed, false);
   assert.strictEqual(status.browserSuppliedModelIdsAccepted, false);
 
@@ -142,6 +151,7 @@ function main() {
   assert.strictEqual(count(integratedServer, 'require("./ai/model-routing")'), 1);
   assert.strictEqual(count(integratedServer, 'item.key === "multi_model"'), 2);
   assert.strictEqual(count(integratedServer, "model: modelRoute.model,"), 2);
+  assert.strictEqual(count(integratedServer, "provider: modelRoute.provider,"), 2);
   assert.ok(integratedServer.includes("requestedProfile: req.body?.modelProfile"));
   assert.ok(integratedServer.includes("message,"));
   assert.ok(integratedServer.includes("enabled: multiModelEnabled"));
