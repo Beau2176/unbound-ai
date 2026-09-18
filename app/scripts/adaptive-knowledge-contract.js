@@ -108,7 +108,7 @@ function main() {
   assert.strictEqual(count(integrated, "CREATE TABLE IF NOT EXISTS adaptive_knowledge"), 1);
   assert.strictEqual(count(integrated, "CREATE TABLE IF NOT EXISTS community_learning_preferences"), 1);
   assert.strictEqual(count(integrated, "await buildAdaptiveKnowledgeContext(pool, message)"), 2);
-  assert.strictEqual(count(integrated, "adaptiveKnowledgeInstructions, depthInstructions"), 2);
+  assert.strictEqual(count(integrated, "projectContextInstructions, styleInstructions, memoryInstructions, adaptiveKnowledgeInstructions, depthInstructions"), 2);
   assert.strictEqual(count(integrated, "selectDirectKnowledgeAnswer({"), 2);
   assert.strictEqual(count(integrated, "knowledgeCacheHit: true"), 2);
   assert.strictEqual(count(integrated, "void learnFromResearch(pool"), 1);
