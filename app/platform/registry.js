@@ -39,7 +39,7 @@ function providerCatalog(env = process.env) {
       id: "anthropic",
       label: "Anthropic",
       kind: "cloud",
-      configured: configured(env.ANTHROPIC_API_KEY),
+      configured: configured(env.ANTHROPIC_API_KEY) && configured(env.ANTHROPIC_MODEL),
       chat: true,
       research: false,
       adapterState: "active-text-adapter"
@@ -48,7 +48,7 @@ function providerCatalog(env = process.env) {
       id: "google",
       label: "Google Gemini",
       kind: "cloud",
-      configured: configured(env.GEMINI_API_KEY || env.GOOGLE_AI_API_KEY),
+      configured: configured(env.GEMINI_API_KEY || env.GOOGLE_AI_API_KEY) && configured(env.GEMINI_MODEL || env.GOOGLE_AI_MODEL),
       chat: true,
       research: false,
       adapterState: "active-text-adapter"
@@ -57,7 +57,7 @@ function providerCatalog(env = process.env) {
       id: "local",
       label: "Local / Private Model",
       kind: "local",
-      configured: configured(env.UNBOUND_LOCAL_AI_ENDPOINT),
+      configured: configured(env.UNBOUND_LOCAL_AI_ENDPOINT) && configured(env.UNBOUND_LOCAL_AI_MODEL),
       chat: true,
       research: false,
       adapterState: "active-openai-compatible-adapter"
@@ -68,7 +68,7 @@ function providerCatalog(env = process.env) {
 function connectorCatalog(env = process.env) {
   const remoteBrowser = configured(env.UNBOUND_BROWSER_CDP_URL || env.BROWSER_WS_ENDPOINT);
   return [
-    { id: "github", label: "GitHub", protocol: "native_oauth", configured: configured(env.GITHUB_CLIENT_ID), read: true, write: enabled(env.GITHUB_WRITE_ACTIONS_ENABLED) },
+    { id: "github", label: "GitHub", protocol: "native_oauth", configured: configured(env.GITHUB_APP_CLIENT_ID), read: true, write: enabled(env.GITHUB_WRITE_ACTIONS_ENABLED) },
     { id: "mcp_gateway", label: "MCP Gateway", protocol: "mcp", configured: configured(env.UNBOUND_MCP_GATEWAY_URL), read: true, write: false },
     { id: "browser", label: "Computer Use Browser", protocol: "rest", configured: remoteBrowser, read: true, write: remoteBrowser },
     { id: "google_workspace", label: "Google Workspace", protocol: "native_oauth", configured: configured(env.GOOGLE_OAUTH_CLIENT_ID), read: false, write: false },
@@ -82,7 +82,7 @@ function workspaceStatus(env = process.env) {
     projects: true,
     vaultMetadata: true,
     encryptedObjectStorage: configured(env.UNBOUND_OBJECT_STORAGE_PROVIDER) && configured(env.UNBOUND_OBJECT_STORAGE_KEY),
-    codeWorkspace: configured(env.UNBOUND_CODE_SANDBOX_URL),
+    codeWorkspace: configured(env.UNBOUND_CODE_SANDBOX_URL) && configured(env.UNBOUND_CODE_SANDBOX_TOKEN),
     futureCore: String(env.UNBOUND_FUTURE_CORE_V2_ENABLED || "").toLowerCase() === "true",
     nativeMultimodalBridge: true,
     marketplaceRegistry: true
