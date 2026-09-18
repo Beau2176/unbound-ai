@@ -1648,7 +1648,9 @@
         </div>
         <div id="billingActions" class="access-age-actions">
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button id="billingUpgradeButton" class="auth-submit" type="button" hidden>UPGRADE TO TOP</button>
+            <button id="billingPremiumButton" class="auth-submit" type="button" hidden>PREMIUM · $49.99</button>
+            <button id="billingUltraButton" class="auth-submit" type="button" hidden>ULTRA · $129.99</button>
+            <button id="billingMaxButton" class="auth-submit secondary" type="button" disabled>MAX · $199.99 · COMING</button>
             <button id="billingPortalButton" class="auth-submit secondary" type="button" hidden>MANAGE BILLING</button>
           </div>
           <div id="billingActionNote" class="history-empty" role="status" aria-live="polite"></div>
@@ -1971,7 +1973,9 @@
     const ageVerificationStartButton = document.getElementById("ageVerificationStartButton");
     const ageVerificationActionNote = document.getElementById("ageVerificationActionNote");
     const billingActions = document.getElementById("billingActions");
-    const billingUpgradeButton = document.getElementById("billingUpgradeButton");
+    const billingPremiumButton = document.getElementById("billingPremiumButton");
+    const billingUltraButton = document.getElementById("billingUltraButton");
+    const billingMaxButton = document.getElementById("billingMaxButton");
     const billingPortalButton = document.getElementById("billingPortalButton");
     const billingActionNote = document.getElementById("billingActionNote");
     const accessCapabilityList = document.getElementById("accessCapabilityList");
@@ -3129,30 +3133,36 @@
       return `${String(subscription.provider || "Provider")} • ${String(subscription.status || "unknown").replaceAll("_", " ")}`;
     }
 
-    async function startTopCheckout() {
+    async function startPlanCheckout(planTier) {
       if (!currentUser || !accountAccess) return;
       const gateway = accountAccess.billingGateway || {};
-      if (accountAccess.plan?.tier === "top") {
-        showToast("This account already has TOP access.");
-        return;
-      }
-      if (!gateway.configured || !gateway.checkout) {
-        showToast("Paid TOP subscriptions are not available yet.");
+      const plan = String(planTier || "").trim().toLowerCase();
+      const button = plan === "premium"
+        ? billingPremiumButton
+        : plan === "ultra"
+          ? billingUltraButton
+          : billingMaxButton;
+
+      if (!Array.isArray(gateway.paidPlans) || !gateway.paidPlans.includes(plan)) {
+        showToast(plan === "max"
+          ? "UNBOUND MAX is prepared but has not launched yet."
+          : "That subscription is not available yet.");
         return;
       }
 
-      billingUpgradeButton.disabled = true;
-      billingUpgradeButton.textContent = "OPENING CHECKOUT...";
-      billingActionNote.textContent = "Creating a secure checkout session…";
+      const previousLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = "OPENING CHECKOUT...";
+      billingActionNote.textContent = "Creating a secure " + plan.toUpperCase() + " checkout session…";
       try {
         const response = await fetch("/api/account/billing/checkout", {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: "{}"
+          body: JSON.stringify({ planTier: plan })
         });
         const data = await readJson(response);
-        if (!response.ok) throw new Error(data.error || "Could not start TOP checkout.");
+        if (!response.ok) throw new Error(data.error || "Could not start subscription checkout.");
         const checkoutUrl = safeHttpUrl(data.checkout?.checkoutUrl);
         if (!checkoutUrl || !checkoutUrl.startsWith("https://")) {
           throw new Error("The billing provider returned an invalid secure checkout URL.");
@@ -3160,9 +3170,9 @@
         billingActionNote.textContent = "Opening the secure billing provider…";
         window.location.assign(checkoutUrl);
       } catch (error) {
-        billingActionNote.textContent = error.message || "Could not start TOP checkout.";
-        billingUpgradeButton.disabled = false;
-        billingUpgradeButton.textContent = "UPGRADE TO TOP";
+        billingActionNote.textContent = error.message || "Could not start subscription checkout.";
+        button.disabled = false;
+        button.textContent = previousLabel;
       }
     }
 
@@ -3265,8 +3275,12 @@
         ageVerificationStartButton.disabled = true;
         ageVerificationActionNote.textContent = "";
         billingActions.hidden = true;
-        billingUpgradeButton.hidden = true;
-        billingUpgradeButton.disabled = true;
+        billingPremiumButton.hidden = true;
+        billingPremiumButton.disabled = true;
+        billingUltraButton.hidden = true;
+        billingUltraButton.disabled = true;
+        billingMaxButton.hidden = false;
+        billingMaxButton.disabled = true;
         billingPortalButton.hidden = true;
         billingPortalButton.disabled = true;
         billingActionNote.textContent = "";
@@ -3279,8 +3293,15 @@
       accessCapabilitySummary.textContent = `${accountAccess.summary?.usable || 0} live / ${accountAccess.summary?.catalogSize || 0} tracked`;
       const billingGateway = accountAccess.billingGateway || {};
       const subscription = accountAccess.subscription || {};
-      const effectiveTop = accountAccess.plan?.tier === "top";
-      const checkoutAvailable = Boolean(!effectiveTop && billingGateway.configured && billingGateway.checkout);
+      const paidPlans = Array.isArray(billingGateway.paidPlans) ? billingGateway.paidPlans : [];
+      const planRank = { free: 0, premium: 50, ultra: 100, max: 150 };
+      const currentTier = String(accountAccess.plan?.tier || "free").toLowerCase();
+      const currentRank = planRank[currentTier] || 0;
+      const checkoutAvailable = Boolean(billingGateway.configured && billingGateway.checkout);
+      const hasActivePaidSubscription = Boolean(
+        subscription.connected &&
+        ["active", "trialing"].includes(String(subscription.status || "").toLowerCase())
+      );
       const portalAvailable = Boolean(
         subscription.customerConnected &&
         billingGateway.configured &&
@@ -3288,22 +3309,39 @@
         subscription.provider &&
         subscription.provider === billingGateway.provider
       );
+      const canCheckout = (tier) => Boolean(
+        checkoutAvailable &&
+        paidPlans.includes(tier) &&
+        currentRank < (planRank[tier] || 0) &&
+        !hasActivePaidSubscription
+      );
+
       billingActions.hidden = false;
-      billingUpgradeButton.hidden = !checkoutAvailable;
-      billingUpgradeButton.disabled = !checkoutAvailable;
-      billingUpgradeButton.textContent = "UPGRADE TO TOP";
+      billingPremiumButton.hidden = !canCheckout("premium");
+      billingPremiumButton.disabled = !canCheckout("premium");
+      billingPremiumButton.textContent = "PREMIUM · $49.99";
+      billingUltraButton.hidden = !canCheckout("ultra");
+      billingUltraButton.disabled = !canCheckout("ultra");
+      billingUltraButton.textContent = "ULTRA · $129.99";
+      billingMaxButton.hidden = false;
+      billingMaxButton.disabled = !canCheckout("max");
+      billingMaxButton.textContent = paidPlans.includes("max")
+        ? "MAX · $199.99"
+        : "MAX · $199.99 · COMING";
       billingPortalButton.hidden = !portalAvailable;
       billingPortalButton.disabled = !portalAvailable;
       billingPortalButton.textContent = "MANAGE BILLING";
       billingActionNote.textContent = portalAvailable
         ? "Manage your paid subscription securely with the connected billing provider."
-        : effectiveTop
-          ? accountAccess.plan?.source === "subscription"
-            ? "Your paid TOP access is active, but the connected provider does not currently expose account management."
-            : `Your TOP access comes from ${accessSourceLabel(accountAccess.plan?.source)}; no paid subscription action is required.`
-          : checkoutAvailable
-            ? "Upgrade to TOP through the connected secure billing provider."
-            : "Paid TOP subscriptions are not connected yet. No payment action is available.";
+        : hasActivePaidSubscription
+          ? "Use Manage Billing for changes to an active paid subscription."
+          : canCheckout("premium") || canCheckout("ultra")
+            ? "Choose Premium or Ultra. MAX is prepared and remains locked until launch."
+            : currentTier === "max"
+              ? "UNBOUND MAX access is active."
+              : currentTier === "ultra"
+                ? "Your ULTRA access includes every currently launched capability. MAX is prepared for a future launch."
+                : "Paid subscriptions are not connected yet. No payment action is available.";
 
       const ageState = accountAccess.ageVerification || {};
       const ageGateway = accountAccess.ageVerificationGateway || {};
@@ -5001,7 +5039,9 @@
 
     newChatButton.addEventListener("click", startNewChat);
     accessButton.addEventListener("click", openAccess);
-    billingUpgradeButton.addEventListener("click", startTopCheckout);
+    billingPremiumButton.addEventListener("click", () => startPlanCheckout("premium"));
+    billingUltraButton.addEventListener("click", () => startPlanCheckout("ultra"));
+    billingMaxButton.addEventListener("click", () => startPlanCheckout("max"));
     billingPortalButton.addEventListener("click", openBillingPortal);
     ageVerificationStartButton.addEventListener("click", startAgeVerification);
     dataExportButton.addEventListener("click", handleDataExport);
