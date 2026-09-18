@@ -185,7 +185,7 @@ function integratePlatformParityServerSource(serverSource) {
     "  recordUsageEvent,",
     "  estimateProviderCostMicros",
     "});"
-  ].join("\\n");
+  ].join("\n");
   if (source.includes(agentWorker) && !source.includes("startFutureCoreBackgroundWorker({")) {
     const backgroundWorkers = [
       agentWorker,
@@ -202,7 +202,7 @@ function integratePlatformParityServerSource(serverSource) {
       "    isDatabaseReady: () => databaseReady",
       "  });",
       "}"
-    ].join("\\n");
+    ].join("\n");
     source = replaceExactlyOnce(source, agentWorker, backgroundWorkers, "platform-background-workers");
   }
 
