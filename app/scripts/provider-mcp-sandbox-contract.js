@@ -137,12 +137,11 @@ async function main() {
 
     let researchStatus = getGatewayStatus();
     assert.strictEqual(researchStatus.provider, "google");
-    assert.strictEqual(researchStatus.research, false);
-    assert.strictEqual(researchStatus.researchProvider, null);
-    assert.strictEqual(
-      researchStatus.researchError,
-      "active-provider-research-unsupported"
-    );
+    assert.strictEqual(researchStatus.research, true);
+    assert.strictEqual(researchStatus.researchProvider, "google");
+    assert.strictEqual(researchStatus.researchProviderExplicit, false);
+    assert.strictEqual(researchStatus.researchModel, "gemini-3.6-flash");
+    assert.strictEqual(researchStatus.researchError, null);
 
     process.env.AI_RESEARCH_PROVIDER = "anthropic";
     process.env.ANTHROPIC_API_KEY = "anthropic-secret";
@@ -182,17 +181,13 @@ async function main() {
 
     process.env.AI_RESEARCH_PROVIDER = "google";
     researchStatus = getGatewayStatus();
-    assert.strictEqual(researchStatus.research, false);
-    assert.strictEqual(
-      researchStatus.researchError,
-      "research-provider-capability-unsupported"
-    );
-    assert.throws(
-      () => resolveResearchProvider({ throwOnError: true }),
-      (error) =>
-        error &&
-        error.code === "AI_RESEARCH_PROVIDER_CAPABILITY_UNSUPPORTED"
-    );
+    assert.strictEqual(researchStatus.research, true);
+    assert.strictEqual(researchStatus.researchProvider, "google");
+    assert.strictEqual(researchStatus.researchProviderExplicit, true);
+    assert.strictEqual(researchStatus.researchError, null);
+    const googleResearchRoute = resolveResearchProvider({ throwOnError: true });
+    assert.strictEqual(googleResearchRoute.provider.id, "google");
+    assert.strictEqual(googleResearchRoute.explicit, true);
 
     process.env.AI_RESEARCH_PROVIDER = "made-up-provider";
     researchStatus = getGatewayStatus();
