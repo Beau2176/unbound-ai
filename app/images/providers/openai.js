@@ -1,5 +1,11 @@
+const {
+  boundedInteger,
+  runWithProviderDeadline
+} = require("../../ai/provider-deadline");
+
 const DEFAULT_MODEL = "gpt-5.6-luna";
 const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-sunburst";
+const DEFAULT_IMAGE_PROVIDER_TIMEOUT_MS = 180000;
 
 const IMAGE_UNDERSTANDING_SYSTEM_PROMPT = `
 You are analyzing a user-supplied image for UNBOUND AI.
@@ -22,6 +28,15 @@ function getImageModel(env = process.env) {
 
 function isConfigured(env = process.env) {
   return Boolean(env.OPENAI_API_KEY);
+}
+
+function getImageProviderTimeoutMs(env = process.env) {
+  return boundedInteger(
+    env.OPENAI_IMAGE_TIMEOUT_MS ?? env.AI_IMAGE_TIMEOUT_MS,
+    DEFAULT_IMAGE_PROVIDER_TIMEOUT_MS,
+    5000,
+    300000
+  );
 }
 
 function normalizeDetail(value) {
@@ -148,6 +163,7 @@ async function analyzeImage({
   prompt,
   detail = "auto",
   model,
+  signal: requestSignal = null,
   env = process.env,
   clientFactory = createClient
 } = {}) {
@@ -160,15 +176,32 @@ async function analyzeImage({
     model,
     env
   });
-  const client = await clientFactory(env);
-  const response = await client.responses.create(request);
-  return {
-    provider: "openai",
-    model: response.model || request.model,
-    reply: response.output_text || "",
-    usage: response.usage || null,
-    responseId: response.id || null
-  };
+
+  return runWithProviderDeadline(
+    "file",
+    async ({ signal, timeoutMs }) => {
+      const client = await clientFactory(env);
+      const response = await client.responses.create(request, {
+        timeout: timeoutMs,
+        maxRetries: 0,
+        signal
+      });
+      return {
+        provider: "openai",
+        model: response.model || request.model,
+        reply: response.output_text || "",
+        usage: response.usage || null,
+        responseId: response.id || null
+      };
+    },
+    {
+      env,
+      timeoutMs: getImageProviderTimeoutMs(env),
+      externalSignal: requestSignal,
+      code: "IMAGE_PROVIDER_TIMEOUT",
+      label: "OpenAI image-understanding request"
+    }
+  );
 }
 
 async function generateImage({
@@ -178,6 +211,7 @@ async function generateImage({
   background,
   outputFormat,
   model,
+  signal: requestSignal = null,
   env = process.env,
   clientFactory = createClient
 } = {}) {
@@ -191,19 +225,36 @@ async function generateImage({
     model,
     env
   });
-  const client = await clientFactory(env);
-  const response = await client.images.generate(request);
-  const image = extractGeneratedImage(response, {
-    outputFormat: request.output_format,
-    size: request.size,
-    quality: request.quality,
-    background: request.background
-  });
-  return {
-    provider: "openai",
-    model: response?.model || request.model,
-    ...image
-  };
+
+  return runWithProviderDeadline(
+    "file",
+    async ({ signal, timeoutMs }) => {
+      const client = await clientFactory(env);
+      const response = await client.images.generate(request, {
+        timeout: timeoutMs,
+        maxRetries: 0,
+        signal
+      });
+      const image = extractGeneratedImage(response, {
+        outputFormat: request.output_format,
+        size: request.size,
+        quality: request.quality,
+        background: request.background
+      });
+      return {
+        provider: "openai",
+        model: response?.model || request.model,
+        ...image
+      };
+    },
+    {
+      env,
+      timeoutMs: getImageProviderTimeoutMs(env),
+      externalSignal: requestSignal,
+      code: "IMAGE_PROVIDER_TIMEOUT",
+      label: "OpenAI image-generation request"
+    }
+  );
 }
 
 async function editImage({
@@ -217,6 +268,7 @@ async function editImage({
   outputFormat,
   inputFidelity,
   model,
+  signal: requestSignal = null,
   env = process.env,
   clientFactory = createClient,
   toFileFactory = null
@@ -232,36 +284,61 @@ async function editImage({
     model,
     env
   });
-  const client = await clientFactory(env);
-  let toFile = toFileFactory;
-  if (!toFile) {
-    const sdk = await loadSdk();
-    toFile = sdk.toFile;
-  }
-  if (typeof toFile !== "function") {
-    const error = new Error("OpenAI SDK upload helper is unavailable.");
-    error.code = "IMAGE_PROVIDER_UPLOAD_UNAVAILABLE";
-    throw error;
-  }
-  const upload = await toFile(imageBuffer, filename, { type: mimeType });
-  const response = await client.images.edit({ ...request, image: upload });
-  const image = extractGeneratedImage(response, {
-    outputFormat: request.output_format,
-    size: request.size,
-    quality: request.quality,
-    background: request.background
-  });
-  return {
-    provider: "openai",
-    model: response?.model || request.model,
-    ...image
-  };
+
+  return runWithProviderDeadline(
+    "file",
+    async ({ signal, timeoutMs }) => {
+      const client = await clientFactory(env);
+      let toFile = toFileFactory;
+      if (!toFile) {
+        const sdk = await loadSdk();
+        toFile = sdk.toFile;
+      }
+      if (typeof toFile !== "function") {
+        const error = new Error("OpenAI SDK upload helper is unavailable.");
+        error.code = "IMAGE_PROVIDER_UPLOAD_UNAVAILABLE";
+        throw error;
+      }
+      const upload = await toFile(imageBuffer, filename, { type: mimeType });
+      if (signal.aborted) {
+        throw signal.reason || Object.assign(new Error("Image edit cancelled."), { name: "AbortError" });
+      }
+      const response = await client.images.edit(
+        { ...request, image: upload },
+        {
+          timeout: timeoutMs,
+          maxRetries: 0,
+          signal
+        }
+      );
+      const image = extractGeneratedImage(response, {
+        outputFormat: request.output_format,
+        size: request.size,
+        quality: request.quality,
+        background: request.background
+      });
+      return {
+        provider: "openai",
+        model: response?.model || request.model,
+        ...image
+      };
+    },
+    {
+      env,
+      timeoutMs: getImageProviderTimeoutMs(env),
+      externalSignal: requestSignal,
+      code: "IMAGE_PROVIDER_TIMEOUT",
+      label: "OpenAI image-edit request"
+    }
+  );
 }
 
 module.exports = {
   id: "openai",
   DEFAULT_IMAGE_MODEL,
+  DEFAULT_IMAGE_PROVIDER_TIMEOUT_MS,
   getModel,
+  getImageProviderTimeoutMs,
   getImageModel,
   isConfigured,
   normalizeDetail,
