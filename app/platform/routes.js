@@ -8,6 +8,16 @@ const {
   publicVaultAsset
 } = require("./projects");
 const { writeAuditEvent } = require("./audit");
+const {
+  listTools,
+  callReadOnlyTool,
+  publicMcpStatus
+} = require("./mcp-client");
+const {
+  getSandboxConfig,
+  submitCodingJob,
+  publicSandboxStatus
+} = require("./sandbox-client");
 
 function validUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
@@ -18,6 +28,44 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
   const router = express.Router();
 
   router.get("/catalog", (req, res) => res.json(publicPlatformCatalog(env)));
+
+  router.get("/mcp/status", (req, res) => {
+    return res.json(publicMcpStatus(env));
+  });
+
+  router.get("/mcp/tools", async (req, res) => {
+    try {
+      const tools = await listTools({ env });
+      return res.json({
+        tools: tools.map((tool) => ({
+          name: String(tool?.name || "").slice(0, 160),
+          description: String(tool?.description || "").slice(0, 1000),
+          readOnlyAllowed: String(env.UNBOUND_MCP_READ_ONLY_TOOLS || "")
+            .split(",")
+            .map((item) => item.trim())
+            .includes(String(tool?.name || ""))
+        })).filter((tool) => tool.name)
+      });
+    } catch (error) {
+      return res.status(error?.code === "MCP_GATEWAY_NOT_CONFIGURED" ? 503 : (Number(error?.statusCode) || 502)).json({
+        error: error?.message || "Could not load MCP tools.",
+        code: error?.code || "MCP_TOOLS_FAILED"
+      });
+    }
+  });
+
+  router.post("/mcp/tools/:name/call", async (req, res) => {
+    try {
+      const result = await callReadOnlyTool(req.params.name, req.body?.arguments || {}, { env });
+      await writeAuditEvent(getPool(), req.user.id, "mcp.tool.read", { tool: req.params.name });
+      return res.json({ result });
+    } catch (error) {
+      return res.status(Number(error?.statusCode) || (error?.code === "MCP_GATEWAY_NOT_CONFIGURED" ? 503 : 502)).json({
+        error: error?.message || "MCP tool call failed.",
+        code: error?.code || "MCP_TOOL_CALL_FAILED"
+      });
+    }
+  });
 
   router.get("/projects", async (req, res) => {
     try {
@@ -150,6 +198,10 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
     }
   });
 
+  router.get("/coding/status", (req, res) => {
+    return res.json(publicSandboxStatus(env));
+  });
+
   router.get("/coding/jobs", async (req, res) => {
     try {
       const result = await getPool().query(
@@ -170,9 +222,10 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
   router.post("/coding/jobs", async (req, res) => {
     const objective = String(req.body?.objective || "").trim().slice(0, 8000);
     if (!objective) return res.status(400).json({ error: "Coding objective is required." });
-    const sandboxConfigured = Boolean(String(env.UNBOUND_CODE_SANDBOX_URL || "").trim());
+    const sandbox = getSandboxConfig(env);
     const id = crypto.randomUUID();
-    const status = sandboxConfigured ? "queued" : "blocked_configuration";
+    let status = sandbox.configured ? "queued" : "blocked_configuration";
+    let providerJobId = null;
     try {
       const pool = getPool();
       await pool.query(
@@ -180,11 +233,51 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
          VALUES ($1::uuid, $2, $3, $4, NOW(), NOW())`,
         [id, req.user.id, objective, status]
       );
+
+      if (sandbox.configured) {
+        try {
+          const submitted = await submitCodingJob({
+            objective,
+            userId: req.user.id,
+            env
+          });
+          providerJobId = submitted.providerJobId;
+          status = ["queued", "running", "completed", "failed", "cancelled"].includes(submitted.status)
+            ? submitted.status
+            : "queued";
+          await pool.query(
+            `UPDATE coding_workspace_jobs
+             SET status = $1, provider_job_id = $2, updated_at = NOW()
+             WHERE id = $3::uuid AND user_id = $4`,
+            [status, providerJobId, id, req.user.id]
+          );
+        } catch (sandboxError) {
+          status = "failed";
+          await pool.query(
+            `UPDATE coding_workspace_jobs
+             SET status = 'failed', updated_at = NOW(), completed_at = NOW()
+             WHERE id = $1::uuid AND user_id = $2`,
+            [id, req.user.id]
+          );
+          await writeAuditEvent(pool, req.user.id, "coding.job.submit_failed", {
+            jobId: id,
+            code: sandboxError?.code || "CODE_SANDBOX_REQUEST_FAILED"
+          });
+          return res.status(Number(sandboxError?.statusCode) || 502).json({
+            error: sandboxError?.message || "Coding sandbox submission failed.",
+            code: sandboxError?.code || "CODE_SANDBOX_REQUEST_FAILED",
+            job: { id, objective, status }
+          });
+        }
+      }
+
       await writeAuditEvent(pool, req.user.id, "coding.job.create", { jobId: id, status });
       return res.status(202).json({
-        job: { id, objective, status },
-        sandboxConfigured,
-        note: sandboxConfigured ? "Coding workspace job queued." : "A sandbox provider must be connected before code can execute outside the main app server."
+        job: { id, objective, status, providerJobId },
+        sandboxConfigured: sandbox.configured,
+        note: sandbox.configured
+          ? "Coding workspace job submitted to the isolated sandbox provider."
+          : "A sandbox provider must be connected before code can execute outside the main app server."
       });
     } catch (error) {
       console.error("UNBOUND CODING JOB CREATE ERROR:", error);
