@@ -98,13 +98,15 @@ function isProviderBulkheadError(error) {
   return /^AI_PROVIDER_BULKHEAD_/.test(String(error?.code || ""));
 }
 
-function requestCancelledError(providerId) {
-  return bulkheadError(
+function requestCancelledError(providerId, reason = null) {
+  const error = bulkheadError(
     "AI_REQUEST_ABORTED",
     "AI request was cancelled before a provider slot became available.",
     providerId,
     499
   );
+  if (reason) error.cause = reason;
+  return error;
 }
 
 function cleanupQueuedItem(item) {
@@ -152,7 +154,7 @@ async function acquireProviderBulkheadSlot(providerId, {
   const policy = getProviderBulkheadPolicy(id, env);
 
   if (signal?.aborted) {
-    throw requestCancelledError(id);
+    throw requestCancelledError(id, signal.reason || null);
   }
 
   if (state.active < policy.maxConcurrent) {
@@ -188,7 +190,7 @@ async function acquireProviderBulkheadSlot(providerId, {
       if (index >= 0) state.queue.splice(index, 1);
       cleanupQueuedItem(item);
       state.queueCancellations += 1;
-      reject(requestCancelledError(id));
+      reject(requestCancelledError(id, signal?.reason || null));
     };
 
     item.timer = setTimeout(() => {
