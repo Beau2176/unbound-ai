@@ -47,8 +47,10 @@ function providerCatalog(env = process.env) {
       defaultEffort: "high",
       defaultModel: "claude-sonnet-5",
       adaptiveThinking: true,
-      research: false,
-      adapterState: "active-sonnet-5-streaming-adaptive-thinking"
+      research: true,
+      researchTool: "web_search_20260318",
+      researchDirectOnly: true,
+      adapterState: "active-sonnet-5-streaming-adaptive-thinking-research"
     },
     {
       id: "google",
