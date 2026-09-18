@@ -16,8 +16,8 @@ function main() {
     ["free", "premium", "ultra", "max"]
   );
   assert.strictEqual(PLAN_DEFINITIONS.free.priceMonthlyUsd, 0);
-  assert.strictEqual(PLAN_DEFINITIONS.premium.priceMonthlyUsd, 49.99);
-  assert.strictEqual(PLAN_DEFINITIONS.ultra.priceMonthlyUsd, 129.99);
+  assert.strictEqual(PLAN_DEFINITIONS.premium.priceMonthlyUsd, 29.99);
+  assert.strictEqual(PLAN_DEFINITIONS.ultra.priceMonthlyUsd, 99.99);
   assert.ok(PLAN_DEFINITIONS.free.rank < PLAN_DEFINITIONS.premium.rank);
   assert.strictEqual(PLAN_DEFINITIONS.max.priceMonthlyUsd, 199.99);
   assert.strictEqual(PLAN_DEFINITIONS.max.commercialState, "future");

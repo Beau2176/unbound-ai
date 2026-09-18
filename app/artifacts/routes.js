@@ -19,6 +19,9 @@ const MAX_EXPORT_BYTES = 20 * 1024 * 1024;
 
 function safeArtifactError(error) {
   const code = String(error?.code || "");
+  if (code === "USAGE_MONTHLY_LIMIT_REACHED") {
+    return { statusCode: Number(error?.statusCode) || 429, code, message: error?.publicMessage || error?.message || "Monthly usage allowance reached." };
+  }
   if (code === "AI_PROVIDER_NOT_CONFIGURED") {
     return { statusCode: 503, code, message: "Artifact planning is temporarily unavailable because the AI provider is not configured." };
   }
@@ -70,7 +73,8 @@ function buildPlannerInput(request) {
 
 function createArtifactRouter({
   recordUsageEvent = null,
-  estimateProviderCostMicros = null
+  estimateProviderCostMicros = null,
+  assertUsageBudget = null
 } = {}) {
   const router = express.Router();
   router.use(express.json({ limit: ARTIFACT_JSON_LIMIT, type: "application/json" }));
@@ -81,6 +85,9 @@ function createArtifactRouter({
 
   router.post("/plan", async (req, res) => {
     try {
+      if (typeof assertUsageBudget === "function") {
+        await assertUsageBudget({ userId: req.user?.id || null, category: "artifact" });
+      }
       const request = normalizePlanRequest(req.body);
       const ai = getGatewayStatus();
       if (!ai.configured) {

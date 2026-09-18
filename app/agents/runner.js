@@ -188,6 +188,7 @@ async function executeAgentRun({
   resolveChatModelImpl = resolveChatModel,
   recordUsageEvent = null,
   estimateProviderCostMicros = null,
+  assertUsageBudget = null,
   env = process.env
 } = {}) {
   if (!pool || !run) return null;
@@ -231,6 +232,10 @@ async function executeAgentRun({
     if (await isAgentRunCancelled(pool, run.id)) {
       await markAgentRunCancelled(pool, run.id);
       return { status: "cancelled", completedSteps };
+    }
+
+    if (typeof assertUsageBudget === "function") {
+      await assertUsageBudget({ userId: run.user_id, category: "agent" });
     }
 
     const prompt = buildAgentStepPrompt({
@@ -346,7 +351,9 @@ async function processNextAgentRun(options = {}) {
       [
         error?.code === "AGENT_PROVIDER_NOT_CONFIGURED"
           ? "The AI provider is not configured for Agent runs."
-          : "This Agent run failed. Try again.",
+          : error?.code === "USAGE_MONTHLY_LIMIT_REACHED"
+            ? error.publicMessage || error.message || "Monthly usage allowance reached."
+            : "This Agent run failed. Try again.",
         run.id
       ]
     );
@@ -362,6 +369,7 @@ function startAgentWorker({
   isDatabaseReady = () => true,
   recordUsageEvent = null,
   estimateProviderCostMicros = null,
+  assertUsageBudget = null,
   env = process.env,
   onError = console.error
 } = {}) {
@@ -380,7 +388,8 @@ function startAgentWorker({
       await processNextAgentRun({
         getPool,
         recordUsageEvent,
-        estimateProviderCostMicros
+        estimateProviderCostMicros,
+        assertUsageBudget
       });
     } catch (error) {
       onError("UNBOUND AI AGENT WORKER ERROR:", error);

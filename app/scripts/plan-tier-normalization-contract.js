@@ -26,8 +26,8 @@ assert.strictEqual(LEGACY_PLAN_ALIASES.top, "ultra");
 assert.strictEqual(normalizePlanTier("top"), "ultra");
 assert.strictEqual(normalizePlanTier(" TOP "), "ultra");
 assert.strictEqual(getPlanDefinition("top").id, "ultra");
-assert.strictEqual(getPlanDefinition("premium").priceMonthlyUsd, 49.99);
-assert.strictEqual(getPlanDefinition("ultra").priceMonthlyUsd, 129.99);
+assert.strictEqual(getPlanDefinition("premium").priceMonthlyUsd, 29.99);
+assert.strictEqual(getPlanDefinition("ultra").priceMonthlyUsd, 99.99);
 assert.strictEqual(getPlanDefinition("max").priceMonthlyUsd, 199.99);
 assert.strictEqual(getPlanDefinition("max").commercialState, "future");
 

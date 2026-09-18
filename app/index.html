@@ -1655,8 +1655,8 @@
         </div>
         <div id="billingActions" class="access-age-actions">
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button id="billingPremiumButton" class="auth-submit" type="button" hidden>PREMIUM · $49.99</button>
-            <button id="billingUltraButton" class="auth-submit" type="button" hidden>ULTRA · $129.99</button>
+            <button id="billingPremiumButton" class="auth-submit" type="button" hidden>PREMIUM · $29.99</button>
+            <button id="billingUltraButton" class="auth-submit" type="button" hidden>ULTRA · $99.99</button>
             <button id="billingMaxButton" class="auth-submit secondary" type="button" disabled>MAX · $199.99 · COMING</button>
             <button id="billingPortalButton" class="auth-submit secondary" type="button" hidden>MANAGE BILLING</button>
           </div>
@@ -3467,10 +3467,10 @@
       billingActions.hidden = false;
       billingPremiumButton.hidden = !canCheckout("premium");
       billingPremiumButton.disabled = !canCheckout("premium");
-      billingPremiumButton.textContent = "PREMIUM · $49.99";
+      billingPremiumButton.textContent = "PREMIUM · $29.99";
       billingUltraButton.hidden = !canCheckout("ultra");
       billingUltraButton.disabled = !canCheckout("ultra");
-      billingUltraButton.textContent = "ULTRA · $129.99";
+      billingUltraButton.textContent = "ULTRA · $99.99";
       billingMaxButton.hidden = false;
       billingMaxButton.disabled = !canCheckout("max");
       billingMaxButton.textContent = paidPlans.includes("max")
