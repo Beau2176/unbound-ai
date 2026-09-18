@@ -123,6 +123,7 @@ async function generateChat({
   const response = await fetchImpl(endpoint, {
     method: "POST",
     headers: requestHeaders(),
+    redirect: "error",
     body: JSON.stringify(body)
   });
   if (!response.ok) {
@@ -189,6 +190,7 @@ async function streamChat({
       ...requestHeaders(),
       accept: "text/event-stream"
     },
+    redirect: "error",
     body: JSON.stringify(body)
   });
 
