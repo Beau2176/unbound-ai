@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#050913" />
+  <title>UNBOUND AI — Artifact Studio</title>
+  <style>
+    :root { color-scheme:dark; --bg:#050913; --panel:rgba(7,14,27,.94); --soft:rgba(11,20,36,.9); --text:#f7fbff; --muted:#aab8c9; --blue:#6bc1ff; --gold:#ffad43; --success:#65e8a4; --danger:#ff9b9b; --line:rgba(107,193,255,.27); }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--text); background:linear-gradient(180deg,rgba(2,6,14,.22),rgba(2,6,14,.94)),url("/unbound-cosmic.png") center top/cover fixed no-repeat,var(--bg); }
+    button,input,textarea,select { font:inherit; }
+    :where(button,input,textarea,select,a[href]):focus-visible { outline:3px solid #ffd297; outline-offset:3px; }
+    .topbar { position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px clamp(14px,4vw,36px); border-bottom:1px solid rgba(255,255,255,.08); background:rgba(3,8,16,.86); backdrop-filter:blur(16px); }
+    .brand { font-weight:950; letter-spacing:.14em; }
+    .brand span { color:#42a5ff; }
+    .nav { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+    .nav a { padding:8px 11px; border:1px solid var(--line); border-radius:10px; background:rgba(66,165,255,.08); color:#e8f6ff; text-decoration:none; font-size:12px; font-weight:850; }
+    main { width:min(1120px,calc(100% - 24px)); margin:0 auto; padding:34px 0 70px; }
+    .eyebrow { color:var(--gold); font-size:12px; font-weight:900; letter-spacing:.12em; }
+    h1 { margin:8px 0; font-size:clamp(32px,6vw,56px); line-height:1.04; }
+    .hero p { max-width:820px; color:#c6d5e3; line-height:1.65; }
+    .grid { display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:18px; align-items:start; margin-top:22px; }
+    .card { border:1px solid var(--line); border-radius:20px; background:var(--panel); box-shadow:0 24px 70px rgba(0,0,0,.4); padding:clamp(17px,3vw,27px); min-width:0; }
+    .field { display:grid; gap:7px; margin-bottom:15px; }
+    label { font-size:12px; font-weight:850; color:#eaf6ff; }
+    input,textarea,select { width:100%; border:1px solid rgba(107,193,255,.28); border-radius:12px; background:rgba(0,0,0,.25); color:var(--text); padding:11px 12px; }
+    textarea { min-height:210px; resize:vertical; line-height:1.5; }
+    .help,.status { color:var(--muted); font-size:12px; line-height:1.55; }
+    .status { min-height:22px; margin:12px 0; }
+    .status[data-kind="success"] { color:var(--success); }
+    .status[data-kind="error"] { color:#ffb0b0; }
+    .actions { display:flex; gap:9px; flex-wrap:wrap; }
+    button { min-height:43px; padding:10px 15px; border-radius:11px; cursor:pointer; font-weight:900; letter-spacing:.03em; }
+    .primary { border:1px solid rgba(255,173,67,.5); background:linear-gradient(135deg,rgba(255,173,67,.92),rgba(66,165,255,.86)); color:#07111c; }
+    .secondary { border:1px solid var(--line); background:rgba(66,165,255,.08); color:#e8f6ff; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .preview { min-height:420px; max-height:70vh; overflow:auto; padding:16px; border:1px solid rgba(255,255,255,.08); border-radius:14px; background:rgba(0,0,0,.24); }
+    .preview h2,.preview h3 { margin:0 0 10px; }
+    .preview section { padding:12px 0; border-bottom:1px solid rgba(255,255,255,.07); }
+    .preview ul { padding-left:20px; }
+    .sheet { overflow:auto; margin:12px 0; }
+    table { border-collapse:collapse; min-width:100%; font-size:12px; }
+    th,td { border:1px solid rgba(255,255,255,.12); padding:7px 8px; text-align:left; vertical-align:top; max-width:240px; overflow-wrap:anywhere; }
+    th { background:rgba(66,165,255,.12); }
+    .slide { margin:0 0 12px; padding:14px; border:1px solid rgba(255,255,255,.1); border-radius:12px; background:rgba(255,255,255,.035); }
+    .badges { display:flex; gap:7px; flex-wrap:wrap; margin-top:12px; }
+    .badge { padding:5px 8px; border-radius:999px; background:rgba(107,193,255,.1); border:1px solid var(--line); color:#d9efff; font-size:10px; font-weight:850; }
+    @media (max-width:760px) {
+      .topbar { align-items:flex-start; }
+      .grid { grid-template-columns:1fr; }
+      main { width:min(100% - 16px,1120px); padding-top:24px; }
+      .card { border-radius:16px; padding:16px; }
+      textarea { min-height:170px; }
+      .preview { min-height:300px; max-height:none; }
+      .actions button { flex:1 1 150px; }
+      .nav a { font-size:11px; padding:7px 9px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span>UNBOUND</span> AI</div>
+    <nav class="nav" aria-label="Product navigation">
+      <a href="/">CHAT</a>
+      <a href="/files.html">FILES</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="eyebrow">ARTIFACT STUDIO</div>
+      <h1>Create real Office files.</h1>
+      <p>Describe what you need. UNBOUND plans a bounded document, spreadsheet, or presentation, lets you preview the structure, then exports a real DOCX, XLSX, or PPTX file. Generated binaries are returned directly and are not stored by Artifact Studio.</p>
+      <div class="badges">
+        <span class="badge">DOCX</span><span class="badge">XLSX</span><span class="badge">PPTX</span><span class="badge">NO MACROS</span><span class="badge">PREMIUM+</span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <form id="artifactForm" class="card">
+        <div class="field">
+          <label for="type">ARTIFACT TYPE</label>
+          <select id="type" required>
+            <option value="document">DOCUMENT (.DOCX)</option>
+            <option value="spreadsheet">SPREADSHEET (.XLSX)</option>
+            <option value="presentation">PRESENTATION (.PPTX)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="title">TITLE <span class="help">(optional)</span></label>
+          <input id="title" maxlength="180" placeholder="UNBOUND project plan" />
+        </div>
+        <div class="field">
+          <label for="prompt">WHAT SHOULD UNBOUND CREATE?</label>
+          <textarea id="prompt" maxlength="12000" required placeholder="Create a detailed project kickoff document with goals, milestones, risks, owners, and next steps..."></textarea>
+          <div class="help">Be specific about audience, sections, data, slide count, tone, or columns. UNBOUND creates structure first so you can review it before export.</div>
+        </div>
+        <div id="status" class="status" role="status" aria-live="polite">Checking Artifact Studio access…</div>
+        <div class="actions">
+          <button id="planButton" class="primary" type="submit" disabled>CREATE PLAN</button>
+          <button id="exportButton" class="secondary" type="button" disabled>EXPORT FILE</button>
+          <button id="clearButton" class="secondary" type="button">CLEAR</button>
+        </div>
+      </form>
+
+      <section class="card" aria-labelledby="previewTitle">
+        <h2 id="previewTitle">Preview</h2>
+        <div id="preview" class="preview"><div class="help">Your artifact structure will appear here before export.</div></div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById("artifactForm");
+    const typeInput = document.getElementById("type");
+    const titleInput = document.getElementById("title");
+    const promptInput = document.getElementById("prompt");
+    const statusEl = document.getElementById("status");
+    const planButton = document.getElementById("planButton");
+    const exportButton = document.getElementById("exportButton");
+    const clearButton = document.getElementById("clearButton");
+    const preview = document.getElementById("preview");
+    let currentSpec = null;
+    let ready = false;
+    let busy = false;
+
+    function setStatus(message, kind = "") {
+      statusEl.textContent = message;
+      statusEl.dataset.kind = kind;
+    }
+
+    function refreshControls() {
+      planButton.disabled = !ready || busy || !promptInput.value.trim();
+      exportButton.disabled = !ready || busy || !currentSpec;
+      typeInput.disabled = !ready || busy;
+      titleInput.disabled = !ready || busy;
+      promptInput.disabled = !ready || busy;
+    }
+
+    function addText(tag, text, parent, className = "") {
+      const node = document.createElement(tag);
+      node.textContent = text;
+      if (className) node.className = className;
+      parent.appendChild(node);
+      return node;
+    }
+
+    function renderDocument(spec) {
+      addText("h2", spec.title, preview);
+      for (const section of spec.sections || []) {
+        const box = document.createElement("section");
+        if (section.heading) addText("h3", section.heading, box);
+        for (const paragraph of section.paragraphs || []) addText("p", paragraph, box);
+        if ((section.bullets || []).length) {
+          const ul = document.createElement("ul");
+          for (const bullet of section.bullets) addText("li", bullet, ul);
+          box.appendChild(ul);
+        }
+        preview.appendChild(box);
+      }
+    }
+
+    function renderSpreadsheet(spec) {
+      addText("h2", spec.title, preview);
+      for (const sheet of spec.sheets || []) {
+        addText("h3", sheet.name, preview);
+        const wrap = document.createElement("div"); wrap.className = "sheet";
+        const table = document.createElement("table");
+        if ((sheet.columns || []).length) {
+          const tr = document.createElement("tr");
+          for (const column of sheet.columns) addText("th", String(column), tr);
+          table.appendChild(tr);
+        }
+        for (const row of (sheet.rows || []).slice(0, 60)) {
+          const tr = document.createElement("tr");
+          for (const cell of row) addText("td", String(cell ?? ""), tr);
+          table.appendChild(tr);
+        }
+        wrap.appendChild(table); preview.appendChild(wrap);
+        if ((sheet.rows || []).length > 60) addText("div", "Preview limited to the first 60 rows.", preview, "help");
+      }
+    }
+
+    function renderPresentation(spec) {
+      addText("h2", spec.title, preview);
+      if (spec.subtitle) addText("p", spec.subtitle, preview, "help");
+      for (const slide of spec.slides || []) {
+        const box = document.createElement("div"); box.className = "slide";
+        addText("h3", slide.title, box);
+        if ((slide.bullets || []).length) {
+          const ul = document.createElement("ul");
+          for (const bullet of slide.bullets) addText("li", bullet, ul);
+          box.appendChild(ul);
+        }
+        preview.appendChild(box);
+      }
+    }
+
+    function renderSpec(spec) {
+      preview.innerHTML = "";
+      if (spec.type === "document") renderDocument(spec);
+      else if (spec.type === "spreadsheet") renderSpreadsheet(spec);
+      else renderPresentation(spec);
+    }
+
+    async function apiJson(url, options = {}) {
+      const response = await fetch(url, {
+        credentials: "same-origin",
+        ...options,
+        headers: { "Content-Type":"application/json", Accept:"application/json", ...(options.headers || {}) }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Request failed.");
+      return payload;
+    }
+
+    async function loadStatus() {
+      try {
+        const response = await fetch("/api/artifacts/status", { credentials:"same-origin", headers:{ Accept:"application/json" } });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          if (response.status === 401) throw new Error("Sign in from the main chat before using Artifact Studio.");
+          if (response.status === 403) throw new Error("Artifact Studio requires Premium or higher.");
+          throw new Error(payload.error || "Artifact Studio is not available.");
+        }
+        if (!payload.configured) throw new Error("Artifact Studio is not configured.");
+        if (!payload.plannerConfigured) throw new Error("Artifact export is installed, but the AI planner is not connected to an AI provider yet.");
+        ready = true;
+        setStatus("Ready. Create a plan, review it, then export the Office file.", "success");
+      } catch (error) {
+        ready = false;
+        setStatus(error.message, "error");
+      }
+      refreshControls();
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!ready || busy) return;
+      busy = true; currentSpec = null; preview.innerHTML = "";
+      setStatus("UNBOUND is structuring your artifact…");
+      refreshControls();
+      try {
+        const payload = await apiJson("/api/artifacts/plan", {
+          method:"POST",
+          body:JSON.stringify({
+            type:typeInput.value,
+            title:titleInput.value.trim(),
+            prompt:promptInput.value.trim()
+          })
+        });
+        currentSpec = payload.spec;
+        renderSpec(currentSpec);
+        setStatus("Plan ready. Review the preview, then export the file.", "success");
+      } catch (error) {
+        setStatus(error.message, "error");
+        preview.innerHTML = '<div class="help">No artifact plan is available yet.</div>';
+      } finally {
+        busy = false; refreshControls();
+      }
+    });
+
+    exportButton.addEventListener("click", async () => {
+      if (!currentSpec || busy) return;
+      busy = true; setStatus("Building the Office file…"); refreshControls();
+      try {
+        const response = await fetch("/api/artifacts/export", {
+          method:"POST",
+          credentials:"same-origin",
+          headers:{ "Content-Type":"application/json" },
+          body:JSON.stringify({ spec: currentSpec })
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload.error || "Artifact export failed.");
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get("Content-Disposition") || "";
+        const match = disposition.match(/filename="([^"]+)"/i);
+        const filename = match?.[1] || "unbound-artifact";
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url; link.download = filename;
+        document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+        setStatus("Export complete: " + filename, "success");
+      } catch (error) {
+        setStatus(error.message, "error");
+      } finally {
+        busy = false; refreshControls();
+      }
+    });
+
+    clearButton.addEventListener("click", () => {
+      if (busy) return;
+      form.reset(); currentSpec = null;
+      preview.innerHTML = '<div class="help">Your artifact structure will appear here before export.</div>';
+      setStatus(ready ? "Ready." : "Checking Artifact Studio access…");
+      refreshControls();
+    });
+
+    promptInput.addEventListener("input", refreshControls);
+    typeInput.addEventListener("change", () => { currentSpec = null; refreshControls(); });
+    loadStatus();
+  </script>
+</body>
+</html>
