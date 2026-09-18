@@ -37,6 +37,7 @@ The exact prices are enforced server-side in the adapter:
 
 - Premium: `29.99`
 - Ultra: `99.99`
+- Max: `199.99` when `UNBOUND_MAX_LAUNCH_ENABLED=true`
 
 The browser cannot choose an arbitrary price. Both paid pay-page references plus shared credentials/attestations must be present before the Segpay adapter reports fully configured.
 
