@@ -39,7 +39,7 @@ function integrateDiagnosticsServerSource(serverSource) {
   source = replaceExactlyOnce(
     source,
     resilienceMarker,
-    `${resilienceMarker}\nconst diagnosticsMonitor = createDiagnosticsMonitor({\n  rootDir: __dirname,\n  stateProvider: () => ({\n    databaseConfigured: Boolean(process.env.DATABASE_URL),\n    databaseReady,\n    databaseError,\n    shuttingDown,\n    aiStatus: getGatewayStatus(),\n    selfHeal: getSelfHealSupervisor()?.snapshot?.() || null\n  })\n});\ndiagnosticsMonitor.start();`,
+    `${resilienceMarker}\nconst diagnosticsMonitor = createDiagnosticsMonitor({\n  rootDir: __dirname,\n  stateProvider: () => ({\n    databaseConfigured: Boolean(process.env.DATABASE_URL),\n    databaseReady,\n    databaseError,\n    shuttingDown,\n    aiStatus: getGatewayStatus({ includeTelemetry: true }),\n    selfHeal: getSelfHealSupervisor()?.snapshot?.() || null\n  })\n});\ndiagnosticsMonitor.start();`,
     "diagnostics-monitor"
   );
 
