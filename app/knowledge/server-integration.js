@@ -59,11 +59,11 @@ function integrateAdaptiveKnowledgeServerSource(serverSource) {
     "knowledge-chat-load"
   );
 
-  const memoryInstructionArray = `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, styleInstructions, memoryInstructions, depthInstructions, modeInstructions]`;
+  const memoryInstructionArray = `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, projectContextInstructions, styleInstructions, memoryInstructions, depthInstructions, modeInstructions]`;
   source = replaceExpectedCount(
     source,
     memoryInstructionArray,
-    `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, styleInstructions, memoryInstructions, adaptiveKnowledgeInstructions, depthInstructions, modeInstructions]`,
+    `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, projectContextInstructions, styleInstructions, memoryInstructions, adaptiveKnowledgeInstructions, depthInstructions, modeInstructions]`,
     2,
     "knowledge-chat-instructions"
   );

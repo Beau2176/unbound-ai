@@ -54,11 +54,11 @@ function integrateRuntimeCapabilitiesServerSource(serverSource) {
     "runtime-capability-chat-load"
   );
 
-  const instructionArray = `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, styleInstructions, memoryInstructions, adaptiveKnowledgeInstructions, depthInstructions, modeInstructions]`;
+  const instructionArray = `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, projectContextInstructions, styleInstructions, memoryInstructions, adaptiveKnowledgeInstructions, depthInstructions, modeInstructions]`;
   source = replaceExpectedCount(
     source,
     instructionArray,
-    `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, runtimeCapabilityInstructions, styleInstructions, memoryInstructions, adaptiveKnowledgeInstructions, depthInstructions, modeInstructions]`,
+    `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, projectContextInstructions, runtimeCapabilityInstructions, styleInstructions, memoryInstructions, adaptiveKnowledgeInstructions, depthInstructions, modeInstructions]`,
     2,
     "runtime-capability-instructions"
   );

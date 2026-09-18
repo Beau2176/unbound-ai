@@ -27,14 +27,18 @@ function integratePlatformParityServerSource(serverSource) {
     source.includes('createPlatformRouter({') &&
     source.includes("/api/platform") &&
     source.includes("UNBOUND_PLATFORM_PARITY_ENABLED") &&
-    source.includes("CREATE TABLE IF NOT EXISTS ai_projects")
+    source.includes("CREATE TABLE IF NOT EXISTS ai_projects") &&
+    source.includes("CREATE TABLE IF NOT EXISTS project_memories")
   ) return source;
 
   const futureImport = 'const { createFutureCoreRouter } = require("./orchestration/routes");';
   source = replaceExactlyOnce(
     source,
     futureImport,
-    futureImport + '\nconst { createPlatformRouter } = require("./platform/routes");',
+    futureImport +
+      '\nconst { createPlatformRouter } = require("./platform/routes");' +
+      '\nconst { startFutureCoreBackgroundWorker } = require("./orchestration/background-worker");' +
+      '\nconst { startBackgroundAgentScheduler } = require("./platform/background-agent-scheduler");',
     "platform-import"
   );
 
@@ -117,10 +121,90 @@ function integratePlatformParityServerSource(serverSource) {
     "    );",
     "",
     "    CREATE INDEX IF NOT EXISTS platform_audit_events_user_idx",
-    "      ON platform_audit_events(user_id, created_at DESC, id DESC);"
+    "      ON platform_audit_events(user_id, created_at DESC, id DESC);",
+    "",
+    "    ALTER TABLE future_core_jobs",
+    "      ADD COLUMN IF NOT EXISTS project_id UUID;",
+    "    ALTER TABLE future_core_jobs",
+    "      ADD COLUMN IF NOT EXISTS worker_claim_token UUID;",
+    "    ALTER TABLE future_core_jobs",
+    "      ADD COLUMN IF NOT EXISTS worker_claimed_at TIMESTAMPTZ;",
+    "",
+    "    CREATE INDEX IF NOT EXISTS future_core_jobs_project_idx",
+    "      ON future_core_jobs(user_id, project_id, updated_at DESC);",
+    "    CREATE INDEX IF NOT EXISTS future_core_jobs_worker_claim_idx",
+    "      ON future_core_jobs(status, worker_claimed_at, updated_at);",
+    "",
+    "    CREATE TABLE IF NOT EXISTS project_memories (",
+    "      id BIGSERIAL PRIMARY KEY,",
+    "      project_id UUID NOT NULL REFERENCES ai_projects(id) ON DELETE CASCADE,",
+    "      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,",
+    "      content TEXT NOT NULL,",
+    "      enabled BOOLEAN NOT NULL DEFAULT TRUE,",
+    "      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),",
+    "      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),",
+    "      CONSTRAINT project_memories_content_check CHECK (char_length(content) BETWEEN 1 AND 1200)",
+    "    );",
+    "",
+    "    CREATE INDEX IF NOT EXISTS project_memories_project_idx",
+    "      ON project_memories(user_id, project_id, enabled, updated_at DESC, id DESC);",
+    "",
+    "    CREATE TABLE IF NOT EXISTS background_agent_schedules (",
+    "      id BIGSERIAL PRIMARY KEY,",
+    "      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,",
+    "      project_id UUID REFERENCES ai_projects(id) ON DELETE CASCADE,",
+    "      title TEXT NOT NULL,",
+    "      objective TEXT NOT NULL,",
+    "      recurrence TEXT NOT NULL DEFAULT 'once',",
+    "      interval_count INTEGER NOT NULL DEFAULT 1,",
+    "      allow_research BOOLEAN NOT NULL DEFAULT TRUE,",
+    "      next_run_at TIMESTAMPTZ,",
+    "      last_run_at TIMESTAMPTZ,",
+    "      last_job_id UUID,",
+    "      enabled BOOLEAN NOT NULL DEFAULT TRUE,",
+    "      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),",
+    "      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),",
+    "      CONSTRAINT background_agent_recurrence_check CHECK (recurrence IN ('once','hourly','daily','weekly')),",
+    "      CONSTRAINT background_agent_interval_check CHECK (interval_count BETWEEN 1 AND 365),",
+    "      CONSTRAINT background_agent_objective_check CHECK (char_length(objective) BETWEEN 1 AND 8000)",
+    "    );",
+    "",
+    "    CREATE INDEX IF NOT EXISTS background_agent_schedules_user_idx",
+    "      ON background_agent_schedules(user_id, enabled, next_run_at);",
+    "    CREATE INDEX IF NOT EXISTS background_agent_schedules_due_idx",
+    "      ON background_agent_schedules(next_run_at, id)",
+    "      WHERE enabled = TRUE AND next_run_at IS NOT NULL;"
   ].join("\n");
 
   source = replaceExactlyOnce(source, futureIndex, schemaBlock, "platform-schema");
+
+  const agentWorker = [
+    "startAgentWorker({",
+    "  getPool: () => pool,",
+    "  isDatabaseReady: () => databaseReady,",
+    "  recordUsageEvent,",
+    "  estimateProviderCostMicros",
+    "});"
+  ].join("\n");
+  if (source.includes(agentWorker) && !source.includes("startFutureCoreBackgroundWorker({")) {
+    const backgroundWorkers = [
+      agentWorker,
+      "if (String(process.env.UNBOUND_FUTURE_CORE_BACKGROUND_ENABLED || '').toLowerCase() === 'true') {",
+      "  startFutureCoreBackgroundWorker({",
+      "    getPool: () => pool,",
+      "    isDatabaseReady: () => databaseReady,",
+      "    estimateProviderCostMicros",
+      "  });",
+      "}",
+      "if (String(process.env.UNBOUND_BACKGROUND_AGENT_SCHEDULER_ENABLED || '').toLowerCase() === 'true') {",
+      "  startBackgroundAgentScheduler({",
+      "    getPool: () => pool,",
+      "    isDatabaseReady: () => databaseReady",
+      "  });",
+      "}"
+    ].join("\n");
+    source = replaceExactlyOnce(source, agentWorker, backgroundWorkers, "platform-background-workers");
+  }
 
   const healthRoute = 'app.get("/api/health", (req, res) => {';
   const routeBlock = [

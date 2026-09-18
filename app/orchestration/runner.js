@@ -35,6 +35,7 @@ function buildTaskPrompt(job, task) {
   const prior = completedContext(job);
   return [
     `Parent objective:\n${job.objective}`,
+    job.projectContext ? `Project context:\n${String(job.projectContext).slice(0, 16000)}` : "",
     `Your specialist role: ${specialist.label}. ${specialist.purpose}`,
     `Assigned subtask:\n${task.title}`,
     prior ? `Completed prerequisite work:\n${prior}` : "",

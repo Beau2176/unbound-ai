@@ -18,14 +18,15 @@ const FUTURE_CORE_SCHEMA_SQL = [
   "  ON future_core_jobs(status, updated_at DESC);"
 ].join("\n");
 
-async function saveJob(pool, userId, job) {
+async function saveJob(pool, userId, job, { projectId = job?.projectId || null } = {}) {
   const result = await pool.query(
     `INSERT INTO future_core_jobs (
-       id, user_id, objective, intent, status, snapshot,
+       id, user_id, project_id, objective, intent, status, snapshot,
        created_at, updated_at, completed_at
      )
-     VALUES ($1::uuid, $2, $3, $4, $5, $6::jsonb, $7::timestamptz, $8::timestamptz, $9::timestamptz)
+     VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7::jsonb, $8::timestamptz, $9::timestamptz, $10::timestamptz)
      ON CONFLICT (id) DO UPDATE SET
+       project_id = EXCLUDED.project_id,
        objective = EXCLUDED.objective,
        intent = EXCLUDED.intent,
        status = EXCLUDED.status,
@@ -37,6 +38,7 @@ async function saveJob(pool, userId, job) {
     [
       job.id,
       userId,
+      projectId,
       job.objective,
       job.intent || "general",
       job.status,

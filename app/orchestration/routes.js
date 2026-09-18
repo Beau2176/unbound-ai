@@ -16,6 +16,7 @@ const {
   deleteFinishedJob
 } = require("./persistence");
 const { publicRegistry } = require("./registry");
+const { buildProjectContext } = require("../platform/project-memory");
 
 function validUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
@@ -31,9 +32,9 @@ function createFutureCoreRouter({
 
   router.get("/status", (req, res) => {
     return res.json({
-      staged: true,
+      staged: false,
       enabled: true,
-      version: "v2.0",
+      version: "v2.1",
       registry: publicRegistry()
     });
   });
@@ -68,12 +69,29 @@ function createFutureCoreRouter({
         allowResearch: req.body?.allowResearch !== false,
         allowExternalActions: Boolean(req.body?.allowExternalActions)
       });
+      const pool = getPool();
+      const projectId = req.body?.projectId ? String(req.body.projectId).trim() : null;
+      if (projectId && !validUuid(projectId)) {
+        return res.status(400).json({ error: "Invalid project ID." });
+      }
+      if (projectId) {
+        const project = await pool.query(
+          "SELECT id FROM ai_projects WHERE id = $1::uuid AND user_id = $2 LIMIT 1",
+          [projectId, req.user.id]
+        );
+        if (!project.rows[0]) return res.status(404).json({ error: "Project not found." });
+      }
       const job = createJobState({
         userId: req.user.id,
         plan,
         budget: req.body?.budget || {}
       });
-      await saveJob(getPool(), req.user.id, job);
+      job.projectId = projectId;
+      job.background = Boolean(req.body?.background);
+      if (projectId) {
+        job.projectContext = await buildProjectContext(pool, req.user.id, projectId, job.objective);
+      }
+      await saveJob(pool, req.user.id, job, { projectId });
       return res.status(201).json({ job });
     } catch (error) {
       if (String(error?.code || "").startsWith("FUTURE_CORE_")) {
@@ -102,10 +120,19 @@ function createFutureCoreRouter({
       const pool = getPool();
       const job = await loadJob(pool, req.user.id, req.params.id);
       if (!job) return res.status(404).json({ error: "Future Core job not found." });
+      if (job.background) {
+        return res.status(409).json({
+          error: "This Future Core job is managed by the background worker.",
+          code: "FUTURE_CORE_BACKGROUND_MANAGED"
+        });
+      }
 
+      if (job.projectId) {
+        job.projectContext = await buildProjectContext(pool, req.user.id, job.projectId, job.objective);
+      }
       const executor = executeTaskImpl || createModelTaskExecutor({ estimateProviderCostMicros });
       const result = await runJobWave({ job, executeTaskImpl: executor });
-      await saveJob(pool, req.user.id, job);
+      await saveJob(pool, req.user.id, job, { projectId: job.projectId || null });
       return res.json(result);
     } catch (error) {
       console.error("UNBOUND FUTURE CORE RUN ERROR:", error);

@@ -52,11 +52,11 @@ function integrateActionControlServerSource(serverSource) {
     "action-chat-awareness"
   );
 
-  const instructionArray = `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, runtimeCapabilityInstructions, styleInstructions, memoryInstructions, adaptiveKnowledgeInstructions, depthInstructions, modeInstructions]`;
+  const instructionArray = `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, projectContextInstructions, runtimeCapabilityInstructions, styleInstructions, memoryInstructions, adaptiveKnowledgeInstructions, depthInstructions, modeInstructions]`;
   source = replaceExpectedCount(
     source,
     instructionArray,
-    `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, runtimeCapabilityInstructions, actionCapabilityInstructions, styleInstructions, memoryInstructions, adaptiveKnowledgeInstructions, depthInstructions, modeInstructions]`,
+    `[UNBOUND_SYSTEM_PROMPT, projectMemoryInstructions, projectContextInstructions, runtimeCapabilityInstructions, actionCapabilityInstructions, styleInstructions, memoryInstructions, adaptiveKnowledgeInstructions, depthInstructions, modeInstructions]`,
     2,
     "action-chat-instructions"
   );
