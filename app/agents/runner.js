@@ -204,6 +204,7 @@ async function executeAgentRun({
     productMode: run.research_enabled ? "research" : "standard",
     message: run.objective,
     defaultModel: gateway.model,
+    defaultProvider: gateway.provider,
     enabled: true,
     env
   });
@@ -241,6 +242,7 @@ async function executeAgentRun({
     });
     const result = await generateChatImpl({
       model: modelRoute.model,
+      provider: modelRoute.provider,
       reasoningEffort: run.research_enabled ? "low" : "medium",
       instructions: AGENT_SYSTEM_PROMPT,
       input: [{ role: "user", content: prompt }],
