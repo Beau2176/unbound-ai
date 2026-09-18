@@ -1,6 +1,6 @@
 # UNBOUND AI commercial billing
 
-UNBOUND AI has three customer tiers:
+UNBOUND AI has four customer tiers, with Max staged for future launch:
 
 - **Tier 1 — Free:** $0/month.
 - **Tier 2 — Premium:** **$29.99/month**.
@@ -16,7 +16,7 @@ Premium adds the paid productivity/understanding layer above Free, including web
 
 Ultra includes Premium and adds the advanced tool layer, including image generation/editing, agents, scheduled monitoring, multi-model routing, connected apps, Command Center, and verified-18+ Adult Mode.
 
-Legacy internal/database plan value `top` is accepted only as a backwards-compatibility alias for **Ultra**. New checkout and entitlement responses use `premium` or `ultra`.
+Max inherits all currently launched Ultra capabilities; it is staged as a higher-allowance future tier until additional Max-only capabilities are launched.\n\nLegacy internal/database plan value `top` is accepted only as a backwards-compatibility alias for **Ultra**. New checkout and entitlement responses use `premium`, `ultra`, or launch-enabled `max`.
 
 ## Production Segpay configuration
 
@@ -25,7 +25,7 @@ Set `BILLING_PROVIDER=segpay` only after the merchant setup is ready.
 Required values:
 
 - `SEGPAY_PREMIUM_PAY_PAGE_REF` — hosted pay page for the **$29.99 Premium** recurring package.
-- `SEGPAY_ULTRA_PAY_PAGE_REF` — hosted pay page for the **$99.99 Ultra** recurring package. `SEGPAY_PAY_PAGE_REF` remains a temporary backwards-compatible Ultra alias during migration.
+- `SEGPAY_ULTRA_PAY_PAGE_REF` — hosted pay page for the **$99.99 Ultra** recurring package. `SEGPAY_PAY_PAGE_REF` remains a temporary backwards-compatible Ultra alias during migration.\n- `SEGPAY_MAX_PAY_PAGE_REF` — hosted pay page for the **$199.99 Max** recurring package, required only when Max launch is enabled.
 - `SEGPAY_SIGNING_KEY` — hosted-pay-page HS256 signing key issued by Segpay Merchant Services. Use the string exactly as issued.
 - `SEGPAY_POSTBACK_USERNAME`
 - `SEGPAY_POSTBACK_PASSWORD`
@@ -96,6 +96,23 @@ Lifecycle mapping includes:
 ## Customer portal
 
 Subscription management hands off to Segpay's consumer self-service portal at `https://cs.segpay.com/`. UNBOUND does not put provider customer IDs, account emails, card data, or billing secrets in the returned portal URL.
+
+## Monthly usage guardrails
+
+UNBOUND applies calendar-month usage guardrails before billable AI/tool calls. These are launch defaults, not marketing claims of unlimited use, and can be changed with environment variables after real usage data is available.
+
+Default launch ceilings:
+
+| Plan | Estimated AI compute | Chat events | Web-search calls | File analysis | Artifact plans | Image understanding | Image generate/edit | Voice requests | Agent steps |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Free | $1 | 1,500 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Premium | $8 | 8,000 | 400 | 500 | 300 | 500 | 0 | 500 | 0 |
+| Ultra | $30 | 30,000 | 1,500 | 2,500 | 1,500 | 2,000 | 100 | 1,500 | 400 |
+| Max | $70 | 75,000 | 3,500 | 6,000 | 4,000 | 5,000 | 300 | 3,500 | 1,200 |
+
+The compute ceiling uses recorded provider-cost estimates where pricing is configured. Category ceilings provide a second hard stop for operations whose exact provider cost may not be available at request time. Limits reset at the start of each UTC calendar month. The account usage endpoint is `/api/account/usage-budget`.
+
+All defaults are environment-overridable using `UNBOUND_USAGE_<PLAN>_<FIELD>`, for example `UNBOUND_USAGE_PREMIUM_ESTIMATED_COST_USD` and `UNBOUND_USAGE_ULTRA_WEB_SEARCH_CALLS`.
 
 ## Remaining external launch work
 
