@@ -16,7 +16,8 @@ const {
   normalizeAgentScheduleInput,
   publicAgentSchedule
 } = require("./background-agent-scheduler");
-const { publicMcpStatus, listMcpTools, callMcpTool } = require("../connections/mcp-client");\nconst {
+const { publicMcpStatus, listMcpTools, callMcpTool } = require("../connections/mcp-client");
+const {
   publicA2AStatus,
   getAgentCard,
   publicAgentCard,
