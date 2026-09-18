@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v0.96";
+const INTEGRATION_VERSION = "v0.97";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const first = source.indexOf(marker);
@@ -68,7 +68,7 @@ function integrateAdaptiveKnowledgeServerSource(serverSource) {
     "knowledge-chat-instructions"
   );
 
-  const standardAiCall = `    const aiResponse = await generateChat({`;
+  const standardAiCall = `    const aiResponse = await runWithRequestCancellation(\n      req,\n      res,\n      (signal) => generateChat({`;
   source = replaceExactlyOnce(
     source,
     standardAiCall,
