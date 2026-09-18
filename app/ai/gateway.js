@@ -17,6 +17,11 @@ const {
 const {
   getProviderDeadlinePolicy
 } = require("./provider-deadline");
+const {
+  runWithProviderBulkhead,
+  getProviderBulkheadSnapshots,
+  isProviderBulkheadError
+} = require("./provider-bulkhead");
 
 const providers = new Map([
   [openai.id, openai],
@@ -379,6 +384,7 @@ function getGatewayStatus({ includeTelemetry = false } = {}) {
       }),
       ...(includeTelemetry ? { telemetry: getProviderTelemetrySnapshot() } : {}),
       deadlines: getProviderDeadlinePolicy(),
+      bulkheads: {},
       fileAnalysis: false,
       error: "unsupported-provider"
     };
@@ -398,6 +404,11 @@ function getGatewayStatus({ includeTelemetry = false } = {}) {
     primaryProviderId: provider.id,
     fallbackProviderId: fallbackRoute.provider?.id || null
   });
+  const bulkheads = getProviderBulkheadSnapshots([
+    provider.id,
+    fallbackRoute.provider?.id,
+    researchRoute.provider?.id
+  ]);
 
   return {
     provider: provider.id,
@@ -420,55 +431,60 @@ function getGatewayStatus({ includeTelemetry = false } = {}) {
     circuitBreaker,
     ...(includeTelemetry ? { telemetry: getProviderTelemetrySnapshot() } : {}),
     deadlines: getProviderDeadlinePolicy(),
+    bulkheads,
     fileAnalysis: providerSupportsFileAnalysis(provider),
     error: provider.isConfigured() ? null : "provider-not-configured"
   };
 }
 
 async function generateWithProvider(provider, options, role = "primary") {
-  const attempt = beginProviderAttempt({
-    providerId: provider?.id,
-    role
-  });
-  try {
-    const result = await provider.generateChat(options);
-    finishProviderAttempt(attempt, { ok: true });
-    return result;
-  } catch (error) {
-    finishProviderAttempt(attempt, {
-      ok: false,
-      retryable: isRetryableProviderError(error),
-      errorCode: nestedErrorCode(error)
+  return runWithProviderBulkhead(provider?.id, async () => {
+    const attempt = beginProviderAttempt({
+      providerId: provider?.id,
+      role
     });
-    throw error;
-  }
+    try {
+      const result = await provider.generateChat(options);
+      finishProviderAttempt(attempt, { ok: true });
+      return result;
+    } catch (error) {
+      finishProviderAttempt(attempt, {
+        ok: false,
+        retryable: isRetryableProviderError(error),
+        errorCode: nestedErrorCode(error)
+      });
+      throw error;
+    }
+  });
 }
 
 async function streamWithProvider(provider, options, role = "primary") {
-  const attempt = beginProviderAttempt({
-    providerId: provider?.id,
-    role
-  });
-  try {
-    let result;
-    if (typeof provider.streamChat === "function") {
-      result = await provider.streamChat(options);
-    } else {
-      result = await provider.generateChat(options);
-      if (options.onDelta && result.reply) {
-        await options.onDelta(result.reply);
-      }
-    }
-    finishProviderAttempt(attempt, { ok: true });
-    return result;
-  } catch (error) {
-    finishProviderAttempt(attempt, {
-      ok: false,
-      retryable: isRetryableProviderError(error),
-      errorCode: nestedErrorCode(error)
+  return runWithProviderBulkhead(provider?.id, async () => {
+    const attempt = beginProviderAttempt({
+      providerId: provider?.id,
+      role
     });
-    throw error;
-  }
+    try {
+      let result;
+      if (typeof provider.streamChat === "function") {
+        result = await provider.streamChat(options);
+      } else {
+        result = await provider.generateChat(options);
+        if (options.onDelta && result.reply) {
+          await options.onDelta(result.reply);
+        }
+      }
+      finishProviderAttempt(attempt, { ok: true });
+      return result;
+    } catch (error) {
+      finishProviderAttempt(attempt, {
+        ok: false,
+        retryable: isRetryableProviderError(error),
+        errorCode: nestedErrorCode(error)
+      });
+      throw error;
+    }
+  });
 }
 async function generateChat({
   instructions,
@@ -530,12 +546,14 @@ async function generateChat({
     return result;
   } catch (error) {
     const retryable = isRetryableProviderError(error);
-    recordProviderCircuitFailure({
-      primaryProviderId: route.provider.id,
-      fallbackProviderId: fallbackRoute.provider?.id || null,
-      retryable,
-      errorCode: nestedErrorCode(error)
-    });
+    if (!isProviderBulkheadError(error)) {
+      recordProviderCircuitFailure({
+        primaryProviderId: route.provider.id,
+        fallbackProviderId: fallbackRoute.provider?.id || null,
+        retryable,
+        errorCode: nestedErrorCode(error)
+      });
+    }
 
     if (!retryable || !fallbackRoute.provider) throw error;
 
@@ -609,12 +627,14 @@ async function streamChat({
     return result;
   } catch (error) {
     const retryable = isRetryableProviderError(error);
-    recordProviderCircuitFailure({
-      primaryProviderId: provider.id,
-      fallbackProviderId: fallbackRoute.provider?.id || null,
-      retryable,
-      errorCode: nestedErrorCode(error)
-    });
+    if (!isProviderBulkheadError(error)) {
+      recordProviderCircuitFailure({
+        primaryProviderId: provider.id,
+        fallbackProviderId: fallbackRoute.provider?.id || null,
+        retryable,
+        errorCode: nestedErrorCode(error)
+      });
+    }
 
     // Never restart a stream after visible output was emitted; that risks
     // duplicate/conflicting answers. Only pre-output transient failures fail over.
@@ -642,7 +662,10 @@ async function analyzeFile(options = {}) {
     error.code = "AI_PROVIDER_FILE_ANALYSIS_UNSUPPORTED";
     throw error;
   }
-  return provider.analyzeFile(options);
+  return runWithProviderBulkhead(
+    provider.id,
+    () => provider.analyzeFile(options)
+  );
 }
 
 module.exports = {
