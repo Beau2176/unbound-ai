@@ -73,7 +73,8 @@ function buildPlannerInput(request) {
 
 function createArtifactRouter({
   recordUsageEvent = null,
-  estimateProviderCostMicros = null
+  estimateProviderCostMicros = null,
+  assertUsageBudget = null
 } = {}) {
   const router = express.Router();
   router.use(express.json({ limit: ARTIFACT_JSON_LIMIT, type: "application/json" }));
