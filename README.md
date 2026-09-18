@@ -96,7 +96,7 @@ Failure thresholds are bounded to 1–10 and cooldowns to 10–300 seconds. Non-
 
 UNBOUND keeps process-local, privacy-minimized AI routing telemetry for operations. It records aggregate provider attempts, successes, failures, retryable failures, latency buckets, failover counts, and circuit-bypass counts. It does not record prompts, response text, user identifiers, credentials, or raw provider error messages.
 
-The telemetry is exposed through the existing AI health/status object and resets whenever the application process restarts. It is operational diagnostics, not billing or user analytics.
+Detailed telemetry is exposed only through the admin operational status snapshot; public health/readiness responses keep provider telemetry out. The counters reset whenever the application process restarts. This is operational diagnostics, not billing or user analytics.
 
 ## Mobile
 
