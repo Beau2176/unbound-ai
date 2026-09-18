@@ -175,6 +175,29 @@ function beginProviderCircuitAttempt({
   };
 }
 
+function cancelProviderCircuitAttempt({
+  primaryProviderId,
+  fallbackProviderId,
+  env = process.env,
+  now = Date.now()
+} = {}) {
+  const policy = getProviderCircuitPolicy(env);
+  const key = routeKey(primaryProviderId, fallbackProviderId);
+  const timestamp = Number(now);
+  if (!policy.enabled || !key) {
+    return getProviderCircuitSnapshot({
+      primaryProviderId,
+      fallbackProviderId,
+      env,
+      now: timestamp
+    });
+  }
+
+  const state = stateFor(key);
+  state.halfOpenProbeInFlight = false;
+  return publicState(state, policy, timestamp);
+}
+
 function recordProviderCircuitSuccess({
   primaryProviderId,
   fallbackProviderId,
@@ -260,6 +283,7 @@ module.exports = {
   getProviderCircuitPolicy,
   getProviderCircuitSnapshot,
   beginProviderCircuitAttempt,
+  cancelProviderCircuitAttempt,
   recordProviderCircuitSuccess,
   recordProviderCircuitFailure,
   resetProviderCircuitBreakers
