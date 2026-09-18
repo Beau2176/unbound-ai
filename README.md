@@ -64,6 +64,20 @@ Research routing does not change standard, Creative, Work, Adult, or streaming c
 
 Google Gemini chat and reasoning are supported, but Google-native Search grounding remains disabled until UNBOUND implements the required Google Search Suggestions display and associated storage/handling rules. Do not enable it by merely changing a capability flag.
 
+### Optional transient provider failover
+
+Normal non-Research chat can use an explicit backup provider:
+
+```bash
+AI_FALLBACK_PROVIDER=anthropic
+ANTHROPIC_API_KEY=...
+ANTHROPIC_MODEL_FALLBACK=claude-sonnet-5
+```
+
+Failover is attempted only for transient failures such as connection/time-out failures, rate limits, overloads, and provider-side 5xx responses. It does not activate for authentication/authorization failures, bad requests, unsupported capabilities, or configuration errors. Streaming failover is allowed only before any primary-provider output has reached the user; once visible output starts, UNBOUND preserves that stream and surfaces the error rather than restarting with a different provider.
+
+Research Mode does not use this general failover path. It follows the explicit sourced-provider routing described above.
+
 ## Mobile
 
 From `mobile/`:
