@@ -188,6 +188,7 @@ async function executeAgentRun({
   resolveChatModelImpl = resolveChatModel,
   recordUsageEvent = null,
   estimateProviderCostMicros = null,
+  assertUsageBudget = null,
   env = process.env
 } = {}) {
   if (!pool || !run) return null;
@@ -231,6 +232,10 @@ async function executeAgentRun({
     if (await isAgentRunCancelled(pool, run.id)) {
       await markAgentRunCancelled(pool, run.id);
       return { status: "cancelled", completedSteps };
+    }
+
+    if (typeof assertUsageBudget === "function") {
+      await assertUsageBudget({ userId: run.user_id, category: "agent" });
     }
 
     const prompt = buildAgentStepPrompt({
