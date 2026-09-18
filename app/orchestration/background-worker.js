@@ -23,6 +23,7 @@ async function claimBackgroundJob(pool) {
       `SELECT id, user_id, project_id, snapshot
        FROM future_core_jobs
        WHERE status IN ('planned', 'running')
+         AND snapshot->>'background' = 'true'
          AND (
            worker_claimed_at IS NULL OR
            worker_claimed_at < NOW() - ($1::text || ' seconds')::interval
