@@ -5,6 +5,7 @@ const {
 
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_MODEL = "claude-sonnet-5";
+const ANTHROPIC_EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
 const MAX_STREAM_BUFFER_BYTES = 2 * 1024 * 1024;
 const MAX_STREAM_REPLY_CHARS = 4 * 1024 * 1024;
 
@@ -33,7 +34,25 @@ function maxTokens() {
   return Number.isFinite(value) ? Math.min(Math.max(value, 256), 32000) : 4096;
 }
 
-function buildAnthropicRequestBody(instructions, input, model, { streaming = false } = {}) {
+function normalizeEffort(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === "none" || raw === "minimal") return "low";
+  if (raw === "maximum") return "max";
+  return ANTHROPIC_EFFORT_LEVELS.has(raw) ? raw : null;
+}
+
+function modelSupportsEffortControls(model) {
+  const selected = String(model || getModel()).trim().toLowerCase();
+  return /^claude-(?:sonnet-5|opus-5|fable-5|mythos-5)(?:$|-)/.test(selected);
+}
+
+function buildAnthropicRequestBody(
+  instructions,
+  input,
+  model,
+  { streaming = false, reasoningEffort = null } = {}
+) {
   const selectedModel = String(model || getModel()).trim() || getModel();
   const normalized = combineSystemAndMessages(instructions, input);
   const body = {
@@ -43,6 +62,11 @@ function buildAnthropicRequestBody(instructions, input, model, { streaming = fal
   };
   if (normalized.system) body.system = normalized.system;
   if (streaming) body.stream = true;
+
+  const effort = normalizeEffort(reasoningEffort);
+  if (effort && modelSupportsEffortControls(selectedModel)) {
+    body.output_config = { effort };
+  }
   return body;
 }
 
@@ -68,12 +92,24 @@ async function parseErrorPayload(response) {
   }
 }
 
-async function generateChat({ instructions, input, model, fetchImpl = fetch } = {}) {
+async function generateChat({
+  instructions,
+  input,
+  model,
+  reasoningEffort = null,
+  fetchImpl = fetch
+} = {}) {
   assertConfigured();
-  const body = buildAnthropicRequestBody(instructions, input, model);
+  const body = buildAnthropicRequestBody(
+    instructions,
+    input,
+    model,
+    { reasoningEffort }
+  );
   const response = await fetchImpl(ANTHROPIC_MESSAGES_URL, {
     method: "POST",
     headers: anthropicHeaders(),
+    redirect: "error",
     body: JSON.stringify(body)
   });
 
@@ -124,16 +160,23 @@ async function streamChat({
   input,
   model,
   onDelta,
+  reasoningEffort = null,
   fetchImpl = fetch
 } = {}) {
   assertConfigured();
-  const body = buildAnthropicRequestBody(instructions, input, model, { streaming: true });
+  const body = buildAnthropicRequestBody(
+    instructions,
+    input,
+    model,
+    { streaming: true, reasoningEffort }
+  );
   const headers = anthropicHeaders();
   headers.accept = "text/event-stream";
 
   const response = await fetchImpl(ANTHROPIC_MESSAGES_URL, {
     method: "POST",
     headers,
+    redirect: "error",
     body: JSON.stringify(body)
   });
 
@@ -240,6 +283,7 @@ module.exports = {
   id: "anthropic",
   ANTHROPIC_MESSAGES_URL,
   DEFAULT_MODEL,
+  ANTHROPIC_EFFORT_LEVELS,
   MAX_STREAM_BUFFER_BYTES,
   MAX_STREAM_REPLY_CHARS,
   getModel,
@@ -247,6 +291,8 @@ module.exports = {
   supportsResearch,
   supportsFileAnalysis,
   maxTokens,
+  normalizeEffort,
+  modelSupportsEffortControls,
   buildAnthropicRequestBody,
   parseAnthropicSseEvent,
   generateChat,
