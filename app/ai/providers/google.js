@@ -5,6 +5,7 @@ const {
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_MODEL = "gemini-3.8-flash";
+const GEMINI_THINKING_LEVELS = new Set(["low", "medium", "high"]);
 const MAX_STREAM_BUFFER_BYTES = 2 * 1024 * 1024;
 const MAX_STREAM_REPLY_CHARS = 4 * 1024 * 1024;
 
@@ -39,7 +40,15 @@ function toGeminiContents(messages) {
   }));
 }
 
-function buildGeminiRequestBody(instructions, input) {
+function normalizeThinkingLevel(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === "none" || raw === "minimal") return "low";
+  if (raw === "xhigh" || raw === "max") return "high";
+  return GEMINI_THINKING_LEVELS.has(raw) ? raw : null;
+}
+
+function buildGeminiRequestBody(instructions, input, reasoningEffort = null) {
   const normalized = combineSystemAndMessages(instructions, input);
   const body = {
     contents: toGeminiContents(normalized.messages)
@@ -47,13 +56,21 @@ function buildGeminiRequestBody(instructions, input) {
   if (normalized.system) {
     body.systemInstruction = { parts: [{ text: normalized.system }] };
   }
+  const thinkingLevel = normalizeThinkingLevel(reasoningEffort);
+  if (thinkingLevel) {
+    body.generationConfig = {
+      thinkingConfig: {
+        thinkingLevel
+      }
+    };
+  }
   return body;
 }
 
 function extractGeminiText(payload) {
   const parts = payload?.candidates?.[0]?.content?.parts || [];
   return parts
-    .filter((part) => typeof part?.text === "string")
+    .filter((part) => part?.thought !== true && typeof part?.text === "string")
     .map((part) => part.text)
     .join("");
 }
@@ -78,7 +95,7 @@ async function parseErrorPayload(response) {
   }
 }
 
-async function generateChat({ instructions, input, model, fetchImpl = fetch } = {}) {
+async function generateChat({ instructions, input, model, reasoningEffort = null, fetchImpl = fetch } = {}) {
   assertConfigured();
   const selectedModel = String(model || getModel()).trim() || getModel();
   const response = await fetchImpl(geminiEndpoint(selectedModel), {
@@ -87,7 +104,8 @@ async function generateChat({ instructions, input, model, fetchImpl = fetch } = 
       "content-type": "application/json",
       "x-goog-api-key": apiKey()
     },
-    body: JSON.stringify(buildGeminiRequestBody(instructions, input))
+    redirect: "error",
+    body: JSON.stringify(buildGeminiRequestBody(instructions, input, reasoningEffort))
   });
   if (!response.ok) {
     const payload = await parseErrorPayload(response);
@@ -127,6 +145,7 @@ async function streamChat({
   input,
   model,
   onDelta,
+  reasoningEffort = null,
   fetchImpl = fetch
 } = {}) {
   assertConfigured();
@@ -138,7 +157,8 @@ async function streamChat({
       "accept": "text/event-stream",
       "x-goog-api-key": apiKey()
     },
-    body: JSON.stringify(buildGeminiRequestBody(instructions, input))
+    redirect: "error",
+    body: JSON.stringify(buildGeminiRequestBody(instructions, input, reasoningEffort))
   });
 
   if (!response.ok) {
@@ -222,6 +242,7 @@ module.exports = {
   id: "google",
   GEMINI_BASE_URL,
   DEFAULT_MODEL,
+  GEMINI_THINKING_LEVELS,
   MAX_STREAM_BUFFER_BYTES,
   MAX_STREAM_REPLY_CHARS,
   getModel,
@@ -229,6 +250,7 @@ module.exports = {
   supportsResearch,
   supportsFileAnalysis,
   toGeminiContents,
+  normalizeThinkingLevel,
   buildGeminiRequestBody,
   extractGeminiText,
   geminiEndpoint,
