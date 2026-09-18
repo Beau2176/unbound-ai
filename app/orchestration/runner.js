@@ -95,12 +95,14 @@ function createModelTaskExecutor({
       productMode: research ? "research" : "standard",
       message: job.objective,
       defaultModel: gateway.model,
+      defaultProvider: gateway.provider,
       enabled: true,
       env
     });
 
     const result = await generateChatImpl({
       model: modelRoute.model,
+      provider: modelRoute.provider,
       reasoningEffort: task.specialist === "reviewer" ? "medium" : (research ? "low" : "medium"),
       instructions: ORCHESTRATOR_SYSTEM_PROMPT,
       input: [{ role: "user", content: buildTaskPrompt(job, task) }],
