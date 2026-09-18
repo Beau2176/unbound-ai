@@ -8,6 +8,14 @@ const {
   publicVaultAsset
 } = require("./projects");
 const { writeAuditEvent } = require("./audit");
+const {
+  normalizeProjectMemoryInput
+} = require("./project-memory");
+const {
+  MAX_AGENT_SCHEDULES_PER_USER,
+  normalizeAgentScheduleInput,
+  publicAgentSchedule
+} = require("./background-agent-scheduler");
 const { publicMcpStatus, listMcpTools, callMcpTool } = require("../connections/mcp-client");
 const { publicSandboxStatus, createSandboxJob, getSandboxJob } = require("../coding/sandbox-client");
 
@@ -86,6 +94,107 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
       if (String(error?.code || "").startsWith("PROJECT_")) return res.status(error.statusCode || 400).json({ error: error.message, code: error.code });
       console.error("UNBOUND PROJECT CREATE ERROR:", error);
       return res.status(500).json({ error: "Could not create project." });
+    }
+  });
+
+  router.get("/projects/:id/memory", async (req, res) => {
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid project ID." });
+    try {
+      const pool = getPool();
+      const project = await pool.query(
+        "SELECT id FROM ai_projects WHERE id = $1::uuid AND user_id = $2 LIMIT 1",
+        [req.params.id, req.user.id]
+      );
+      if (!project.rows[0]) return res.status(404).json({ error: "Project not found." });
+      const result = await pool.query(
+        `SELECT id, content, enabled, created_at, updated_at
+         FROM project_memories
+         WHERE project_id = $1::uuid AND user_id = $2
+         ORDER BY updated_at DESC, id DESC
+         LIMIT 200`,
+        [req.params.id, req.user.id]
+      );
+      return res.json({
+        memories: result.rows.map((row) => ({
+          id: String(row.id),
+          content: row.content,
+          enabled: Boolean(row.enabled),
+          createdAt: row.created_at,
+          updatedAt: row.updated_at
+        }))
+      });
+    } catch (error) {
+      console.error("UNBOUND PROJECT MEMORY LIST ERROR:", error);
+      return res.status(500).json({ error: "Could not load project memory." });
+    }
+  });
+
+  router.post("/projects/:id/memory", async (req, res) => {
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid project ID." });
+    try {
+      const input = normalizeProjectMemoryInput(req.body);
+      const pool = getPool();
+      const project = await pool.query(
+        "SELECT id FROM ai_projects WHERE id = $1::uuid AND user_id = $2 LIMIT 1",
+        [req.params.id, req.user.id]
+      );
+      if (!project.rows[0]) return res.status(404).json({ error: "Project not found." });
+      const count = await pool.query(
+        "SELECT COUNT(*)::int AS count FROM project_memories WHERE project_id = $1::uuid AND user_id = $2",
+        [req.params.id, req.user.id]
+      );
+      if (Number(count.rows[0]?.count || 0) >= 200) {
+        return res.status(409).json({ error: "This project already has the maximum number of memory entries." });
+      }
+      const result = await pool.query(
+        `INSERT INTO project_memories (project_id, user_id, content, enabled, created_at, updated_at)
+         VALUES ($1::uuid, $2, $3, $4, NOW(), NOW())
+         RETURNING id, content, enabled, created_at, updated_at`,
+        [req.params.id, req.user.id, input.content, input.enabled]
+      );
+      await writeAuditEvent(pool, req.user.id, "project.memory.create", {
+        projectId: req.params.id,
+        memoryId: String(result.rows[0].id)
+      });
+      return res.status(201).json({
+        memory: {
+          id: String(result.rows[0].id),
+          content: result.rows[0].content,
+          enabled: Boolean(result.rows[0].enabled),
+          createdAt: result.rows[0].created_at,
+          updatedAt: result.rows[0].updated_at
+        }
+      });
+    } catch (error) {
+      if (String(error?.code || "").startsWith("PROJECT_MEMORY_")) {
+        return res.status(error.statusCode || 400).json({ error: error.message, code: error.code });
+      }
+      console.error("UNBOUND PROJECT MEMORY CREATE ERROR:", error);
+      return res.status(500).json({ error: "Could not save project memory." });
+    }
+  });
+
+  router.delete("/projects/:projectId/memory/:memoryId", async (req, res) => {
+    if (!validUuid(req.params.projectId) || !/^\d+$/.test(String(req.params.memoryId || ""))) {
+      return res.status(400).json({ error: "Invalid project memory ID." });
+    }
+    try {
+      const pool = getPool();
+      const result = await pool.query(
+        `DELETE FROM project_memories
+         WHERE id = $1 AND project_id = $2::uuid AND user_id = $3
+         RETURNING id`,
+        [req.params.memoryId, req.params.projectId, req.user.id]
+      );
+      if (!result.rows[0]) return res.status(404).json({ error: "Project memory not found." });
+      await writeAuditEvent(pool, req.user.id, "project.memory.delete", {
+        projectId: req.params.projectId,
+        memoryId: req.params.memoryId
+      });
+      return res.json({ ok: true, id: req.params.memoryId });
+    } catch (error) {
+      console.error("UNBOUND PROJECT MEMORY DELETE ERROR:", error);
+      return res.status(500).json({ error: "Could not delete project memory." });
     }
   });
 
@@ -299,6 +408,121 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
       return res.json({ id: req.params.id, status, result: remote.result || null });
     } catch (error) {
       return res.status(error.statusCode || 502).json({ error: error.message, code: error.code || "CODE_SANDBOX_ERROR" });
+    }
+  });
+
+  router.get("/background-agents", async (req, res) => {
+    try {
+      const result = await getPool().query(
+        `SELECT id, project_id, title, objective, recurrence, interval_count,
+                allow_research, next_run_at, last_run_at, last_job_id,
+                enabled, created_at, updated_at
+         FROM background_agent_schedules
+         WHERE user_id = $1
+         ORDER BY enabled DESC, next_run_at ASC NULLS LAST, id DESC`,
+        [req.user.id]
+      );
+      return res.json({ schedules: result.rows.map(publicAgentSchedule) });
+    } catch (error) {
+      console.error("UNBOUND BACKGROUND AGENT LIST ERROR:", error);
+      return res.status(500).json({ error: "Could not load background Agent schedules." });
+    }
+  });
+
+  router.post("/background-agents", async (req, res) => {
+    try {
+      const input = normalizeAgentScheduleInput(req.body, new Date());
+      if (input.projectId && !validUuid(input.projectId)) {
+        return res.status(400).json({ error: "Invalid project ID." });
+      }
+      const pool = getPool();
+      if (input.projectId) {
+        const project = await pool.query(
+          "SELECT id FROM ai_projects WHERE id = $1::uuid AND user_id = $2 LIMIT 1",
+          [input.projectId, req.user.id]
+        );
+        if (!project.rows[0]) return res.status(404).json({ error: "Project not found." });
+      }
+      const count = await pool.query(
+        "SELECT COUNT(*)::int AS count FROM background_agent_schedules WHERE user_id = $1",
+        [req.user.id]
+      );
+      if (Number(count.rows[0]?.count || 0) >= MAX_AGENT_SCHEDULES_PER_USER) {
+        return res.status(409).json({ error: "You already have the maximum number of background Agent schedules." });
+      }
+      const result = await pool.query(
+        `INSERT INTO background_agent_schedules (
+           user_id, project_id, title, objective, recurrence, interval_count,
+           allow_research, next_run_at, enabled, created_at, updated_at
+         )
+         VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8::timestamptz, TRUE, NOW(), NOW())
+         RETURNING id, project_id, title, objective, recurrence, interval_count,
+                   allow_research, next_run_at, last_run_at, last_job_id,
+                   enabled, created_at, updated_at`,
+        [
+          req.user.id,
+          input.projectId,
+          input.title,
+          input.objective,
+          input.recurrence,
+          input.intervalCount,
+          input.allowResearch,
+          input.runAt.toISOString()
+        ]
+      );
+      await writeAuditEvent(pool, req.user.id, "background_agent.create", {
+        scheduleId: String(result.rows[0].id),
+        projectId: input.projectId,
+        recurrence: input.recurrence
+      });
+      return res.status(201).json({ schedule: publicAgentSchedule(result.rows[0]) });
+    } catch (error) {
+      if (String(error?.code || "").startsWith("AGENT_SCHEDULE_")) {
+        return res.status(error.statusCode || 400).json({ error: error.message, code: error.code });
+      }
+      console.error("UNBOUND BACKGROUND AGENT CREATE ERROR:", error);
+      return res.status(500).json({ error: "Could not create background Agent schedule." });
+    }
+  });
+
+  router.post("/background-agents/:id/toggle", async (req, res) => {
+    if (!/^\d+$/.test(String(req.params.id || "")) || typeof req.body?.enabled !== "boolean") {
+      return res.status(400).json({ error: "Invalid background Agent schedule update." });
+    }
+    try {
+      const result = await getPool().query(
+        `UPDATE background_agent_schedules
+         SET enabled = $1, updated_at = NOW()
+         WHERE id = $2 AND user_id = $3
+         RETURNING id, project_id, title, objective, recurrence, interval_count,
+                   allow_research, next_run_at, last_run_at, last_job_id,
+                   enabled, created_at, updated_at`,
+        [req.body.enabled, req.params.id, req.user.id]
+      );
+      if (!result.rows[0]) return res.status(404).json({ error: "Background Agent schedule not found." });
+      return res.json({ schedule: publicAgentSchedule(result.rows[0]) });
+    } catch (error) {
+      console.error("UNBOUND BACKGROUND AGENT TOGGLE ERROR:", error);
+      return res.status(500).json({ error: "Could not update background Agent schedule." });
+    }
+  });
+
+  router.delete("/background-agents/:id", async (req, res) => {
+    if (!/^\d+$/.test(String(req.params.id || ""))) {
+      return res.status(400).json({ error: "Invalid background Agent schedule ID." });
+    }
+    try {
+      const pool = getPool();
+      const result = await pool.query(
+        "DELETE FROM background_agent_schedules WHERE id = $1 AND user_id = $2 RETURNING id",
+        [req.params.id, req.user.id]
+      );
+      if (!result.rows[0]) return res.status(404).json({ error: "Background Agent schedule not found." });
+      await writeAuditEvent(pool, req.user.id, "background_agent.delete", { scheduleId: req.params.id });
+      return res.json({ ok: true, id: req.params.id });
+    } catch (error) {
+      console.error("UNBOUND BACKGROUND AGENT DELETE ERROR:", error);
+      return res.status(500).json({ error: "Could not delete background Agent schedule." });
     }
   });
 
