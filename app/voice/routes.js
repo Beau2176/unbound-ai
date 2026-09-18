@@ -73,6 +73,9 @@ function createVoiceRouter({ env = process.env, getPool = null, assertUsageBudge
 
   router.post("/natural-speech", async (req, res) => {
     try {
+      if (typeof assertUsageBudget === "function") {
+        await assertUsageBudget({ userId: req.user?.id || null, category: "voice" });
+      }
       const result = await synthesizeOpenAiSpeech({
         text: req.body?.text,
         preset: req.body?.preset,
@@ -94,7 +97,17 @@ function createVoiceRouter({ env = process.env, getPool = null, assertUsageBudge
       res.setHeader("X-Unbound-Voice-Provider", result.provider);
       return res.status(201).send(result.buffer);
     } catch (error) {
-      const safe = safeOpenAiSpeechError(error);
+      const safe =
+        error?.code === "USAGE_MONTHLY_LIMIT_REACHED"
+          ? {
+              statusCode: Number(error?.statusCode) || 429,
+              code: error.code,
+              message:
+                error?.publicMessage ||
+                error?.message ||
+                "Monthly usage allowance reached."
+            }
+          : safeOpenAiSpeechError(error);
       if (safe.code === "OPENAI_SPEECH_PROVIDER_FAILED") {
         console.error(
           "UNBOUND AI NATURAL VOICE PROVIDER ERROR:",
@@ -110,6 +123,9 @@ function createVoiceRouter({ env = process.env, getPool = null, assertUsageBudge
 
   router.post("/speech", async (req, res) => {
     try {
+      if (typeof assertUsageBudget === "function") {
+        await assertUsageBudget({ userId: req.user?.id || null, category: "voice" });
+      }
       const result = await synthesizeSpeech({
         text: req.body?.text,
         env
@@ -138,7 +154,17 @@ function createVoiceRouter({ env = process.env, getPool = null, assertUsageBudge
         }
       });
     } catch (error) {
-      const safe = safeHeyGenVoiceError(error);
+      const safe =
+        error?.code === "USAGE_MONTHLY_LIMIT_REACHED"
+          ? {
+              statusCode: Number(error?.statusCode) || 429,
+              code: error.code,
+              message:
+                error?.publicMessage ||
+                error?.message ||
+                "Monthly usage allowance reached."
+            }
+          : safeHeyGenVoiceError(error);
       if (safe.code === "VOICE_PROVIDER_FAILED") {
         console.error(
           "UNBOUND AI VOICE PROVIDER ERROR:",
