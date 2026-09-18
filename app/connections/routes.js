@@ -11,6 +11,18 @@ const {
   getAuthenticatedUser,
   listAuthorizedRepositories
 } = require("./providers/github");
+const {
+  publicGoogleWorkspaceStatus,
+  createPkceChallenge: createGooglePkceChallenge,
+  buildAuthorizationUrl: buildGoogleAuthorizationUrl,
+  exchangeAuthorizationCode: exchangeGoogleAuthorizationCode,
+  refreshUserToken: refreshGoogleUserToken,
+  revokeUserToken: revokeGoogleUserToken,
+  getAuthenticatedUser: getGoogleAuthenticatedUser,
+  listGmailMetadata,
+  listCalendarEvents,
+  listDriveMetadata
+} = require("./providers/google-workspace");
 const { encryptSecret, decryptSecret } = require("./token-vault");
 const {
   REFRESH_SKEW_MS,
@@ -57,6 +69,12 @@ async function getUsableAccessToken(pool, userId) {
   });
 }
 
+async function getGoogleWorkspaceAccessToken(pool, userId) {
+  return getStoredUsableAccessToken(pool, userId, "google_workspace", {
+    refreshAccessToken: refreshGoogleUserToken
+  });
+}
+
 function createConnectionsRouter({ getPool } = {}) {
   if (typeof getPool !== "function") {
     throw new Error("Connected Apps requires a database pool provider.");
@@ -68,12 +86,241 @@ function createConnectionsRouter({ getPool } = {}) {
       const connections = await listConnections(getPool(), req.user.id);
       return res.json({
         github: publicGitHubStatus(),
+        googleWorkspace: publicGoogleWorkspaceStatus(),
         connection: connections.find((item) => item.provider === "github") || null,
         connections
       });
     } catch (error) {
       console.error("UNBOUND AI CONNECTED APPS STATUS ERROR:", error?.code || error?.message || "unknown");
       return res.status(500).json({ error: "Could not load Connected Apps status." });
+    }
+  });
+
+  router.post("/google/authorize", async (req, res) => {
+    try {
+      if (!publicGoogleWorkspaceStatus().configured) {
+        return res.status(503).json({
+          error: "Google Workspace Connected Apps is not configured yet.",
+          provider: publicGoogleWorkspaceStatus()
+        });
+      }
+      const rawState = crypto.randomBytes(32).toString("base64url");
+      const codeVerifier = createPkceVerifier();
+      const codeChallenge = createGooglePkceChallenge(codeVerifier);
+      const verifierCiphertext = encryptSecret(codeVerifier, {
+        aad: connectionSecretAad("google_workspace", req.user.id, "pkce")
+      });
+      const hash = stateHash(rawState);
+      const pool = getPool();
+      await pool.query(
+        `DELETE FROM connected_app_oauth_states
+         WHERE user_id = $1 AND provider = $2`,
+        [req.user.id, "google_workspace"]
+      );
+      await pool.query(
+        `INSERT INTO connected_app_oauth_states (
+           user_id, provider, state_hash, pkce_verifier_ciphertext, expires_at, created_at
+         ) VALUES ($1, $2, $3, $4, NOW() + INTERVAL '10 minutes', NOW())`,
+        [req.user.id, "google_workspace", hash, verifierCiphertext]
+      );
+      return res.json({
+        authorizationUrl: buildGoogleAuthorizationUrl({
+          state: rawState,
+          codeChallenge
+        }),
+        expiresInSeconds: OAUTH_STATE_TTL_MINUTES * 60
+      });
+    } catch (error) {
+      console.error("UNBOUND AI GOOGLE WORKSPACE AUTHORIZE ERROR:", error?.code || error?.message || "unknown");
+      return res.status(Number(error?.statusCode) || 500).json({
+        error: "Could not start Google Workspace authorization.",
+        code: error?.code || "GOOGLE_WORKSPACE_AUTHORIZE_FAILED"
+      });
+    }
+  });
+
+  router.get("/google/callback", async (req, res) => {
+    const code = String(req.query.code || "").trim();
+    const state = cleanState(req.query.state);
+    if (!code || !state) {
+      return res.redirect("/connected-apps.html?google=invalid_callback");
+    }
+
+    const pool = getPool();
+    try {
+      const stateResult = await pool.query(
+        `DELETE FROM connected_app_oauth_states
+         WHERE user_id = $1
+           AND provider = $2
+           AND state_hash = $3
+           AND expires_at > NOW()
+         RETURNING id, pkce_verifier_ciphertext`,
+        [req.user.id, "google_workspace", stateHash(state)]
+      );
+      const stateRow = stateResult.rows[0];
+      if (!stateRow?.pkce_verifier_ciphertext) {
+        return res.redirect("/connected-apps.html?google=state_rejected");
+      }
+
+      const codeVerifier = decryptSecret(stateRow.pkce_verifier_ciphertext, {
+        aad: connectionSecretAad("google_workspace", req.user.id, "pkce")
+      });
+      const tokens = await exchangeGoogleAuthorizationCode({ code, codeVerifier });
+      const account = await getGoogleAuthenticatedUser({
+        accessToken: tokens.accessToken
+      });
+      await saveStoredTokens(
+        pool,
+        req.user.id,
+        "google_workspace",
+        account,
+        tokens
+      );
+      return res.redirect("/connected-apps.html?google=connected");
+    } catch (error) {
+      console.error("UNBOUND AI GOOGLE WORKSPACE CALLBACK ERROR:", error?.code || error?.message || "unknown");
+      return res.redirect("/connected-apps.html?google=failed");
+    }
+  });
+
+  router.get("/google/mail", async (req, res) => {
+    try {
+      const pool = getPool();
+      const { accessToken } = await getGoogleWorkspaceAccessToken(pool, req.user.id);
+      const result = await listGmailMetadata({ accessToken });
+      await markConnectionUsed(pool, req.user.id, "google_workspace");
+      return res.json({
+        provider: "google_workspace",
+        readOnly: true,
+        metadataOnly: true,
+        ...result
+      });
+    } catch (error) {
+      const statusCode = Number(error?.statusCode) || 502;
+      console.error("UNBOUND AI GOOGLE MAIL LIST ERROR:", error?.code || error?.message || "unknown");
+      return res.status(statusCode).json({
+        error: statusCode === 401
+          ? "Google Workspace authorization expired. Reconnect Google Workspace."
+          : statusCode === 404
+            ? "Google Workspace is not connected."
+            : "Could not load Gmail metadata.",
+        code: error?.code || "GOOGLE_WORKSPACE_GMAIL_LIST_FAILED"
+      });
+    }
+  });
+
+  router.get("/google/calendar", async (req, res) => {
+    try {
+      const pool = getPool();
+      const { accessToken } = await getGoogleWorkspaceAccessToken(pool, req.user.id);
+      const result = await listCalendarEvents({
+        accessToken,
+        timeMin: req.query.timeMin
+      });
+      await markConnectionUsed(pool, req.user.id, "google_workspace");
+      return res.json({
+        provider: "google_workspace",
+        readOnly: true,
+        ...result
+      });
+    } catch (error) {
+      const statusCode = Number(error?.statusCode) || 502;
+      console.error("UNBOUND AI GOOGLE CALENDAR LIST ERROR:", error?.code || error?.message || "unknown");
+      return res.status(statusCode).json({
+        error: statusCode === 401
+          ? "Google Workspace authorization expired. Reconnect Google Workspace."
+          : statusCode === 404
+            ? "Google Workspace is not connected."
+            : "Could not load Google Calendar events.",
+        code: error?.code || "GOOGLE_WORKSPACE_CALENDAR_LIST_FAILED"
+      });
+    }
+  });
+
+  router.get("/google/drive", async (req, res) => {
+    try {
+      const pool = getPool();
+      const { accessToken } = await getGoogleWorkspaceAccessToken(pool, req.user.id);
+      const result = await listDriveMetadata({
+        accessToken,
+        query: req.query.q
+      });
+      await markConnectionUsed(pool, req.user.id, "google_workspace");
+      return res.json({
+        provider: "google_workspace",
+        readOnly: true,
+        metadataOnly: true,
+        ...result
+      });
+    } catch (error) {
+      const statusCode = Number(error?.statusCode) || 502;
+      console.error("UNBOUND AI GOOGLE DRIVE LIST ERROR:", error?.code || error?.message || "unknown");
+      return res.status(statusCode).json({
+        error: statusCode === 401
+          ? "Google Workspace authorization expired. Reconnect Google Workspace."
+          : statusCode === 404
+            ? "Google Workspace is not connected."
+            : "Could not load Google Drive metadata.",
+        code: error?.code || "GOOGLE_WORKSPACE_DRIVE_LIST_FAILED"
+      });
+    }
+  });
+
+  router.delete("/google", async (req, res) => {
+    const pool = getPool();
+    const client = await pool.connect();
+    let providerRevoked = false;
+    let providerWarning = null;
+    try {
+      await client.query("BEGIN");
+      const row = await loadStoredConnection(
+        client,
+        req.user.id,
+        "google_workspace",
+        { forUpdate: true }
+      );
+      if (!row) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "Google Workspace is not connected." });
+      }
+      const accessToken = decryptSecret(row.access_token_ciphertext, {
+        aad: connectionSecretAad("google_workspace", req.user.id, "access")
+      });
+      const refreshToken = row.refresh_token_ciphertext
+        ? decryptSecret(row.refresh_token_ciphertext, {
+            aad: connectionSecretAad("google_workspace", req.user.id, "refresh")
+          })
+        : null;
+      try {
+        const revoked = await revokeGoogleUserToken({
+          accessToken,
+          refreshToken
+        });
+        providerRevoked = Boolean(revoked.revoked);
+      } catch (error) {
+        providerWarning = "UNBOUND removed the local Google Workspace connection, but provider revocation could not be confirmed. Review your Google Account app access if needed.";
+        console.warn("UNBOUND AI GOOGLE PROVIDER REVOCATION WARNING:", error?.code || error?.message || "unknown");
+      }
+      await deleteConnection(client, req.user.id, "google_workspace");
+      await client.query(
+        `DELETE FROM connected_app_oauth_states
+         WHERE user_id = $1 AND provider = $2`,
+        [req.user.id, "google_workspace"]
+      );
+      await client.query("COMMIT");
+      return res.json({
+        ok: true,
+        provider: "google_workspace",
+        localConnectionRemoved: true,
+        providerRevoked,
+        warning: providerWarning
+      });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      console.error("UNBOUND AI GOOGLE DISCONNECT ERROR:", error?.code || error?.message || "unknown");
+      return res.status(500).json({ error: "Could not disconnect Google Workspace." });
+    } finally {
+      client.release();
     }
   });
 

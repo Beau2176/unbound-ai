@@ -70,12 +70,21 @@ function providerCatalog(env = process.env) {
 
 function connectorCatalog(env = process.env) {
   const remoteBrowser = configured(env.BROWSER_CDP_URL || env.REMOTE_CDP_URL);
+  const googleWorkspaceConfigured = Boolean(
+    configured(env.GOOGLE_OAUTH_CLIENT_ID) &&
+    configured(env.GOOGLE_OAUTH_CLIENT_SECRET) &&
+    configured(env.GOOGLE_OAUTH_CALLBACK_URL) &&
+    enabled(env.GOOGLE_OAUTH_REGISTRATION_VERIFIED) &&
+    enabled(env.GOOGLE_OAUTH_READ_ONLY_SCOPES_VERIFIED) &&
+    enabled(env.GOOGLE_OAUTH_RESTRICTED_SCOPES_VERIFIED) &&
+    configured(env.CONNECTED_APPS_TOKEN_KEY)
+  );
   return [
     { id: "github", label: "GitHub", protocol: "native_oauth", configured: configured(env.GITHUB_CLIENT_ID), read: true, write: enabled(env.GITHUB_WRITE_ACTIONS_ENABLED) },
     { id: "mcp_gateway", label: "MCP Gateway", protocol: "mcp", configured: configured(env.UNBOUND_MCP_GATEWAY_URL), read: true, write: false },
     { id: "browser", label: "Computer Use Browser", protocol: "rest", configured: remoteBrowser, read: true, write: remoteBrowser },
     { id: "a2a_peer", label: "A2A Peer", protocol: "a2a", configured: configured(env.UNBOUND_A2A_AGENT_CARD_URL), read: true, write: configured(env.UNBOUND_A2A_AGENT_CARD_URL), approvalRequired: true },
-    { id: "google_workspace", label: "Google Workspace", protocol: "native_oauth", configured: configured(env.GOOGLE_OAUTH_CLIENT_ID), read: false, write: false },
+    { id: "google_workspace", label: "Google Workspace", protocol: "native_oauth", configured: googleWorkspaceConfigured, read: googleWorkspaceConfigured, write: false, dataAccess: "metadata-only" },
     { id: "microsoft_365", label: "Microsoft 365", protocol: "native_oauth", configured: configured(env.MICROSOFT_OAUTH_CLIENT_ID), read: false, write: false },
     { id: "slack", label: "Slack", protocol: "native_oauth", configured: configured(env.SLACK_CLIENT_ID), read: false, write: false }
   ];
