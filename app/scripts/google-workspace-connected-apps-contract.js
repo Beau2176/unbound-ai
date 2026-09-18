@@ -43,7 +43,8 @@ async function main() {
     GOOGLE_OAUTH_CLIENT_SECRET: "server-only-google-secret",
     GOOGLE_OAUTH_CALLBACK_URL: "https://unbound.example/api/connections/google/callback",
     GOOGLE_OAUTH_REGISTRATION_VERIFIED: "true",
-    GOOGLE_OAUTH_READ_ONLY_SCOPES_VERIFIED: "true"
+    GOOGLE_OAUTH_READ_ONLY_SCOPES_VERIFIED: "true",
+    GOOGLE_OAUTH_RESTRICTED_SCOPES_VERIFIED: "true"
   };
 
   try {
@@ -54,6 +55,7 @@ async function main() {
     assert.strictEqual(status.calendar, "events-readonly");
     assert.strictEqual(status.drive, "metadata-readonly");
     assert.strictEqual(status.writeActionsEnabled, false);
+    assert.strictEqual(status.restrictedScopesVerified, true);
     assert.strictEqual(
       publicGoogleWorkspaceStatus({ ...env, GOOGLE_OAUTH_READ_ONLY_SCOPES_VERIFIED: "false" }).configured,
       false
@@ -165,14 +167,14 @@ async function main() {
     const gmailCalls = [];
     const gmail = await listGmailMetadata({
       accessToken: "google-access-two",
-      query: "newer_than:7d",
       fetchImpl: async (url, options) => {
         gmailCalls.push({ url: String(url), options });
         assert.strictEqual(options.headers.Authorization, "Bearer google-access-two");
         if (gmailCalls.length === 1) {
           assert(String(url).startsWith(GMAIL_API_ORIGIN + "/users/me/messages?"));
           const parsed = new URL(url);
-          assert.strictEqual(parsed.searchParams.get("q"), "newer_than:7d");
+          assert.strictEqual(parsed.searchParams.get("q"), null);
+          assert.strictEqual(parsed.searchParams.get("maxResults"), "25");
           return jsonResponse(200, {
             messages: [{ id: "m1", threadId: "t1" }],
             resultSizeEstimate: 1
