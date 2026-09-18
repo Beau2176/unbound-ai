@@ -74,6 +74,7 @@ function createState() {
     queuedTotal: 0,
     rejected: 0,
     queueTimeouts: 0,
+    queueCancellations: 0,
     maxObservedActive: 0,
     maxObservedQueue: 0
   };
@@ -95,6 +96,22 @@ function bulkheadError(code, message, providerId, statusCode = 503) {
 
 function isProviderBulkheadError(error) {
   return /^AI_PROVIDER_BULKHEAD_/.test(String(error?.code || ""));
+}
+
+function requestCancelledError(providerId) {
+  return bulkheadError(
+    "AI_REQUEST_ABORTED",
+    "AI request was cancelled before a provider slot became available.",
+    providerId,
+    499
+  );
+}
+
+function cleanupQueuedItem(item) {
+  clearTimeout(item.timer);
+  try {
+    item.signal?.removeEventListener?.("abort", item.onAbort);
+  } catch (_) {}
 }
 
 function createPermit(id, state) {
@@ -121,17 +138,22 @@ function drainQueue(id, state) {
     if (state.active >= next.maxConcurrent) return;
 
     state.queue.shift();
-    clearTimeout(next.timer);
+    cleanupQueuedItem(next);
     next.settled = true;
     next.resolve(createPermit(id, state));
   }
 }
 
 async function acquireProviderBulkheadSlot(providerId, {
-  env = process.env
+  env = process.env,
+  signal = null
 } = {}) {
   const { id, state } = stateFor(providerId);
   const policy = getProviderBulkheadPolicy(id, env);
+
+  if (signal?.aborted) {
+    throw requestCancelledError(id);
+  }
 
   if (state.active < policy.maxConcurrent) {
     return createPermit(id, state);
@@ -154,7 +176,19 @@ async function acquireProviderBulkheadSlot(providerId, {
       resolve,
       reject,
       settled: false,
-      timer: null
+      timer: null,
+      signal,
+      onAbort: null
+    };
+
+    item.onAbort = () => {
+      if (item.settled) return;
+      item.settled = true;
+      const index = state.queue.indexOf(item);
+      if (index >= 0) state.queue.splice(index, 1);
+      cleanupQueuedItem(item);
+      state.queueCancellations += 1;
+      reject(requestCancelledError(id));
     };
 
     item.timer = setTimeout(() => {
@@ -162,6 +196,7 @@ async function acquireProviderBulkheadSlot(providerId, {
       item.settled = true;
       const index = state.queue.indexOf(item);
       if (index >= 0) state.queue.splice(index, 1);
+      cleanupQueuedItem(item);
       state.queueTimeouts += 1;
       reject(
         bulkheadError(
@@ -175,6 +210,12 @@ async function acquireProviderBulkheadSlot(providerId, {
 
     state.queue.push(item);
     state.maxObservedQueue = Math.max(state.maxObservedQueue, state.queue.length);
+
+    if (signal?.aborted) {
+      item.onAbort();
+    } else {
+      signal?.addEventListener?.("abort", item.onAbort, { once: true });
+    }
   });
 }
 
@@ -199,6 +240,7 @@ function publicState(providerId, state, policy) {
     queuedTotal: state.queuedTotal,
     rejected: state.rejected,
     queueTimeouts: state.queueTimeouts,
+    queueCancellations: state.queueCancellations,
     maxObservedActive: state.maxObservedActive,
     maxObservedQueue: state.maxObservedQueue
   });
@@ -226,7 +268,7 @@ function getProviderBulkheadSnapshots(providerIds = [], env = process.env) {
 function resetProviderBulkheads() {
   for (const [id, state] of states.entries()) {
     for (const item of state.queue.splice(0)) {
-      clearTimeout(item.timer);
+      cleanupQueuedItem(item);
       if (!item.settled) {
         item.settled = true;
         item.reject(
