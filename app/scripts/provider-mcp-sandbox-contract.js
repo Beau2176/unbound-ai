@@ -5,10 +5,15 @@ const local = require("../ai/providers/local");
 const { normalizeInputMessages } = require("../ai/providers/provider-utils");
 const { providerModelEnv } = require("../ai/model-routing");
 const {
+  generateChat,
+  streamChat,
   getGatewayStatus,
   resolveResearchProvider,
+  resolveFallbackProvider,
   resolveProviderForRequest,
-  researchModelForProvider
+  researchModelForProvider,
+  fallbackModelForProvider,
+  isRetryableProviderError
 } = require("../ai/gateway");
 const { publicMcpStatus, listMcpTools, callMcpTool } = require("../connections/mcp-client");
 const { publicSandboxStatus, createSandboxJob, getSandboxJob } = require("../coding/sandbox-client");
@@ -27,7 +32,8 @@ async function main() {
 
   const trackedKeys = [
     "AI_PROVIDER", "AI_RESEARCH_PROVIDER", "AI_RESEARCH_MODEL",
-    "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_MODEL_RESEARCH",
+    "AI_FALLBACK_PROVIDER", "AI_FALLBACK_MODEL",
+    "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_MODEL_RESEARCH", "ANTHROPIC_MODEL_FALLBACK",
     "OPENAI_API_KEY", "OPENAI_RESEARCH_MODEL", "AI_MODEL_RESEARCH",
     "GEMINI_API_KEY", "GEMINI_MODEL",
     "UNBOUND_LOCAL_AI_ENDPOINT", "UNBOUND_LOCAL_AI_MODEL", "UNBOUND_LOCAL_AI_API_KEY"
@@ -225,6 +231,195 @@ async function main() {
     process.env.AI_PROVIDER = "google";
     process.env.AI_RESEARCH_PROVIDER = "anthropic";
 
+    // Failover is explicit and limited to transient primary-provider failure.
+    delete process.env.AI_RESEARCH_PROVIDER;
+    process.env.AI_FALLBACK_PROVIDER = "anthropic";
+    process.env.ANTHROPIC_API_KEY = "anthropic-secret";
+    process.env.ANTHROPIC_MODEL_FALLBACK = "claude-sonnet-5-fallback";
+
+    let failoverStatus = getGatewayStatus();
+    assert.strictEqual(failoverStatus.provider, "google");
+    assert.strictEqual(failoverStatus.failoverEnabled, true);
+    assert.strictEqual(failoverStatus.fallbackProvider, "anthropic");
+    assert.strictEqual(failoverStatus.fallbackModel, "claude-sonnet-5-fallback");
+    assert.strictEqual(failoverStatus.fallbackError, null);
+
+    const fallbackRoute = resolveFallbackProvider({ throwOnError: true });
+    assert.strictEqual(fallbackRoute.provider.id, "anthropic");
+    assert.strictEqual(
+      fallbackModelForProvider(fallbackRoute.provider),
+      "claude-sonnet-5-fallback"
+    );
+
+    assert.strictEqual(isRetryableProviderError({ statusCode: 429 }), true);
+    assert.strictEqual(isRetryableProviderError({ statusCode: 503 }), true);
+    assert.strictEqual(isRetryableProviderError({ statusCode: 401 }), false);
+    assert.strictEqual(isRetryableProviderError({ statusCode: 400 }), false);
+    assert.strictEqual(
+      isRetryableProviderError({ code: "ETIMEDOUT", message: "timeout" }),
+      true
+    );
+    assert.strictEqual(
+      isRetryableProviderError({
+        code: "ANTHROPIC_STREAM_REMOTE_ERROR",
+        statusCode: 502,
+        message: "Overloaded"
+      }),
+      true
+    );
+    assert.strictEqual(
+      isRetryableProviderError({
+        code: "ANTHROPIC_STREAM_REMOTE_ERROR",
+        statusCode: 502,
+        message: "Invalid request"
+      }),
+      false
+    );
+
+    const originalGoogleGenerate = google.generateChat;
+    const originalAnthropicGenerate = anthropic.generateChat;
+    const originalGoogleStream = google.streamChat;
+    const originalAnthropicStream = anthropic.streamChat;
+
+    try {
+      let fallbackGenerateCalls = 0;
+      google.generateChat = async () => {
+        const error = new Error("primary unavailable");
+        error.code = "GEMINI_REQUEST_FAILED";
+        error.statusCode = 503;
+        throw error;
+      };
+      anthropic.generateChat = async (options) => {
+        fallbackGenerateCalls += 1;
+        assert.strictEqual(options.model, "claude-sonnet-5-fallback");
+        return {
+          provider: "anthropic",
+          model: options.model,
+          reply: "fallback answer",
+          usage: null,
+          responseId: "fallback-generate",
+          research: { sources: [], citations: [], webSearchCalls: 0 }
+        };
+      };
+
+      const failedOver = await generateChat({
+        instructions: "system",
+        input: [{ role: "user", content: "hello" }],
+        model: "gemini-3.8-flash"
+      });
+      assert.strictEqual(failedOver.provider, "anthropic");
+      assert.strictEqual(failedOver.reply, "fallback answer");
+      assert.strictEqual(fallbackGenerateCalls, 1);
+
+      fallbackGenerateCalls = 0;
+      google.generateChat = async () => {
+        const error = new Error("unauthorized");
+        error.code = "GEMINI_REQUEST_FAILED";
+        error.statusCode = 401;
+        throw error;
+      };
+      await assert.rejects(
+        () => generateChat({
+          instructions: "system",
+          input: [{ role: "user", content: "hello" }],
+          model: "gemini-3.8-flash"
+        }),
+        (error) => error && error.statusCode === 401
+      );
+      assert.strictEqual(fallbackGenerateCalls, 0);
+
+      let fallbackStreamCalls = 0;
+      google.streamChat = async () => {
+        const error = new Error("temporary outage");
+        error.code = "GEMINI_STREAM_REQUEST_FAILED";
+        error.statusCode = 503;
+        throw error;
+      };
+      anthropic.streamChat = async ({ onDelta, model }) => {
+        fallbackStreamCalls += 1;
+        assert.strictEqual(model, "claude-sonnet-5-fallback");
+        if (onDelta) await onDelta("fallback stream");
+        return {
+          provider: "anthropic",
+          model,
+          reply: "fallback stream",
+          usage: null,
+          responseId: "fallback-stream",
+          research: { sources: [], citations: [], webSearchCalls: 0 }
+        };
+      };
+
+      const streamedDeltas = [];
+      const streamedFallback = await streamChat({
+        instructions: "system",
+        input: [{ role: "user", content: "hello" }],
+        model: "gemini-3.8-flash",
+        onDelta: async (delta) => streamedDeltas.push(delta)
+      });
+      assert.strictEqual(streamedFallback.provider, "anthropic");
+      assert.deepStrictEqual(streamedDeltas, ["fallback stream"]);
+      assert.strictEqual(fallbackStreamCalls, 1);
+
+      fallbackStreamCalls = 0;
+      google.streamChat = async ({ onDelta }) => {
+        if (onDelta) await onDelta("partial");
+        const error = new Error("temporary outage after output");
+        error.code = "GEMINI_STREAM_REQUEST_FAILED";
+        error.statusCode = 503;
+        throw error;
+      };
+      const partialDeltas = [];
+      await assert.rejects(
+        () => streamChat({
+          instructions: "system",
+          input: [{ role: "user", content: "hello" }],
+          model: "gemini-3.8-flash",
+          onDelta: async (delta) => partialDeltas.push(delta)
+        }),
+        (error) => error && error.statusCode === 503
+      );
+      assert.deepStrictEqual(partialDeltas, ["partial"]);
+      assert.strictEqual(fallbackStreamCalls, 0);
+    } finally {
+      google.generateChat = originalGoogleGenerate;
+      anthropic.generateChat = originalAnthropicGenerate;
+      google.streamChat = originalGoogleStream;
+      anthropic.streamChat = originalAnthropicStream;
+    }
+
+    process.env.AI_FALLBACK_PROVIDER = "google";
+    failoverStatus = getGatewayStatus();
+    assert.strictEqual(failoverStatus.failoverEnabled, false);
+    assert.strictEqual(
+      failoverStatus.fallbackError,
+      "fallback-provider-same-as-primary"
+    );
+    assert.throws(
+      () => resolveFallbackProvider({ throwOnError: true }),
+      (error) => error && error.code === "AI_FALLBACK_PROVIDER_SAME_AS_PRIMARY"
+    );
+
+    process.env.AI_FALLBACK_PROVIDER = "made-up-provider";
+    failoverStatus = getGatewayStatus();
+    assert.strictEqual(failoverStatus.failoverEnabled, false);
+    assert.strictEqual(
+      failoverStatus.fallbackError,
+      "fallback-provider-unsupported"
+    );
+
+    process.env.AI_FALLBACK_PROVIDER = "anthropic";
+    delete process.env.ANTHROPIC_API_KEY;
+    failoverStatus = getGatewayStatus();
+    assert.strictEqual(failoverStatus.failoverEnabled, false);
+    assert.strictEqual(
+      failoverStatus.fallbackError,
+      "fallback-provider-not-configured"
+    );
+
+    process.env.ANTHROPIC_API_KEY = "anthropic-secret";
+    delete process.env.AI_FALLBACK_PROVIDER;
+    delete process.env.ANTHROPIC_MODEL_FALLBACK;
+
     const mcpEnv = {
       UNBOUND_MCP_GATEWAY_URL: "https://mcp.example.test/mcp",
       UNBOUND_MCP_GATEWAY_TOKEN: "mcp-secret"
@@ -303,7 +498,7 @@ async function main() {
     const synced = await getSandboxJob("job_123", { env: sandboxEnv, fetchImpl: sandboxFetch });
     assert.strictEqual(synced.status, "completed");
 
-    console.log("PASS provider/MCP/sandbox parity contract: Anthropic, Gemini, local AI, explicit cross-provider Research Mode routing, provider-aware model routing, stateless MCP approvals, and fail-closed coding sandbox.");
+    console.log("PASS provider/MCP/sandbox parity contract: Anthropic, Gemini, local AI, explicit cross-provider Research Mode routing, transient provider failover, provider-aware model routing, stateless MCP approvals, and fail-closed coding sandbox.");
   } finally {
     for (const key of trackedKeys) {
       if (original[key] === undefined) delete process.env[key];

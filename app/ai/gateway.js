@@ -10,6 +10,20 @@ const providers = new Map([
   [local.id, local]
 ]);
 
+const RETRYABLE_NETWORK_CODES = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EAI_AGAIN",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_SOCKET",
+  "FETCH_FAILED"
+]);
+
 function normalizeProviderName(value) {
   return String(value || "openai").trim().toLowerCase();
 }
@@ -69,7 +83,36 @@ function researchModelForProvider(provider, env = process.env) {
   return configured || provider.getModel();
 }
 
-function researchRouteError(code, message, statusReason) {
+function fallbackModelForProvider(provider, env = process.env) {
+  if (!provider) return null;
+
+  const generic = String(env.AI_FALLBACK_MODEL || "").trim();
+  let configured = "";
+
+  if (provider.id === "openai") {
+    configured = String(
+      env.OPENAI_FALLBACK_MODEL ||
+      env.OPENAI_MODEL_FALLBACK ||
+      generic ||
+      ""
+    ).trim();
+  } else if (provider.id === "anthropic") {
+    configured = String(env.ANTHROPIC_MODEL_FALLBACK || generic || "").trim();
+  } else if (provider.id === "google") {
+    configured = String(
+      env.GEMINI_MODEL_FALLBACK ||
+      env.GOOGLE_AI_MODEL_FALLBACK ||
+      generic ||
+      ""
+    ).trim();
+  } else if (provider.id === "local") {
+    configured = String(env.UNBOUND_LOCAL_AI_MODEL_FALLBACK || generic || "").trim();
+  }
+
+  return configured || provider.getModel();
+}
+
+function routeError(code, message, statusReason) {
   const error = new Error(message);
   error.code = code;
   error.statusReason = statusReason;
@@ -86,7 +129,7 @@ function resolveResearchProvider({
     const activeName = normalizeProviderName(env.AI_PROVIDER);
     active = providers.get(activeName) || null;
     if (!active) {
-      const error = researchRouteError(
+      const error = routeError(
         "AI_PROVIDER_UNSUPPORTED",
         `Unsupported AI provider: ${activeName}`,
         "active-provider-unsupported"
@@ -100,7 +143,7 @@ function resolveResearchProvider({
 
   if (!requestedName) {
     if (!providerSupportsResearch(active)) {
-      const error = researchRouteError(
+      const error = routeError(
         "AI_PROVIDER_RESEARCH_UNSUPPORTED",
         `AI provider '${active.id}' does not support Research Mode.`,
         "active-provider-research-unsupported"
@@ -110,7 +153,7 @@ function resolveResearchProvider({
     }
 
     if (!active.isConfigured()) {
-      const error = researchRouteError(
+      const error = routeError(
         "AI_PROVIDER_NOT_CONFIGURED",
         `AI provider '${active.id}' is not configured.`,
         "active-provider-not-configured"
@@ -124,7 +167,7 @@ function resolveResearchProvider({
 
   const provider = providers.get(requestedName);
   if (!provider) {
-    const error = researchRouteError(
+    const error = routeError(
       "AI_RESEARCH_PROVIDER_UNSUPPORTED",
       `Unsupported Research Mode provider: ${requestedName}`,
       "research-provider-unsupported"
@@ -134,7 +177,7 @@ function resolveResearchProvider({
   }
 
   if (!providerSupportsResearch(provider)) {
-    const error = researchRouteError(
+    const error = routeError(
       "AI_RESEARCH_PROVIDER_CAPABILITY_UNSUPPORTED",
       `AI provider '${provider.id}' does not support Research Mode.`,
       "research-provider-capability-unsupported"
@@ -144,7 +187,7 @@ function resolveResearchProvider({
   }
 
   if (!provider.isConfigured()) {
-    const error = researchRouteError(
+    const error = routeError(
       "AI_RESEARCH_PROVIDER_NOT_CONFIGURED",
       `Research Mode provider '${provider.id}' is not configured.`,
       "research-provider-not-configured"
@@ -154,6 +197,105 @@ function resolveResearchProvider({
   }
 
   return { provider, explicit: true, error: null };
+}
+
+function resolveFallbackProvider({
+  env = process.env,
+  primaryProvider = null,
+  throwOnError = false
+} = {}) {
+  const requestedName = String(env.AI_FALLBACK_PROVIDER || "").trim().toLowerCase();
+  if (!requestedName) {
+    return { provider: null, explicit: false, error: null };
+  }
+
+  let primary = primaryProvider;
+  if (!primary) {
+    const primaryName = normalizeProviderName(env.AI_PROVIDER);
+    primary = providers.get(primaryName) || null;
+  }
+
+  const provider = providers.get(requestedName);
+  if (!provider) {
+    const error = routeError(
+      "AI_FALLBACK_PROVIDER_UNSUPPORTED",
+      `Unsupported fallback AI provider: ${requestedName}`,
+      "fallback-provider-unsupported"
+    );
+    if (throwOnError) throw error;
+    return { provider: null, explicit: true, error: error.statusReason };
+  }
+
+  if (primary && provider.id === primary.id) {
+    const error = routeError(
+      "AI_FALLBACK_PROVIDER_SAME_AS_PRIMARY",
+      `Fallback provider '${provider.id}' must differ from the active provider.`,
+      "fallback-provider-same-as-primary"
+    );
+    if (throwOnError) throw error;
+    return { provider: null, explicit: true, error: error.statusReason };
+  }
+
+  if (!provider.isConfigured()) {
+    const error = routeError(
+      "AI_FALLBACK_PROVIDER_NOT_CONFIGURED",
+      `Fallback AI provider '${provider.id}' is not configured.`,
+      "fallback-provider-not-configured"
+    );
+    if (throwOnError) throw error;
+    return { provider: null, explicit: true, error: error.statusReason };
+  }
+
+  return { provider, explicit: true, error: null };
+}
+
+function retryStatus(error) {
+  const value = Number(error?.statusCode ?? error?.status);
+  return Number.isFinite(value) ? value : null;
+}
+
+function nestedErrorCode(error) {
+  return String(
+    error?.code ||
+    error?.cause?.code ||
+    error?.cause?.cause?.code ||
+    ""
+  ).trim().toUpperCase();
+}
+
+function isRetryableProviderError(error) {
+  if (!error) return false;
+
+  const status = retryStatus(error);
+  if (status === 408 || status === 425 || status === 429) return true;
+  if (status !== null && status >= 500 && status <= 599) {
+    const code = nestedErrorCode(error);
+    if (code.endsWith("_STREAM_REMOTE_ERROR")) {
+      return /overload|temporar|unavailable|rate.?limit|timeout|capacity|try again|server error/i.test(
+        String(error.message || "")
+      );
+    }
+    return true;
+  }
+
+  const code = nestedErrorCode(error);
+  if (RETRYABLE_NETWORK_CODES.has(code)) return true;
+
+  if (
+    /_(?:STREAM_BODY_MISSING|STREAM_UNREADABLE)$/.test(code) ||
+    /(?:NETWORK|TIMEOUT|CONNECTION|SOCKET)_ERROR$/.test(code)
+  ) {
+    return true;
+  }
+
+  if (
+    error instanceof TypeError &&
+    /fetch|network|socket|connect|timeout|terminated/i.test(String(error.message || ""))
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function resolveProviderForRequest({
@@ -212,6 +354,10 @@ function getGatewayStatus() {
       researchProviderExplicit: false,
       researchModel: null,
       researchError: "active-provider-unsupported",
+      failoverEnabled: false,
+      fallbackProvider: null,
+      fallbackModel: null,
+      fallbackError: "active-provider-unsupported",
       fileAnalysis: false,
       error: "unsupported-provider"
     };
@@ -222,6 +368,11 @@ function getGatewayStatus() {
     throwOnError: false
   });
   const researchReady = Boolean(researchRoute.provider);
+  const fallbackRoute = resolveFallbackProvider({
+    primaryProvider: provider,
+    throwOnError: false
+  });
+  const failoverEnabled = Boolean(fallbackRoute.provider);
 
   return {
     provider: provider.id,
@@ -235,9 +386,30 @@ function getGatewayStatus() {
       ? researchModelForProvider(researchRoute.provider)
       : null,
     researchError: researchRoute.error || null,
+    failoverEnabled,
+    fallbackProvider: fallbackRoute.provider?.id || null,
+    fallbackModel: failoverEnabled
+      ? fallbackModelForProvider(fallbackRoute.provider)
+      : null,
+    fallbackError: fallbackRoute.error || null,
     fileAnalysis: providerSupportsFileAnalysis(provider),
     error: provider.isConfigured() ? null : "provider-not-configured"
   };
+}
+
+async function generateWithProvider(provider, options) {
+  return provider.generateChat(options);
+}
+
+async function streamWithProvider(provider, options) {
+  if (typeof provider.streamChat === "function") {
+    return provider.streamChat(options);
+  }
+  const result = await provider.generateChat(options);
+  if (options.onDelta && result.reply) {
+    await options.onDelta(result.reply);
+  }
+  return result;
 }
 
 async function generateChat({
@@ -253,13 +425,35 @@ async function generateChat({
     env: process.env
   });
 
-  return route.provider.generateChat({
+  const primaryOptions = {
     instructions,
     input,
     model: route.model,
     research,
     reasoningEffort
-  });
+  };
+
+  try {
+    return await generateWithProvider(route.provider, primaryOptions);
+  } catch (error) {
+    // Research Mode has its own explicit sourced-provider routing. Do not
+    // silently cross research providers if that route fails.
+    if (research?.enabled || !isRetryableProviderError(error)) throw error;
+
+    const fallbackRoute = resolveFallbackProvider({
+      primaryProvider: route.provider,
+      throwOnError: false
+    });
+    if (!fallbackRoute.provider) throw error;
+
+    return generateWithProvider(fallbackRoute.provider, {
+      instructions,
+      input,
+      model: fallbackModelForProvider(fallbackRoute.provider),
+      research: null,
+      reasoningEffort
+    });
+  }
 }
 
 async function streamChat({
@@ -270,27 +464,41 @@ async function streamChat({
   reasoningEffort = null
 }) {
   const provider = getProvider();
+  const selectedModel = String(model || "").trim() || provider.getModel();
+  let emittedPrimaryOutput = false;
 
-  if (typeof provider.streamChat !== "function") {
-    const result = await provider.generateChat({
+  const primaryOnDelta = async (delta) => {
+    if (String(delta || "").length) emittedPrimaryOutput = true;
+    if (onDelta) await onDelta(delta);
+  };
+
+  try {
+    return await streamWithProvider(provider, {
       instructions,
       input,
-      model,
+      model: selectedModel,
+      onDelta: primaryOnDelta,
       reasoningEffort
     });
-    if (onDelta && result.reply) {
-      await onDelta(result.reply);
-    }
-    return result;
-  }
+  } catch (error) {
+    // Never restart a stream after visible output was emitted; that risks
+    // duplicate/conflicting answers. Only pre-output transient failures fail over.
+    if (emittedPrimaryOutput || !isRetryableProviderError(error)) throw error;
 
-  return provider.streamChat({
-    instructions,
-    input,
-    model,
-    onDelta,
-    reasoningEffort
-  });
+    const fallbackRoute = resolveFallbackProvider({
+      primaryProvider: provider,
+      throwOnError: false
+    });
+    if (!fallbackRoute.provider) throw error;
+
+    return streamWithProvider(fallbackRoute.provider, {
+      instructions,
+      input,
+      model: fallbackModelForProvider(fallbackRoute.provider),
+      onDelta,
+      reasoningEffort
+    });
+  }
 }
 
 async function analyzeFile(options = {}) {
@@ -312,6 +520,9 @@ module.exports = {
   getProviderByName,
   providerSupportsResearch,
   researchModelForProvider,
+  fallbackModelForProvider,
   resolveResearchProvider,
+  resolveFallbackProvider,
+  isRetryableProviderError,
   resolveProviderForRequest
 };
