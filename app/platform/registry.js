@@ -40,9 +40,9 @@ function providerCatalog(env = process.env) {
       label: "Anthropic",
       kind: "cloud",
       configured: configured(env.ANTHROPIC_API_KEY),
-      chat: false,
+      chat: true,
       research: false,
-      adapterState: "credential-detected-adapter-not-yet-active"
+      adapterState: "active-text-chat"
     },
     {
       id: "google",
@@ -58,9 +58,9 @@ function providerCatalog(env = process.env) {
       label: "Local / Private Model",
       kind: "local",
       configured: configured(env.UNBOUND_LOCAL_AI_ENDPOINT),
-      chat: false,
+      chat: true,
       research: false,
-      adapterState: "endpoint-detected-adapter-not-yet-active"
+      adapterState: "active-openai-compatible-chat"
     }
   ];
 }
