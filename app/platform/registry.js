@@ -49,9 +49,10 @@ function providerCatalog(env = process.env) {
       label: "Google Gemini",
       kind: "cloud",
       configured: configured(env.GEMINI_API_KEY || env.GOOGLE_AI_API_KEY),
-      chat: false,
+      chat: true,
+      streaming: true,
       research: false,
-      adapterState: "credential-detected-adapter-not-yet-active"
+      adapterState: "active-streaming-text-chat"
     },
     {
       id: "local",
