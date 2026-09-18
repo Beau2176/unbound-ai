@@ -13,7 +13,7 @@ const {
 
 function safeImageError(error) {
   const code = String(error?.code || "");
-  if (code === "IMAGE_PROVIDER_NOT_CONFIGURED") {
+  if (code === "USAGE_MONTHLY_LIMIT_REACHED") {\n    return { statusCode: Number(error?.statusCode) || 429, code, message: error?.publicMessage || error?.message || "Monthly usage allowance reached." };\n  }\n  if (code === "IMAGE_PROVIDER_NOT_CONFIGURED") {
     return {
       statusCode: 503,
       code,
@@ -90,7 +90,7 @@ function createImageUnderstandingRouter({
         });
       }
 
-      const input = normalizeImageUnderstandingRequest(req.body, env);
+      if (typeof assertUsageBudget === "function") {\n        await assertUsageBudget({ userId: req.user?.id || null, category: "image_understanding" });\n      }\n\n      const input = normalizeImageUnderstandingRequest(req.body, env);
       const malwareScan = await scanBufferForMalware({
         filename: input.filename,
         buffer: Buffer.from(input.imageBase64, "base64"),
