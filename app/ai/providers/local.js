@@ -1,6 +1,7 @@
 const {
   combineSystemAndMessages,
   retryAfterMsFromHeaders,
+  boundedProviderReply,
   providerError,
   normalizeHttpEndpoint
 } = require("./provider-utils");
@@ -79,7 +80,10 @@ function publicResult(payload, selectedModel) {
   return {
     provider: "local",
     model: payload.model || selectedModel,
-    reply: String(payload?.choices?.[0]?.message?.content || ""),
+    reply: boundedProviderReply(
+      payload?.choices?.[0]?.message?.content || "",
+      { code: "LOCAL_AI_REPLY_TOO_LARGE", label: "Local AI" }
+    ),
     usage: payload.usage || null,
     responseId: payload.id || null,
     research: { sources: [], citations: [], webSearchCalls: 0 }
