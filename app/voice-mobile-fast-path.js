@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'unbound-mobile-voice-fast-path-v6';
+  const VERSION = 'unbound-mobile-voice-fast-path-v7';
   const SAFE_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead.safe.v2';
   const LEGACY_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead';
   const VOICE_STORAGE_KEY = 'unbound.voice.systemVoiceURI';
@@ -18,6 +18,7 @@
   let priming = false;
   let speaking = false;
   let manualPlayback = false;
+  let manualUseDefaultVoice = false;
   let generation = 0;
   let queue = [];
   let buffer = '';
@@ -79,6 +80,11 @@
     cachedVoice = findVoiceByKey(voices, wanted) || voices.find((voice) => voice?.default) || voices[0] || null;
     if (cachedVoice) storageSet(VOICE_STORAGE_KEY, voiceKey(cachedVoice));
     return cachedVoice;
+  }
+
+  function resolveDefaultVoice() {
+    const voices = systemVoices();
+    return voices.find((voice) => voice?.default) || voices[0] || null;
   }
 
   function autoReadEnabled() {
@@ -153,35 +159,102 @@
     buffer = '';
     sawStreamDelta = false;
     speaking = false;
+    priming = false;
     manualPlayback = false;
+    manualUseDefaultVoice = false;
     if (cancelSpeech && 'speechSynthesis' in window) {
-      try { window.speechSynthesis.cancel(); } catch (_) {}
+      try {
+        if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+          window.speechSynthesis.cancel();
+        }
+      } catch (_) {}
     }
   }
 
   function speakNext() {
     if (speaking || !queue.length || handsFreeActive()) return;
     if (!manualPlayback && !autoReadEnabled()) return;
-    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function') return;
+    if (!('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function') {
+      if (manualPlayback) setNote('This browser does not expose a speech engine. Try opening UNBOUND AI in Chrome.');
+      return;
+    }
 
     const token = generation;
     const text = queue.shift();
-    const voice = resolveVoice();
+    const voice = manualUseDefaultVoice ? resolveDefaultVoice() : resolveVoice();
     const utterance = new window.SpeechSynthesisUtterance(text);
     applyVoice(utterance, voice);
     utterance.rate = 1;
     utterance.pitch = 1;
     utterance.volume = 1;
+
+    const synth = window.speechSynthesis;
+    let started = false;
+    let watchdog = null;
+    const clearWatchdog = () => {
+      if (watchdog) window.clearTimeout(watchdog);
+      watchdog = null;
+    };
+    const retryWithDefaultVoice = () => {
+      if (token !== generation || !manualPlayback || manualUseDefaultVoice) return false;
+      clearWatchdog();
+      try { if (synth.speaking || synth.pending) synth.cancel(); } catch (_) {}
+      speaking = false;
+      manualUseDefaultVoice = true;
+      queue.unshift(text);
+      setNote('The selected device voice did not start. Retrying with the phone default voice.');
+      window.setTimeout(speakNext, 80);
+      return true;
+    };
+
     speaking = true;
-    utterance.onstart = () => { primed = true; priming = false; };
+    utterance.onstart = () => {
+      started = true;
+      clearWatchdog();
+      primed = true;
+      priming = false;
+    };
     utterance.onend = () => {
+      clearWatchdog();
       if (token !== generation) return;
       speaking = false;
-      if (!queue.length) manualPlayback = false;
+      if (!queue.length) {
+        manualPlayback = false;
+        manualUseDefaultVoice = false;
+      }
       window.setTimeout(speakNext, 15);
     };
-    utterance.onerror = () => { speaking = false; manualPlayback = false; };
-    try { window.speechSynthesis.speak(utterance); } catch (_) { speaking = false; manualPlayback = false; }
+    utterance.onerror = () => {
+      clearWatchdog();
+      if (retryWithDefaultVoice()) return;
+      speaking = false;
+      manualPlayback = false;
+      manualUseDefaultVoice = false;
+      setNote('The phone speech engine could not play this answer. Try another device voice in Voice settings.');
+    };
+
+    try {
+      try { synth.resume(); } catch (_) {}
+      synth.speak(utterance);
+      if (manualPlayback) {
+        watchdog = window.setTimeout(() => {
+          if (token !== generation || started || !speaking) return;
+          if (synth.speaking) return;
+          if (retryWithDefaultVoice()) return;
+          speaking = false;
+          manualPlayback = false;
+          manualUseDefaultVoice = false;
+          setNote('The phone speech engine did not start. Try another device voice in Voice settings.');
+        }, 1600);
+      }
+    } catch (_) {
+      clearWatchdog();
+      if (retryWithDefaultVoice()) return;
+      speaking = false;
+      manualPlayback = false;
+      manualUseDefaultVoice = false;
+      setNote('The phone speech engine could not start. Try another device voice in Voice settings.');
+    }
   }
 
   function enqueue(text) {
@@ -194,7 +267,6 @@
   function speakLocal(text) {
     reset();
     manualPlayback = true;
-    prime();
     enqueue(text);
     return true;
   }
@@ -337,9 +409,15 @@
     speakSelected(text);
   }
 
+  function primeFromGesture(event) {
+    const action = event?.target?.closest?.('.voice-listen-action');
+    if (action && /Listen to last answer/i.test(String(action.textContent || ''))) return;
+    prime();
+  }
+
   document.addEventListener('click', handleCapturedClick, true);
-  document.addEventListener('pointerdown', prime, { passive: true, capture: true, once: true });
-  document.addEventListener('touchstart', prime, { passive: true, capture: true, once: true });
+  document.addEventListener('pointerdown', primeFromGesture, { passive: true, capture: true, once: true });
+  document.addEventListener('touchstart', primeFromGesture, { passive: true, capture: true, once: true });
   window.addEventListener('unbound:assistant-stream', onStream);
   window.addEventListener('unbound:device-voice-changed', () => {
     cachedVoice = null;
