@@ -19,7 +19,11 @@ async function main() {
     ]
   );
 
-  const original = { ...process.env };
+  const trackedKeys = [
+    "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "GEMINI_API_KEY", "GEMINI_MODEL",
+    "UNBOUND_LOCAL_AI_ENDPOINT", "UNBOUND_LOCAL_AI_MODEL", "UNBOUND_LOCAL_AI_API_KEY"
+  ];
+  const original = Object.fromEntries(trackedKeys.map((key) => [key, process.env[key]]));
   try {
     process.env.ANTHROPIC_API_KEY = "anthropic-secret";
     process.env.ANTHROPIC_MODEL = "claude-sonnet-5";
@@ -189,7 +193,10 @@ async function main() {
 
     console.log("PASS provider/MCP/sandbox parity contract: Anthropic, Gemini, local AI, provider-aware routing, stateless MCP approvals, and fail-closed coding sandbox.");
   } finally {
-    process.env = original;
+    for (const key of trackedKeys) {
+      if (original[key] === undefined) delete process.env[key];
+      else process.env[key] = original[key];
+    }
   }
 }
 
