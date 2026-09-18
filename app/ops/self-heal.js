@@ -47,6 +47,8 @@ const LOCKED_POLICY = Object.freeze({
     "memory/server-integration.js",
     "knowledge/adaptive.js",
     "knowledge/server-integration.js",
+    "usage/plan-budgets.js",
+    "usage/server-integration.js",
     "voice/server-integration.js",
     "voice-presets.js"
   ])
