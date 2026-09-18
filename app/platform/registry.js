@@ -41,8 +41,9 @@ function providerCatalog(env = process.env) {
       kind: "cloud",
       configured: configured(env.ANTHROPIC_API_KEY),
       chat: true,
+      streaming: true,
       research: false,
-      adapterState: "active-text-chat"
+      adapterState: "active-streaming-text-chat"
     },
     {
       id: "google",
