@@ -3,8 +3,8 @@
 UNBOUND AI has three customer tiers:
 
 - **Tier 1 — Free:** $0/month.
-- **Tier 2 — Premium:** **$59.99/month**.
-- **Tier 3 — Ultra:** **$114.99/month**.
+- **Tier 2 — Premium:** **$29.99/month**.
+- **Tier 3 — Ultra:** **$99.99/month**.\n- **Tier 4 — Max:** **$199.99/month**, staged for a future launch and disabled unless `UNBOUND_MAX_LAUNCH_ENABLED=true`.
 
 Adult Mode is **Ultra-only** and payment never bypasses the separate hard 18+ verification gate.
 
@@ -24,8 +24,8 @@ Set `BILLING_PROVIDER=segpay` only after the merchant setup is ready.
 
 Required values:
 
-- `SEGPAY_PREMIUM_PAY_PAGE_REF` — hosted pay page for the **$59.99 Premium** recurring package.
-- `SEGPAY_ULTRA_PAY_PAGE_REF` — hosted pay page for the **$114.99 Ultra** recurring package. `SEGPAY_PAY_PAGE_REF` remains a temporary backwards-compatible Ultra alias during migration.
+- `SEGPAY_PREMIUM_PAY_PAGE_REF` — hosted pay page for the **$29.99 Premium** recurring package.
+- `SEGPAY_ULTRA_PAY_PAGE_REF` — hosted pay page for the **$99.99 Ultra** recurring package. `SEGPAY_PAY_PAGE_REF` remains a temporary backwards-compatible Ultra alias during migration.
 - `SEGPAY_SIGNING_KEY` — hosted-pay-page HS256 signing key issued by Segpay Merchant Services. Use the string exactly as issued.
 - `SEGPAY_POSTBACK_USERNAME`
 - `SEGPAY_POSTBACK_PASSWORD`
@@ -35,8 +35,8 @@ Required values:
 
 The exact prices are enforced server-side in the adapter:
 
-- Premium: `59.99`
-- Ultra: `114.99`
+- Premium: `29.99`
+- Ultra: `99.99`
 
 The browser cannot choose an arbitrary price. Both paid pay-page references plus shared credentials/attestations must be present before the Segpay adapter reports fully configured.
 
@@ -79,7 +79,7 @@ UNBOUND accepts authenticated GET and POST delivery. Configure the relevant Segp
 - `ref1=<REF1>`
 - `ref2=<REF2>`
 
-For sale/rebill events where a trustworthy amount is present, UNBOUND maps `59.99 -> premium` and `114.99 -> ultra`. Lifecycle events such as cancel/disable/reactivate that do not contain a reliable plan amount return no new plan value; the database keeps the existing tier rather than guessing or accidentally upgrading a customer.
+For sale/rebill events where a trustworthy amount is present, UNBOUND maps current amounts `29.99 -> premium` and `99.99 -> ultra`; legacy amounts `49.99`/`59.99` remain Premium and `114.99`/`129.99` remain Ultra so existing rebills are not broken. Lifecycle events such as cancel/disable/reactivate that do not contain a reliable plan amount return no new plan value; the database keeps the existing tier rather than guessing or accidentally upgrading a customer.
 
 Successful webhook acknowledgements return plain text `OK`. Authentication is timing-safe and provider retries remain idempotent through deterministic event identifiers.
 
@@ -103,7 +103,7 @@ The code does not equal provider approval. Before live paid launch:
 
 1. Obtain explicit Segpay approval for UNBOUND's actual AI/adults-only business model.
 2. Complete Segpay/card-brand compliance requirements.
-3. Create **two recurring packages/pay pages**: Premium $59.99 and Ultra $114.99.
+3. Create **two recurring packages/pay pages**: Premium $29.99 and Ultra $99.99.
 4. Confirm signed `amount`, `REF1`, and `REF2` on both packages.
 5. Configure authenticated transaction/member-management postbacks and verify the `REF1`/`REF2` round trip.
 6. Verify initial Premium sale, initial Ultra sale, recurring billing, cancellation, disable/expiry, refund/chargeback, reactivation, and failure paths.
