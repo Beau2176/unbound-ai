@@ -134,6 +134,12 @@ AI_FILE_ANALYSIS_TIMEOUT_MS=180000
 
 All values are bounded to 5–300 seconds. Fetch-based providers receive an abort signal for the full operation, including stream/body reading and Anthropic research continuations. OpenAI requests use the same UNBOUND deadline and set SDK retries to zero so transient failures reach UNBOUND's failover/circuit layer without hidden retry delays.
 
+### Provider output bounds
+
+UNBOUND applies a shared hard ceiling of 4,194,304 characters to provider reply text before it can continue through the gateway. OpenAI normal chat, Research Mode, streaming, and file analysis are covered; Anthropic and Gemini non-streaming/research aggregation are covered; local/private-model JSON replies are covered; and the existing Anthropic, Gemini, and local streaming limits remain in force.
+
+An output-size rejection is a local safety/resource policy, not evidence that the upstream provider is unhealthy. These errors therefore do not trigger fallback or increment the provider circuit breaker.
+
 ### Provider concurrency bulkheads
 
 UNBOUND isolates provider capacity with a separate in-memory bulkhead for each AI provider. By default, each provider allows up to 16 in-flight operations and a queue of up to 64 waiting operations. A queued request waits no longer than 2.5 seconds before it is rejected locally.
