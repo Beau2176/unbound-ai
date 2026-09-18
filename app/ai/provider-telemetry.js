@@ -1,4 +1,4 @@
-const TELEMETRY_VERSION = "v1.0";
+const TELEMETRY_VERSION = "v1.1";
 
 const LATENCY_BUCKETS = Object.freeze([
   Object.freeze({ key: "lt_1s", maxMs: 1000 }),
@@ -42,6 +42,7 @@ function providerState(providerId) {
       successes: 0,
       failures: 0,
       retryableFailures: 0,
+      cancellations: 0,
       totalDurationMs: 0,
       maxDurationMs: 0,
       roles: { primary: 0, fallback: 0, research: 0 },
@@ -53,6 +54,7 @@ function providerState(providerId) {
       },
       lastSuccessAt: null,
       lastFailureAt: null,
+      lastCancellationAt: null,
       lastErrorCode: null
     });
   }
@@ -84,6 +86,7 @@ function beginProviderAttempt({
 function finishProviderAttempt(token, {
   ok,
   retryable = false,
+  cancelled = false,
   errorCode = null,
   durationMs = null,
   now = Date.now()
@@ -103,7 +106,11 @@ function finishProviderAttempt(token, {
   entry.state.maxDurationMs = Math.max(entry.state.maxDurationMs, elapsedMs);
   entry.state.latencyBuckets[latencyBucket(elapsedMs)] += 1;
 
-  if (ok) {
+  if (cancelled) {
+    entry.state.cancellations += 1;
+    entry.state.lastCancellationAt = Number(now);
+    entry.state.lastErrorCode = null;
+  } else if (ok) {
     entry.state.successes += 1;
     entry.state.lastSuccessAt = Number(now);
     entry.state.lastErrorCode = null;
@@ -157,12 +164,16 @@ function publicProviderState(providerId, state) {
     successes: state.successes,
     failures: state.failures,
     retryableFailures: state.retryableFailures,
+    cancellations: state.cancellations,
     roles: { ...state.roles },
     averageDurationMs: roundMs(averageDurationMs),
     maxDurationMs: roundMs(state.maxDurationMs),
     latencyBuckets: { ...state.latencyBuckets },
     lastSuccessAt: state.lastSuccessAt ? new Date(state.lastSuccessAt).toISOString() : null,
     lastFailureAt: state.lastFailureAt ? new Date(state.lastFailureAt).toISOString() : null,
+    lastCancellationAt: state.lastCancellationAt
+      ? new Date(state.lastCancellationAt).toISOString()
+      : null,
     lastErrorCode: state.lastErrorCode
   };
 }

@@ -45,7 +45,7 @@ function buildIntegratedSource() {
 }
 
 function main() {
-  assert.strictEqual(INTEGRATION_VERSION, "v0.96");
+  assert.strictEqual(INTEGRATION_VERSION, "v0.97");
   assert.strictEqual(normalizeKnowledgeQuery("  Hello   WORLD  "), "hello world");
   assert.strictEqual(queryKey("Hello world"), queryKey("  hello   WORLD "));
   assert.ok(freshnessHoursForQuery("weather today") <= 12);
@@ -127,7 +127,7 @@ function main() {
   assert.ok(page.includes("/api/knowledge/preferences"));
   assert.ok(page.includes("/api/knowledge/feedback"));
 
-  console.log("UNBOUND AI Adaptive Knowledge Engine v0.96 contract checks passed.");
+  console.log("UNBOUND AI Adaptive Knowledge Engine v0.97 contract checks passed.");
 }
 
 main();

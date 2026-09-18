@@ -136,6 +136,12 @@ Provider-specific overrides use `OPENAI_`, `ANTHROPIC_`, `GEMINI_`, or `LOCAL_AI
 
 Bulkhead saturation is treated as local admission pressure, not proof that the upstream provider is unhealthy. Normal chat may fail over to a configured fallback when the primary bulkhead rejects or times out, but those local events do not increment the provider circuit breaker. Live active/queued counts are exposed only in admin operational diagnostics.
 
+### Client disconnect cancellation
+
+UNBOUND propagates HTTP client disconnects through the gateway, provider bulkhead, and provider request deadline. If a user closes the browser/app, navigates away, or otherwise drops an in-flight chat connection, queued admission is removed immediately and any active upstream provider request is aborted.
+
+Client cancellation is not treated as a provider outage: it does not trigger fallback, does not increment or reset the provider circuit breaker, and is recorded separately from provider failures in process-local telemetry. This applies to normal chat, streaming chat, Research Mode, and file-analysis provider calls when a request signal is supplied.
+
 ## Mobile
 
 From `mobile/`:

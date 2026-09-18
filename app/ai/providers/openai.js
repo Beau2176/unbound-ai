@@ -198,6 +198,7 @@ async function generateChat({
   model,
   research = null,
   reasoningEffort = null,
+  signal: requestSignal = null,
   clientFactory = createClient
 }) {
   assertConfigured();
@@ -245,6 +246,7 @@ async function generateChat({
       };
     },
     {
+      externalSignal: requestSignal,
       code: research?.enabled ? "OPENAI_RESEARCH_TIMEOUT" : "OPENAI_REQUEST_TIMEOUT",
       label: research?.enabled ? "OpenAI Research Mode request" : "OpenAI request"
     }
@@ -257,6 +259,7 @@ async function streamChat({
   model,
   onDelta,
   reasoningEffort = null,
+  signal: requestSignal = null,
   clientFactory = createClient
 }) {
   assertConfigured();
@@ -307,6 +310,7 @@ async function streamChat({
       };
     },
     {
+      externalSignal: requestSignal,
       code: "OPENAI_STREAM_TIMEOUT",
       label: "OpenAI streaming request"
     }
@@ -320,6 +324,7 @@ async function analyzeFile({
   prompt,
   detail = "low",
   model,
+  signal: requestSignal = null,
   clientFactory = createClient
 } = {}) {
   assertConfigured();
@@ -351,6 +356,7 @@ async function analyzeFile({
       };
     },
     {
+      externalSignal: requestSignal,
       code: "OPENAI_FILE_ANALYSIS_TIMEOUT",
       label: "OpenAI file-analysis request"
     }

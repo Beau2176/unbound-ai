@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v0.85";
+const INTEGRATION_VERSION = "v0.86";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const first = source.indexOf(marker);
@@ -32,8 +32,8 @@ function integrateModelRoutingServerSource(serverSource) {
     "model-routing-import"
   );
 
-  const generateMarker = `    const aiResponse = await generateChat({\n      model: gatewayStatus.model,`;
-  const generateReplacement = `    const multiModelAccess = req.user ? await buildAccountAccess(req.user) : null;\n    const multiModelEnabled = Boolean(\n      multiModelAccess?.capabilities?.find((item) => item.key === "multi_model")?.usable\n    );\n    const modelRoute = resolveChatModel({\n      requestedProfile: req.body?.modelProfile,\n      depthStyle,\n      productMode,\n      message,\n      defaultModel: gatewayStatus.model,\n      enabled: multiModelEnabled\n    });\n    const reasoningEffort =\n      productMode === "research" || depthStyle === "work" ? "low" : "none";\n\n    const aiResponse = await generateChat({\n      model: modelRoute.model,\n      reasoningEffort,`;
+  const generateMarker = `    const aiResponse = await runWithRequestCancellation(\n      req,\n      res,\n      (signal) => generateChat({\n        model: gatewayStatus.model,`;
+  const generateReplacement = `    const multiModelAccess = req.user ? await buildAccountAccess(req.user) : null;\n    const multiModelEnabled = Boolean(\n      multiModelAccess?.capabilities?.find((item) => item.key === "multi_model")?.usable\n    );\n    const modelRoute = resolveChatModel({\n      requestedProfile: req.body?.modelProfile,\n      depthStyle,\n      productMode,\n      message,\n      defaultModel: gatewayStatus.model,\n      enabled: multiModelEnabled\n    });\n    const reasoningEffort =\n      productMode === "research" || depthStyle === "work" ? "low" : "none";\n\n    const aiResponse = await runWithRequestCancellation(\n      req,\n      res,\n      (signal) => generateChat({\n        model: modelRoute.model,\n        reasoningEffort,`;
   source = replaceExactlyOnce(
     source,
     generateMarker,
@@ -41,8 +41,8 @@ function integrateModelRoutingServerSource(serverSource) {
     "non-streaming-chat-model"
   );
 
-  const streamMarker = `    const aiResponse = await streamChat({\n      model: gatewayStatus.model,`;
-  const streamReplacement = `    const multiModelAccess = req.user ? await buildAccountAccess(req.user) : null;\n    const multiModelEnabled = Boolean(\n      multiModelAccess?.capabilities?.find((item) => item.key === "multi_model")?.usable\n    );\n    const modelRoute = resolveChatModel({\n      requestedProfile: req.body?.modelProfile,\n      depthStyle,\n      productMode,\n      message,\n      defaultModel: gatewayStatus.model,\n      enabled: multiModelEnabled\n    });\n    const reasoningEffort = depthStyle === "work" ? "low" : "none";\n\n    const aiResponse = await streamChat({\n      model: modelRoute.model,\n      reasoningEffort,`;
+  const streamMarker = `    const aiResponse = await runWithRequestCancellation(\n      req,\n      res,\n      (signal) => streamChat({\n        model: gatewayStatus.model,`;
+  const streamReplacement = `    const multiModelAccess = req.user ? await buildAccountAccess(req.user) : null;\n    const multiModelEnabled = Boolean(\n      multiModelAccess?.capabilities?.find((item) => item.key === "multi_model")?.usable\n    );\n    const modelRoute = resolveChatModel({\n      requestedProfile: req.body?.modelProfile,\n      depthStyle,\n      productMode,\n      message,\n      defaultModel: gatewayStatus.model,\n      enabled: multiModelEnabled\n    });\n    const reasoningEffort = depthStyle === "work" ? "low" : "none";\n\n    const aiResponse = await runWithRequestCancellation(\n      req,\n      res,\n      (signal) => streamChat({\n        model: modelRoute.model,\n        reasoningEffort,`;
   source = replaceExactlyOnce(
     source,
     streamMarker,

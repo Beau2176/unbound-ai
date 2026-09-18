@@ -16,7 +16,8 @@ const {
   getProviderTelemetrySnapshot
 } = require("./provider-telemetry");
 const {
-  getProviderDeadlinePolicy
+  getProviderDeadlinePolicy,
+  isProviderCancellationError
 } = require("./provider-deadline");
 const {
   runWithProviderBulkhead,
@@ -286,6 +287,7 @@ function nestedErrorCode(error) {
 
 function isRetryableProviderError(error) {
   if (!error) return false;
+  if (isProviderCancellationError(error)) return false;
 
   const status = retryStatus(error);
   if (status === 408 || status === 425 || status === 429) return true;
@@ -452,11 +454,12 @@ async function generateWithProvider(provider, options, role = "primary") {
       finishProviderAttempt(attempt, {
         ok: false,
         retryable: isRetryableProviderError(error),
+        cancelled: isProviderCancellationError(error),
         errorCode: nestedErrorCode(error)
       });
       throw error;
     }
-  });
+  }, { signal: options?.signal || null });
 }
 
 async function streamWithProvider(provider, options, role = "primary") {
@@ -481,18 +484,20 @@ async function streamWithProvider(provider, options, role = "primary") {
       finishProviderAttempt(attempt, {
         ok: false,
         retryable: isRetryableProviderError(error),
+        cancelled: isProviderCancellationError(error),
         errorCode: nestedErrorCode(error)
       });
       throw error;
     }
-  });
+  }, { signal: options?.signal || null });
 }
 async function generateChat({
   instructions,
   input,
   model,
   research = null,
-  reasoningEffort = null
+  reasoningEffort = null,
+  signal = null
 }) {
   const route = resolveProviderForRequest({
     research,
@@ -505,7 +510,8 @@ async function generateChat({
     input,
     model: route.model,
     research,
-    reasoningEffort
+    reasoningEffort,
+    signal
   };
 
   // Research Mode has its own sourced-provider route and intentionally does not
@@ -534,7 +540,8 @@ async function generateChat({
       input,
       model: fallbackModelForProvider(fallbackRoute.provider),
       research: null,
-      reasoningEffort
+      reasoningEffort,
+      signal
     }, "fallback");
   }
 
@@ -546,6 +553,16 @@ async function generateChat({
     });
     return result;
   } catch (error) {
+    if (isProviderCancellationError(error)) {
+      if (circuitAttempt.halfOpenProbe) {
+        cancelProviderCircuitAttempt({
+          primaryProviderId: route.provider.id,
+          fallbackProviderId: fallbackRoute.provider?.id || null
+        });
+      }
+      throw error;
+    }
+
     const retryable = isRetryableProviderError(error);
     if (isProviderBulkheadError(error)) {
       if (circuitAttempt.halfOpenProbe) {
@@ -575,7 +592,8 @@ async function generateChat({
       input,
       model: fallbackModelForProvider(fallbackRoute.provider),
       research: null,
-      reasoningEffort
+      reasoningEffort,
+      signal
     }, "fallback");
   }
 }
@@ -585,7 +603,8 @@ async function streamChat({
   input,
   model,
   onDelta,
-  reasoningEffort = null
+  reasoningEffort = null,
+  signal = null
 }) {
   const provider = getProvider();
   const selectedModel = String(model || "").trim() || provider.getModel();
@@ -609,7 +628,8 @@ async function streamChat({
       input,
       model: fallbackModelForProvider(fallbackRoute.provider),
       onDelta,
-      reasoningEffort
+      reasoningEffort,
+      signal
     }, "fallback");
   }
 
@@ -626,7 +646,8 @@ async function streamChat({
       input,
       model: selectedModel,
       onDelta: primaryOnDelta,
-      reasoningEffort
+      reasoningEffort,
+      signal
     });
     recordProviderCircuitSuccess({
       primaryProviderId: provider.id,
@@ -634,6 +655,16 @@ async function streamChat({
     });
     return result;
   } catch (error) {
+    if (isProviderCancellationError(error)) {
+      if (circuitAttempt.halfOpenProbe) {
+        cancelProviderCircuitAttempt({
+          primaryProviderId: provider.id,
+          fallbackProviderId: fallbackRoute.provider?.id || null
+        });
+      }
+      throw error;
+    }
+
     const retryable = isRetryableProviderError(error);
     if (isProviderBulkheadError(error)) {
       if (circuitAttempt.halfOpenProbe) {
@@ -665,7 +696,8 @@ async function streamChat({
       input,
       model: fallbackModelForProvider(fallbackRoute.provider),
       onDelta,
-      reasoningEffort
+      reasoningEffort,
+      signal
     }, "fallback");
   }
 }
@@ -679,7 +711,8 @@ async function analyzeFile(options = {}) {
   }
   return runWithProviderBulkhead(
     provider.id,
-    () => provider.analyzeFile(options)
+    () => provider.analyzeFile(options),
+    { signal: options?.signal || null }
   );
 }
 

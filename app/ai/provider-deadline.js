@@ -54,7 +54,8 @@ function getProviderDeadlineMs(kind, env = process.env) {
 
 function createProviderDeadline(kind = "chat", {
   env = process.env,
-  timeoutMs = null
+  timeoutMs = null,
+  externalSignal = null
 } = {}) {
   const configured = timeoutMs === null
     ? getProviderDeadlineMs(kind, env)
@@ -66,7 +67,29 @@ function createProviderDeadline(kind = "chat", {
       );
   const controller = new AbortController();
   let timedOut = false;
+  let externallyAborted = false;
+  let externalAbortReason = null;
+
+  const abortFromExternal = () => {
+    externallyAborted = true;
+    externalAbortReason = externalSignal?.reason || null;
+    if (controller.signal.aborted) return;
+    const reason = externalSignal?.reason || (
+      typeof DOMException === "function"
+        ? new DOMException("UNBOUND request was cancelled.", "AbortError")
+        : Object.assign(new Error("UNBOUND request was cancelled."), { name: "AbortError" })
+    );
+    controller.abort(reason);
+  };
+
+  if (externalSignal?.aborted) {
+    abortFromExternal();
+  } else if (externalSignal?.addEventListener) {
+    externalSignal.addEventListener("abort", abortFromExternal, { once: true });
+  }
+
   const timer = setTimeout(() => {
+    if (controller.signal.aborted) return;
     timedOut = true;
     const reason = typeof DOMException === "function"
       ? new DOMException("UNBOUND provider deadline exceeded.", "TimeoutError")
@@ -81,8 +104,13 @@ function createProviderDeadline(kind = "chat", {
     signal: controller.signal,
     deadlineAt: Date.now() + configured,
     timedOut: () => timedOut,
+    externallyAborted: () => externallyAborted,
+    externalAbortReason: () => externalAbortReason,
     cancel() {
       clearTimeout(timer);
+      try {
+        externalSignal?.removeEventListener?.("abort", abortFromExternal);
+      } catch (_) {}
     }
   });
 }
@@ -114,20 +142,43 @@ function providerDeadlineError(code, label, timeoutMs) {
   return error;
 }
 
+function providerCancellationError(label = "AI provider request", reason = null) {
+  const error = new Error(`${label} was cancelled because the client request ended.`);
+  error.code = "AI_REQUEST_ABORTED";
+  error.statusCode = 499;
+  if (reason) error.cause = reason;
+  return error;
+}
+
+function isProviderCancellationError(error) {
+  return String(error?.code || "") === "AI_REQUEST_ABORTED";
+}
+
 async function runWithProviderDeadline(
   kind,
   operation,
   {
     env = process.env,
     timeoutMs = null,
+    externalSignal = null,
     code = "AI_PROVIDER_TIMEOUT",
     label = "AI provider request"
   } = {}
 ) {
-  const deadline = createProviderDeadline(kind, { env, timeoutMs });
+  const deadline = createProviderDeadline(kind, {
+    env,
+    timeoutMs,
+    externalSignal
+  });
   try {
+    if (deadline.externallyAborted()) {
+      throw providerCancellationError(label, deadline.externalAbortReason());
+    }
     return await operation(deadline);
   } catch (error) {
+    if (deadline.externallyAborted() && !deadline.timedOut()) {
+      throw providerCancellationError(label, deadline.externalAbortReason() || error);
+    }
     if (deadline.timedOut() || isTimeoutLikeError(error)) {
       throw providerDeadlineError(code, label, deadline.timeoutMs);
     }
@@ -145,5 +196,7 @@ module.exports = {
   createProviderDeadline,
   isTimeoutLikeError,
   providerDeadlineError,
+  providerCancellationError,
+  isProviderCancellationError,
   runWithProviderDeadline
 };

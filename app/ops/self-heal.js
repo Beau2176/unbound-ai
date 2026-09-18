@@ -20,6 +20,7 @@ const LOCKED_POLICY = Object.freeze({
     "ops/self-heal.js",
     "ops/system-diagnostics.js",
     "ops/diagnostics-server-integration.js",
+    "ops/request-cancellation.js",
     "capabilities/runtime.js",
     "capabilities/server-integration.js",
     "ai/gateway.js",

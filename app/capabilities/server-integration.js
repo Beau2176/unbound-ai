@@ -1,4 +1,4 @@
-const INTEGRATION_VERSION = "v1.1";
+const INTEGRATION_VERSION = "v1.2";
 
 function replaceExactlyOnce(source, marker, replacement, label) {
   const first = source.indexOf(marker);
@@ -72,11 +72,11 @@ function integrateRuntimeCapabilitiesServerSource(serverSource) {
     "auto-research-bypass-cache"
   );
 
-  const researchMarker = `      research:\n        productMode === "research"\n          ? { enabled: true, maxToolCalls: depthStyle === "work" ? 8 : 4 }\n          : null`;
+  const researchMarker = `        research:\n          productMode === "research"\n            ? { enabled: true, maxToolCalls: depthStyle === "work" ? 8 : 4 }\n            : null`;
   source = replaceExpectedCount(
     source,
     researchMarker,
-    `      research:\n        (productMode === "research" || autoResearch)\n          ? { enabled: true, maxToolCalls: depthStyle === "work" ? 8 : 4 }\n          : null`,
+    `        research:\n          (productMode === "research" || autoResearch)\n            ? { enabled: true, maxToolCalls: depthStyle === "work" ? 8 : 4 }\n            : null`,
     1,
     "auto-research-routing"
   );
