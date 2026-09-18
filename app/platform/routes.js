@@ -19,6 +19,11 @@ const {
 const { publicMcpStatus, listMcpTools, callMcpTool } = require("../connections/mcp-client");
 const { publicSandboxStatus, createSandboxJob, getSandboxJob } = require("../coding/sandbox-client");
 const {
+  MAX_AGENT_TEAMS_PER_USER,
+  normalizeAgentTeamInput,
+  publicAgentTeam
+} = require("../orchestration/teams");
+const {
   marketplaceEnabled,
   creatorMarketplaceEnabled,
   normalizeMarketplaceSkillInput,
@@ -735,6 +740,90 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
     } catch (error) {
       console.error("UNBOUND MARKETPLACE UNINSTALL ERROR:", error);
       return res.status(500).json({ error: "Could not uninstall marketplace skill." });
+    }
+  });
+
+  router.get("/agent-teams", async (req, res) => {
+    try {
+      const result = await getPool().query(
+        `SELECT id, project_id, name, description, roles, active, created_at, updated_at
+         FROM agent_teams
+         WHERE user_id = $1
+         ORDER BY active DESC, updated_at DESC
+         LIMIT 100`,
+        [req.user.id]
+      );
+      return res.json({ teams: result.rows.map(publicAgentTeam) });
+    } catch (error) {
+      console.error("UNBOUND AGENT TEAM LIST ERROR:", error);
+      return res.status(500).json({ error: "Could not load Agent teams." });
+    }
+  });
+
+  router.post("/agent-teams", async (req, res) => {
+    try {
+      const input = normalizeAgentTeamInput(req.body);
+      const projectId = req.body?.projectId ? String(req.body.projectId).trim() : null;
+      if (projectId && !validUuid(projectId)) return res.status(400).json({ error: "Invalid project ID." });
+      const pool = getPool();
+      if (projectId) {
+        const project = await pool.query(
+          "SELECT id FROM ai_projects WHERE id = $1::uuid AND user_id = $2 LIMIT 1",
+          [projectId, req.user.id]
+        );
+        if (!project.rows[0]) return res.status(404).json({ error: "Project not found." });
+      }
+      const count = await pool.query(
+        "SELECT COUNT(*)::int AS count FROM agent_teams WHERE user_id = $1",
+        [req.user.id]
+      );
+      if (Number(count.rows[0]?.count || 0) >= MAX_AGENT_TEAMS_PER_USER) {
+        return res.status(409).json({ error: "You already have the maximum number of Agent teams." });
+      }
+      const result = await pool.query(
+        `INSERT INTO agent_teams (
+           id, user_id, project_id, name, description, roles, active, created_at, updated_at
+         )
+         VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6::jsonb, TRUE, NOW(), NOW())
+         RETURNING id, project_id, name, description, roles, active, created_at, updated_at`,
+        [
+          input.id,
+          req.user.id,
+          projectId,
+          input.name,
+          input.description,
+          JSON.stringify(input.roles)
+        ]
+      );
+      await writeAuditEvent(pool, req.user.id, "agent_team.create", {
+        teamId: input.id,
+        projectId,
+        roles: input.roles
+      });
+      return res.status(201).json({ team: publicAgentTeam(result.rows[0]) });
+    } catch (error) {
+      if (String(error?.code || "").startsWith("AGENT_TEAM_")) {
+        return res.status(error.statusCode || 400).json({ error: error.message, code: error.code });
+      }
+      console.error("UNBOUND AGENT TEAM CREATE ERROR:", error);
+      return res.status(500).json({ error: "Could not create Agent team." });
+    }
+  });
+
+  router.delete("/agent-teams/:id", async (req, res) => {
+    if (!validUuid(req.params.id)) return res.status(400).json({ error: "Invalid Agent team ID." });
+    try {
+      const pool = getPool();
+      const result = await pool.query(
+        "DELETE FROM agent_teams WHERE id = $1::uuid AND user_id = $2 RETURNING id",
+        [req.params.id, req.user.id]
+      );
+      if (!result.rows[0]) return res.status(404).json({ error: "Agent team not found." });
+      await writeAuditEvent(pool, req.user.id, "agent_team.delete", { teamId: req.params.id });
+      return res.json({ ok: true, id: req.params.id });
+    } catch (error) {
+      console.error("UNBOUND AGENT TEAM DELETE ERROR:", error);
+      return res.status(500).json({ error: "Could not delete Agent team." });
     }
   });
 
