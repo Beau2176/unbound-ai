@@ -92,7 +92,8 @@ function safeProviderError(error) {
   if (code === "UPLOAD_MALWARE_DETECTED") return { statusCode: 400, code, message: "That upload was blocked because malware was detected." };
   if (code === "UPLOAD_MALWARE_SCANNER_UNAVAILABLE") return { statusCode: 503, code, message: "Upload malware scanning is temporarily unavailable. Try again shortly." };
   if (code === "UPLOAD_MALWARE_SCAN_INPUT_INVALID") return { statusCode: 400, code, message: "The upload could not be scanned safely." };
-  if (code === "USAGE_MONTHLY_LIMIT_REACHED") return { statusCode: Number(error?.statusCode) || 429, code, message: error?.publicMessage || error?.message || "Monthly usage allowance reached." };\n  if (code.startsWith("FILE_ANALYSIS_")) return { statusCode: Number(error?.statusCode) || 400, code, message: error?.publicMessage || "The uploaded file could not be analyzed." };
+  if (code === "USAGE_MONTHLY_LIMIT_REACHED") return { statusCode: Number(error?.statusCode) || 429, code, message: error?.publicMessage || error?.message || "Monthly usage allowance reached." };
+  if (code.startsWith("FILE_ANALYSIS_")) return { statusCode: Number(error?.statusCode) || 400, code, message: error?.publicMessage || "The uploaded file could not be analyzed." };
   return { statusCode: 502, code: "FILE_ANALYSIS_PROVIDER_FAILED", message: "The AI provider could not analyze that file. Try again shortly." };
 }
 
@@ -123,7 +124,10 @@ function createFileAnalysisRouter({ recordUsageEvent = null, estimateProviderCos
     try {
       const ai = getGatewayStatus();
       if (!ai.configured || !ai.fileAnalysis) return res.status(503).json({ error: "File analysis is temporarily unavailable.", code: ai.configured ? "AI_PROVIDER_FILE_ANALYSIS_UNSUPPORTED" : "AI_PROVIDER_NOT_CONFIGURED" });
-      if (typeof assertUsageBudget === "function") {\n        await assertUsageBudget({ userId: req.user?.id || null, category: "file_analysis" });\n      }\n      const input = normalizeFileAnalysisRequest(req.body, env);
+      if (typeof assertUsageBudget === "function") {
+        await assertUsageBudget({ userId: req.user?.id || null, category: "file_analysis" });
+      }
+      const input = normalizeFileAnalysisRequest(req.body, env);
       const malwareScan = await scanBufferForMalware({
         filename: input.filename,
         buffer: Buffer.from(input.fileBase64, "base64"),
