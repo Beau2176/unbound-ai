@@ -62,6 +62,7 @@ function getGoogleWorkspaceConfig(env = process.env) {
   const callbackUrl = cleanHttpsUrl(env.GOOGLE_OAUTH_CALLBACK_URL);
   const appRegistrationVerified = truthy(env.GOOGLE_OAUTH_REGISTRATION_VERIFIED);
   const readOnlyScopesVerified = truthy(env.GOOGLE_OAUTH_READ_ONLY_SCOPES_VERIFIED);
+  const restrictedScopesVerified = truthy(env.GOOGLE_OAUTH_RESTRICTED_SCOPES_VERIFIED);
   const tokenVault = getTokenVaultStatus(env);
   const configured = Boolean(
     clientId &&
@@ -69,6 +70,7 @@ function getGoogleWorkspaceConfig(env = process.env) {
     callbackUrl &&
     appRegistrationVerified &&
     readOnlyScopesVerified &&
+    restrictedScopesVerified &&
     tokenVault.configured
   );
   return {
@@ -77,6 +79,7 @@ function getGoogleWorkspaceConfig(env = process.env) {
     callbackUrl,
     appRegistrationVerified,
     readOnlyScopesVerified,
+    restrictedScopesVerified,
     tokenVaultConfigured: tokenVault.configured,
     configured
   };
@@ -89,6 +92,7 @@ function publicGoogleWorkspaceStatus(env = process.env) {
     configured: config.configured,
     appRegistrationVerified: config.appRegistrationVerified,
     readOnlyScopesVerified: config.readOnlyScopesVerified,
+    restrictedScopesVerified: config.restrictedScopesVerified,
     tokenEncryptionConfigured: config.tokenVaultConfigured,
     authorizationFlow: "web-application-pkce-offline",
     metadataOnly: true,
@@ -339,14 +343,11 @@ function headerValue(headers, name) {
 
 async function listGmailMetadata({
   accessToken,
-  query = "",
   fetchImpl = fetch
 } = {}) {
   const params = new URLSearchParams({
     maxResults: String(MAX_GMAIL_MESSAGES)
   });
-  const normalizedQuery = safeText(query, 500);
-  if (normalizedQuery) params.set("q", normalizedQuery);
 
   const listResponse = await fetchWithTimeout(
     `${GMAIL_API_ORIGIN}/users/me/messages?${params.toString()}`,
