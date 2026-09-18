@@ -187,10 +187,7 @@ function createConnectionsRouter({ getPool } = {}) {
     try {
       const pool = getPool();
       const { accessToken } = await getGoogleWorkspaceAccessToken(pool, req.user.id);
-      const result = await listGmailMetadata({
-        accessToken,
-        query: req.query.q
-      });
+      const result = await listGmailMetadata({ accessToken });
       await markConnectionUsed(pool, req.user.id, "google_workspace");
       return res.json({
         provider: "google_workspace",
