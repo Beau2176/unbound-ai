@@ -16,7 +16,7 @@ function passthrough(req, res, next) {
   return next();
 }
 
-function createAgentRouter({ getPool, createRunRateLimit = passthrough } = {}) {
+function createAgentRouter({ getPool, createRunRateLimit = passthrough, assertUsageBudget = null } = {}) {
   if (typeof getPool !== "function") {
     throw new Error("Agents require a database pool provider.");
   }
@@ -79,6 +79,9 @@ function createAgentRouter({ getPool, createRunRateLimit = passthrough } = {}) {
   router.post("/runs", createRunRateLimit, async (req, res) => {
     try {
       const input = normalizeAgentInput(req.body);
+      if (typeof assertUsageBudget === "function") {
+        await assertUsageBudget({ userId: req.user?.id || null, category: "agent" });
+      }
       const pool = getPool();
       const activeResult = await pool.query(
         `SELECT COUNT(*)::int AS active
@@ -116,6 +119,9 @@ function createAgentRouter({ getPool, createRunRateLimit = passthrough } = {}) {
       );
       return res.status(202).json({ run: publicAgentRun(result.rows[0]) });
     } catch (error) {
+      if (error?.code === "USAGE_MONTHLY_LIMIT_REACHED") {
+        return res.status(Number(error.statusCode) || 429).json({ error: error.publicMessage || error.message || "Monthly usage allowance reached.", code: error.code, usageBudget: error.usageBudget || null });
+      }
       if (String(error?.code || "").startsWith("AGENT_")) {
         return res.status(Number(error.statusCode) || 400).json({ error: error.publicMessage || "The Agent run is invalid.", code: error.code });
       }
