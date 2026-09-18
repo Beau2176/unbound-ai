@@ -4,7 +4,9 @@ const {
 } = require("./provider-utils");
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
-const DEFAULT_MODEL = "gemini-3.6-flash";
+const DEFAULT_MODEL = "gemini-3.8-flash";
+const MAX_STREAM_BUFFER_BYTES = 2 * 1024 * 1024;
+const MAX_STREAM_REPLY_CHARS = 4 * 1024 * 1024;
 
 function getModel() {
   return String(process.env.GEMINI_MODEL || process.env.GOOGLE_AI_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
@@ -37,9 +39,7 @@ function toGeminiContents(messages) {
   }));
 }
 
-async function generateChat({ instructions, input, model, fetchImpl = fetch } = {}) {
-  assertConfigured();
-  const selectedModel = String(model || getModel()).trim() || getModel();
+function buildGeminiRequestBody(instructions, input) {
   const normalized = combineSystemAndMessages(instructions, input);
   const body = {
     contents: toGeminiContents(normalized.messages)
@@ -47,23 +47,54 @@ async function generateChat({ instructions, input, model, fetchImpl = fetch } = 
   if (normalized.system) {
     body.systemInstruction = { parts: [{ text: normalized.system }] };
   }
+  return body;
+}
 
-  const endpoint = `${GEMINI_BASE_URL}/models/${encodeURIComponent(selectedModel)}:generateContent`;
-  const response = await fetchImpl(endpoint, {
+function extractGeminiText(payload) {
+  const parts = payload?.candidates?.[0]?.content?.parts || [];
+  return parts
+    .filter((part) => typeof part?.text === "string")
+    .map((part) => part.text)
+    .join("");
+}
+
+function geminiEndpoint(model, { streaming = false } = {}) {
+  const selectedModel = String(model || getModel()).trim() || getModel();
+  const method = streaming ? "streamGenerateContent" : "generateContent";
+  const suffix = streaming ? "?alt=sse" : "";
+  return `${GEMINI_BASE_URL}/models/${encodeURIComponent(selectedModel)}:${method}${suffix}`;
+}
+
+async function parseErrorPayload(response) {
+  try {
+    return await response.json();
+  } catch (_) {
+    try {
+      const text = await response.text();
+      return { error: { message: String(text || "").slice(0, 1000) } };
+    } catch (_) {
+      return {};
+    }
+  }
+}
+
+async function generateChat({ instructions, input, model, fetchImpl = fetch } = {}) {
+  assertConfigured();
+  const selectedModel = String(model || getModel()).trim() || getModel();
+  const response = await fetchImpl(geminiEndpoint(selectedModel), {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-goog-api-key": apiKey()
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(buildGeminiRequestBody(instructions, input))
   });
-  const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const payload = await parseErrorPayload(response);
     throw providerError("GEMINI_REQUEST_FAILED", payload?.error?.message || "Gemini request failed.", response.status || 502);
   }
-
-  const parts = payload?.candidates?.[0]?.content?.parts || [];
-  const reply = parts.filter((part) => typeof part?.text === "string").map((part) => part.text).join("");
+  const payload = await response.json().catch(() => ({}));
+  const reply = extractGeminiText(payload);
 
   return {
     provider: "google",
@@ -75,13 +106,133 @@ async function generateChat({ instructions, input, model, fetchImpl = fetch } = 
   };
 }
 
+function parseSseEvent(block) {
+  const data = String(block || "")
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart())
+    .join("\n")
+    .trim();
+
+  if (!data || data === "[DONE]") return null;
+  try {
+    return JSON.parse(data);
+  } catch (_) {
+    throw providerError("GEMINI_STREAM_INVALID_EVENT", "Gemini streaming response contained invalid SSE data.", 502);
+  }
+}
+
+async function streamChat({
+  instructions,
+  input,
+  model,
+  onDelta,
+  fetchImpl = fetch
+} = {}) {
+  assertConfigured();
+  const selectedModel = String(model || getModel()).trim() || getModel();
+  const response = await fetchImpl(geminiEndpoint(selectedModel, { streaming: true }), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "accept": "text/event-stream",
+      "x-goog-api-key": apiKey()
+    },
+    body: JSON.stringify(buildGeminiRequestBody(instructions, input))
+  });
+
+  if (!response.ok) {
+    const payload = await parseErrorPayload(response);
+    throw providerError("GEMINI_STREAM_REQUEST_FAILED", payload?.error?.message || "Gemini streaming request failed.", response.status || 502);
+  }
+  if (!response.body) {
+    throw providerError("GEMINI_STREAM_BODY_MISSING", "Gemini streaming response did not include a response body.", 502);
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let reply = "";
+  let usage = null;
+  let responseId = null;
+
+  async function handlePayload(payload) {
+    const delta = extractGeminiText(payload);
+    if (delta) {
+      if (reply.length + delta.length > MAX_STREAM_REPLY_CHARS) {
+        throw providerError("GEMINI_STREAM_REPLY_TOO_LARGE", "Gemini streaming reply exceeded the allowed size.", 502);
+      }
+      reply += delta;
+      if (onDelta) await onDelta(delta);
+    }
+    if (payload?.usageMetadata) usage = payload.usageMetadata;
+    if (payload?.responseId) responseId = payload.responseId;
+  }
+
+  async function consumeText(text, flush = false) {
+    buffer += String(text || "");
+    if (Buffer.byteLength(buffer, "utf8") > MAX_STREAM_BUFFER_BYTES) {
+      throw providerError("GEMINI_STREAM_BUFFER_TOO_LARGE", "Gemini streaming event buffer exceeded the allowed size.", 502);
+    }
+
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    if (!flush) {
+      buffer = blocks.pop() || "";
+    } else {
+      buffer = "";
+    }
+
+    for (const block of blocks) {
+      const payload = parseSseEvent(block);
+      if (payload) await handlePayload(payload);
+    }
+  }
+
+  if (typeof response.body.getReader === "function") {
+    const reader = response.body.getReader();
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        await consumeText(decoder.decode(value, { stream: true }));
+      }
+      await consumeText(decoder.decode(), true);
+    } finally {
+      try { reader.releaseLock(); } catch (_) {}
+    }
+  } else if (Symbol.asyncIterator in Object(response.body)) {
+    for await (const chunk of response.body) {
+      await consumeText(typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true }));
+    }
+    await consumeText(decoder.decode(), true);
+  } else {
+    throw providerError("GEMINI_STREAM_UNREADABLE", "Gemini streaming response body is not readable.", 502);
+  }
+
+  return {
+    provider: "google",
+    model: selectedModel,
+    reply,
+    usage,
+    responseId,
+    research: { sources: [], citations: [], webSearchCalls: 0 }
+  };
+}
+
 module.exports = {
   id: "google",
   GEMINI_BASE_URL,
+  DEFAULT_MODEL,
+  MAX_STREAM_BUFFER_BYTES,
+  MAX_STREAM_REPLY_CHARS,
   getModel,
   isConfigured,
   supportsResearch,
   supportsFileAnalysis,
   toGeminiContents,
-  generateChat
+  buildGeminiRequestBody,
+  extractGeminiText,
+  geminiEndpoint,
+  parseSseEvent,
+  generateChat,
+  streamChat
 };
