@@ -479,8 +479,6 @@ async function streamChat({
         responseId,
         research: { sources: [], citations: [], webSearchCalls: 0 }
       };
-    }
-
     },
     {
       code: "ANTHROPIC_STREAM_TIMEOUT",
