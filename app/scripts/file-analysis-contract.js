@@ -119,6 +119,17 @@ function main() {
   assert.strictEqual(fileRate.limit, 30);
   assert.strictEqual(fileRate.windowSeconds, 60 * 60);
 
+  const fileRoutesSource = fs.readFileSync(
+    path.join(__dirname, "..", "files", "routes.js"),
+    "utf8"
+  );
+  assert.ok(fileRoutesSource.includes("runWithRequestCancellation("));
+  assert.ok(fileRoutesSource.includes("handleCancelledJsonResponse(res, error)"));
+  assert.match(
+    fileRoutesSource,
+    /\(signal\) => analyzeFile\(\{[\s\S]*?\bsignal\b[\s\S]*?\}\)/
+  );
+
   const indexPath = path.join(__dirname, "..", "index.html");
   const indexSource = fs.readFileSync(indexPath, "utf8");
   const composedIndex = buildFileAwareIndexHtml(indexSource);
