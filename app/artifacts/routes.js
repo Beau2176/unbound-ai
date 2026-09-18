@@ -2,6 +2,10 @@ const express = require("express");
 const path = require("path");
 const { generateChat, getGatewayStatus } = require("../ai/gateway");
 const {
+  runWithRequestCancellation,
+  handleCancelledJsonResponse
+} = require("../ops/request-cancellation");
+const {
   ARTIFACT_TYPES,
   normalizePlanRequest,
   normalizeArtifactSpec,
@@ -86,11 +90,16 @@ function createArtifactRouter({
         });
       }
 
-      const result = await generateChat({
-        instructions: buildPlannerInstructions(request.type),
-        input: buildPlannerInput(request),
-        reasoningEffort: "low"
-      });
+      const result = await runWithRequestCancellation(
+        req,
+        res,
+        (signal) => generateChat({
+          instructions: buildPlannerInstructions(request.type),
+          input: buildPlannerInput(request),
+          reasoningEffort: "low",
+          signal
+        })
+      );
       const parsed = extractJsonObject(result.reply || "");
       if (request.title && !parsed.title) parsed.title = request.title;
       const spec = normalizeArtifactSpec(parsed, request.type);
@@ -128,6 +137,7 @@ function createArtifactRouter({
         } : null
       });
     } catch (error) {
+      if (handleCancelledJsonResponse(res, error)) return;
       const safe = safeArtifactError(error);
       if (safe.code === "ARTIFACT_OPERATION_FAILED") {
         console.error("UNBOUND AI ARTIFACT PLAN ERROR:", error?.code || error?.message || "unknown");
