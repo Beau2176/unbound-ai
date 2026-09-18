@@ -100,6 +100,12 @@ AI_PROVIDER_CIRCUIT_BREAKER_COOLDOWN_MS=60000
 
 Failure thresholds are bounded to 1–10 and cooldowns to 10–300 seconds. Non-transient client/configuration/auth errors never open the circuit. Circuit state contains only availability metadata such as counts, timestamps, and sanitized error codes—never prompts, responses, credentials, or raw provider error text.
 
+#### Provider Retry-After guidance
+
+When a retryable provider response includes a valid `Retry-After` header, UNBOUND preserves only the parsed delay—not the raw header—and can open the primary circuit immediately after that first throttling response. This prevents repeated calls to a provider that has explicitly asked clients to wait.
+
+Both delta-seconds and HTTP-date forms are accepted. Retry guidance is bounded to 10–300 seconds before it can affect circuit timing. Invalid, expired, zero, or non-retryable response hints are ignored. When no valid hint is present, the normal three-consecutive-failure / configured cooldown policy remains unchanged.
+
 ### Provider routing telemetry
 
 UNBOUND keeps process-local, privacy-minimized AI routing telemetry for operations. It records aggregate provider attempts, successes, failures, retryable failures, latency buckets, failover counts, and circuit-bypass counts. It does not record prompts, response text, user identifiers, credentials, or raw provider error messages.
