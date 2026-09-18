@@ -32,9 +32,9 @@ function createFutureCoreRouter({
 
   router.get("/status", (req, res) => {
     return res.json({
-      staged: true,
+      staged: false,
       enabled: true,
-      version: "v2.0",
+      version: "v2.1",
       registry: publicRegistry()
     });
   });
@@ -87,6 +87,7 @@ function createFutureCoreRouter({
         budget: req.body?.budget || {}
       });
       job.projectId = projectId;
+      job.background = Boolean(req.body?.background);
       if (projectId) {
         job.projectContext = await buildProjectContext(pool, req.user.id, projectId, job.objective);
       }
@@ -119,6 +120,12 @@ function createFutureCoreRouter({
       const pool = getPool();
       const job = await loadJob(pool, req.user.id, req.params.id);
       if (!job) return res.status(404).json({ error: "Future Core job not found." });
+      if (job.background) {
+        return res.status(409).json({
+          error: "This Future Core job is managed by the background worker.",
+          code: "FUTURE_CORE_BACKGROUND_MANAGED"
+        });
+      }
 
       if (job.projectId) {
         job.projectContext = await buildProjectContext(pool, req.user.id, job.projectId, job.objective);
