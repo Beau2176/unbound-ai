@@ -76,6 +76,7 @@ function connectorCatalog(env = process.env) {
     configured(env.GOOGLE_OAUTH_CALLBACK_URL) &&
     enabled(env.GOOGLE_OAUTH_REGISTRATION_VERIFIED) &&
     enabled(env.GOOGLE_OAUTH_READ_ONLY_SCOPES_VERIFIED) &&
+    enabled(env.GOOGLE_OAUTH_RESTRICTED_SCOPES_VERIFIED) &&
     configured(env.CONNECTED_APPS_TOKEN_KEY)
   );
   return [
