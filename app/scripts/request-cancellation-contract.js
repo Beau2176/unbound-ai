@@ -33,6 +33,7 @@ const {
   REQUEST_CANCELLATION_VERSION,
   createRequestCancellation,
   runWithRequestCancellation,
+  handleCancelledJsonResponse,
   shutdownAbortReason,
   abortAllRequestCancellations,
   getRequestCancellationSnapshot
@@ -49,6 +50,12 @@ function fakeResponse() {
   res.writableEnded = false;
   res.destroyed = false;
   return res;
+}
+
+function cancellationReasonForContract(code) {
+  const error = new Error("contract cancellation");
+  error.code = code;
+  return error;
 }
 
 async function main() {
@@ -134,7 +141,7 @@ async function main() {
     }
 
     {
-      assert.strictEqual(REQUEST_CANCELLATION_VERSION, "v1.1");
+      assert.strictEqual(REQUEST_CANCELLATION_VERSION, "v1.2");
       const before = getRequestCancellationSnapshot();
       const reqA = fakeRequest();
       const resA = fakeResponse();
@@ -162,6 +169,60 @@ async function main() {
       assert.strictEqual(after.active, 0);
       assert.strictEqual(after.shutdownAborts, before.shutdownAborts + 2);
       assert.strictEqual(after.lastAbortReason, "SERVER_SHUTDOWN");
+    }
+
+    {
+      const clientRes = {
+        destroyed: false,
+        writableEnded: false,
+        statusCalled: false,
+        jsonCalled: false,
+        setHeader() {},
+        status() {
+          this.statusCalled = true;
+          return this;
+        },
+        json() {
+          this.jsonCalled = true;
+          return this;
+        }
+      };
+      const clientError = new Error("cancelled");
+      clientError.code = "AI_REQUEST_ABORTED";
+      clientError.cause = cancellationReasonForContract("CLIENT_DISCONNECT");
+      assert.strictEqual(handleCancelledJsonResponse(clientRes, clientError), true);
+      assert.strictEqual(clientRes.statusCalled, false);
+      assert.strictEqual(clientRes.jsonCalled, false);
+
+      const headers = {};
+      const shutdownRes = {
+        destroyed: false,
+        writableEnded: false,
+        statusCode: null,
+        payload: null,
+        setHeader(name, value) {
+          headers[name] = value;
+        },
+        status(code) {
+          this.statusCode = code;
+          return this;
+        },
+        json(payload) {
+          this.payload = payload;
+          return this;
+        }
+      };
+      const shutdownError = new Error("cancelled");
+      shutdownError.code = "AI_REQUEST_ABORTED";
+      shutdownError.cause = shutdownAbortReason("SIGTERM");
+      assert.strictEqual(
+        handleCancelledJsonResponse(shutdownRes, shutdownError),
+        true
+      );
+      assert.strictEqual(shutdownRes.statusCode, 503);
+      assert.strictEqual(headers["Retry-After"], "5");
+      assert.strictEqual(shutdownRes.payload?.reason, "server-restart");
+      assert.strictEqual(shutdownRes.payload?.retryable, true);
     }
 
     {
