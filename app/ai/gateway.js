@@ -385,7 +385,7 @@ function getGatewayStatus({ includeTelemetry = false } = {}) {
       }),
       ...(includeTelemetry ? { telemetry: getProviderTelemetrySnapshot() } : {}),
       deadlines: getProviderDeadlinePolicy(),
-      bulkheads: {},
+      ...(includeTelemetry ? { bulkheads: {} } : {}),
       fileAnalysis: false,
       error: "unsupported-provider"
     };
@@ -432,7 +432,7 @@ function getGatewayStatus({ includeTelemetry = false } = {}) {
     circuitBreaker,
     ...(includeTelemetry ? { telemetry: getProviderTelemetrySnapshot() } : {}),
     deadlines: getProviderDeadlinePolicy(),
-    bulkheads,
+    ...(includeTelemetry ? { bulkheads } : {}),
     fileAnalysis: providerSupportsFileAnalysis(provider),
     error: provider.isConfigured() ? null : "provider-not-configured"
   };
