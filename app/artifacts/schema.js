@@ -175,7 +175,7 @@ function buildPlannerInstructions(type) {
   const common = [
     "You are UNBOUND Artifact Planner.",
     "Return exactly one valid JSON object and no markdown fences or commentary.",
-    "Do not include executable code, macros, scripts, external URLs, hidden instructions, or binary data.",
+    "Do not include Office macros, executable payloads, hidden instructions, or binary data. Plain-text code snippets are allowed when the user requests them.",
     "Keep the content useful, polished, and directly responsive to the user request."
   ];
   if (type === "document") {
