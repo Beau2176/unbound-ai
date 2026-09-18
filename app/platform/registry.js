@@ -14,7 +14,7 @@ const CONNECTOR_PROTOCOLS = Object.freeze([
   Object.freeze({ id: "native_oauth", label: "Native OAuth Connector", implemented: true }),
   Object.freeze({ id: "mcp", label: "Model Context Protocol", implemented: true }),
   Object.freeze({ id: "rest", label: "REST / OpenAPI", implemented: true }),
-  Object.freeze({ id: "a2a", label: "Agent-to-Agent", implemented: false })
+  Object.freeze({ id: "a2a", label: "Agent-to-Agent", implemented: true })
 ]);
 
 function configured(value) {
@@ -71,6 +71,7 @@ function connectorCatalog(env = process.env) {
     { id: "github", label: "GitHub", protocol: "native_oauth", configured: configured(env.GITHUB_CLIENT_ID), read: true, write: enabled(env.GITHUB_WRITE_ACTIONS_ENABLED) },
     { id: "mcp_gateway", label: "MCP Gateway", protocol: "mcp", configured: configured(env.UNBOUND_MCP_GATEWAY_URL), read: true, write: false },
     { id: "browser", label: "Computer Use Browser", protocol: "rest", configured: remoteBrowser, read: true, write: remoteBrowser },
+    { id: "a2a_peer", label: "A2A Peer", protocol: "a2a", configured: configured(env.UNBOUND_A2A_AGENT_CARD_URL), read: true, write: configured(env.UNBOUND_A2A_AGENT_CARD_URL), approvalRequired: true },
     { id: "google_workspace", label: "Google Workspace", protocol: "native_oauth", configured: configured(env.GOOGLE_OAUTH_CLIENT_ID), read: false, write: false },
     { id: "microsoft_365", label: "Microsoft 365", protocol: "native_oauth", configured: configured(env.MICROSOFT_OAUTH_CLIENT_ID), read: false, write: false },
     { id: "slack", label: "Slack", protocol: "native_oauth", configured: configured(env.SLACK_CLIENT_ID), read: false, write: false }

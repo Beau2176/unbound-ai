@@ -17,6 +17,12 @@ const {
   publicAgentSchedule
 } = require("./background-agent-scheduler");
 const { publicMcpStatus, listMcpTools, callMcpTool } = require("../connections/mcp-client");
+const {
+  publicA2AStatus,
+  getAgentCard,
+  publicAgentCard,
+  sendA2AMessage
+} = require("../connections/a2a-client");
 const { publicSandboxStatus, createSandboxJob, getSandboxJob } = require("../coding/sandbox-client");
 const {
   MAX_AGENT_TEAMS_PER_USER,
@@ -49,6 +55,44 @@ function createPlatformRouter({ getPool, env = process.env } = {}) {
     creatorSelfPublish: false,
     externalWriteAccess: false
   }));
+
+  router.get("/a2a/status", (req, res) => res.json(publicA2AStatus(env)));
+
+  router.get("/a2a/agent-card", async (req, res) => {
+    try {
+      const { card } = await getAgentCard({ env });
+      return res.json({ card: publicAgentCard(card) });
+    } catch (error) {
+      return res.status(error.statusCode || 502).json({
+        error: error.message,
+        code: error.code || "A2A_ERROR"
+      });
+    }
+  });
+
+  router.post("/a2a/message", async (req, res) => {
+    try {
+      const result = await sendA2AMessage({
+        text: req.body?.message,
+        taskId: req.body?.taskId || null,
+        contextId: req.body?.contextId || null,
+        approved: req.body?.approved === true,
+        env
+      });
+      await writeAuditEvent(getPool(), req.user.id, "a2a.message.send", {
+        peer: result.peer?.name || null,
+        binding: result.binding,
+        protocolVersion: result.protocolVersion,
+        approved: true
+      });
+      return res.json(result);
+    } catch (error) {
+      return res.status(error.statusCode || 502).json({
+        error: error.message,
+        code: error.code || "A2A_ERROR"
+      });
+    }
+  });
 
   router.get("/mcp/status", (req, res) => res.json(publicMcpStatus(env)));
 
