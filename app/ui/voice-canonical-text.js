@@ -24,12 +24,22 @@ function injectVoiceCanonicalText(indexSource) {
     'assistant-bubble-canonical-text'
   );
 
-  source = replaceExactlyOnce(
-    source,
-    '          assistantBubble = addMessage("assistant", reply, "", sources, citations);\n          conversationHistory.push({',
-    '          assistantBubble = addMessage("assistant", reply, "", sources, citations);\n          window.dispatchEvent(new CustomEvent("unbound:assistant-stream", {\n            detail: { text: reply, delta: reply, start: true, done: true, research: true }\n          }));\n          conversationHistory.push({',
-    'research-reply-event'
-  );
+  const groundedResearchMarker = '          const persistSources =';
+  if (source.includes(groundedResearchMarker)) {
+    source = replaceExactlyOnce(
+      source,
+      groundedResearchMarker,
+      '          window.dispatchEvent(new CustomEvent("unbound:assistant-stream", {\\n            detail: { text: reply, delta: reply, start: true, done: true, research: true }\\n          }));\\n\\n          const persistSources =',
+      'research-reply-event'
+    );
+  } else {
+    source = replaceExactlyOnce(
+      source,
+      '          assistantBubble = addMessage("assistant", reply, "", sources, citations);\\n          conversationHistory.push({',
+      '          assistantBubble = addMessage("assistant", reply, "", sources, citations);\\n          window.dispatchEvent(new CustomEvent("unbound:assistant-stream", {\\n            detail: { text: reply, delta: reply, start: true, done: true, research: true }\\n          }));\\n          conversationHistory.push({',
+      'research-reply-event'
+    );
+  }
 
   source = replaceExactlyOnce(
     source,
@@ -38,12 +48,23 @@ function injectVoiceCanonicalText(indexSource) {
     'stream-delta-event'
   );
 
-  source = replaceExactlyOnce(
-    source,
-    '        conversationHistory.push({ role: "assistant", content: reply });',
-    '        if (assistantBubble) assistantBubble.dataset.speechText = reply;\n        window.dispatchEvent(new CustomEvent("unbound:assistant-stream", {\n          detail: {\n            text: reply,\n            delta: "",\n            start: Boolean(assistantBubble && assistantBubble.dataset.speechStarted !== "true"),\n            done: true\n          }\n        }));\n        conversationHistory.push({ role: "assistant", content: reply });',
-    'stream-complete-event'
-  );
+  const groundedCompletionMarker =
+    '        conversationHistory.push({\\n          role: "assistant",\\n          content: reply,\\n          sources: historySources,\\n          citations: historyCitations\\n        });';
+  if (source.includes(groundedCompletionMarker)) {
+    source = replaceExactlyOnce(
+      source,
+      groundedCompletionMarker,
+      '        if (assistantBubble) assistantBubble.dataset.speechText = reply;\\n        window.dispatchEvent(new CustomEvent("unbound:assistant-stream", {\\n          detail: {\\n            text: reply,\\n            delta: "",\\n            start: Boolean(assistantBubble && assistantBubble.dataset.speechStarted !== "true"),\\n            done: true\\n          }\\n        }));\\n' + groundedCompletionMarker,
+      'stream-complete-event'
+    );
+  } else {
+    source = replaceExactlyOnce(
+      source,
+      '        conversationHistory.push({ role: "assistant", content: reply });',
+      '        if (assistantBubble) assistantBubble.dataset.speechText = reply;\\n        window.dispatchEvent(new CustomEvent("unbound:assistant-stream", {\\n          detail: {\\n            text: reply,\\n            delta: "",\\n            start: Boolean(assistantBubble && assistantBubble.dataset.speechStarted !== "true"),\\n            done: true\\n          }\\n        }));\\n        conversationHistory.push({ role: "assistant", content: reply });',
+      'stream-complete-event'
+    );
+  }
 
   return source;
 }
