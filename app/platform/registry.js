@@ -79,6 +79,15 @@ function connectorCatalog(env = process.env) {
     enabled(env.GOOGLE_OAUTH_RESTRICTED_SCOPES_VERIFIED) &&
     configured(env.CONNECTED_APPS_TOKEN_KEY)
   );
+  const microsoft365Configured = Boolean(
+    configured(env.MICROSOFT_OAUTH_CLIENT_ID) &&
+    configured(env.MICROSOFT_OAUTH_CLIENT_SECRET) &&
+    configured(env.MICROSOFT_OAUTH_CALLBACK_URL) &&
+    enabled(env.MICROSOFT_OAUTH_REGISTRATION_VERIFIED) &&
+    enabled(env.MICROSOFT_OAUTH_READ_ONLY_SCOPES_VERIFIED) &&
+    enabled(env.MICROSOFT_OAUTH_FILE_READ_SCOPE_VERIFIED) &&
+    configured(env.CONNECTED_APPS_TOKEN_KEY)
+  );
   const slackConfigured = Boolean(
     configured(env.SLACK_CLIENT_ID) &&
     configured(env.SLACK_REDIRECT_URL) &&
@@ -94,7 +103,7 @@ function connectorCatalog(env = process.env) {
     { id: "browser", label: "Computer Use Browser", protocol: "rest", configured: remoteBrowser, read: true, write: remoteBrowser },
     { id: "a2a_peer", label: "A2A Peer", protocol: "a2a", configured: configured(env.UNBOUND_A2A_AGENT_CARD_URL), read: true, write: configured(env.UNBOUND_A2A_AGENT_CARD_URL), approvalRequired: true },
     { id: "google_workspace", label: "Google Workspace", protocol: "native_oauth", configured: googleWorkspaceConfigured, read: googleWorkspaceConfigured, write: false, dataAccess: "metadata-only" },
-    { id: "microsoft_365", label: "Microsoft 365", protocol: "native_oauth", configured: configured(env.MICROSOFT_OAUTH_CLIENT_ID), read: false, write: false },
+    { id: "microsoft_365", label: "Microsoft 365", protocol: "native_oauth", configured: microsoft365Configured, read: microsoft365Configured, write: false, dataAccess: "basic-mail-calendar-plus-onedrive-metadata" },
     { id: "slack", label: "Slack", protocol: "native_oauth", configured: slackConfigured, read: slackConfigured, write: false, dataAccess: "public-channel-read-only" }
   ];
 }
