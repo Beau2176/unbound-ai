@@ -3,6 +3,9 @@ const {
   providerError,
   normalizeHttpEndpoint
 } = require("./provider-utils");
+const {
+  runWithProviderDeadline
+} = require("../provider-deadline");
 
 const MAX_STREAM_BUFFER_BYTES = 2 * 1024 * 1024;
 const MAX_STREAM_REPLY_CHARS = 4 * 1024 * 1024;
@@ -82,21 +85,40 @@ function publicResult(payload, selectedModel) {
   };
 }
 
-async function generateChat({ instructions, input, model, fetchImpl = fetch } = {}) {
+async function generateChat({
+  instructions,
+  input,
+  model,
+  fetchImpl = fetch
+} = {}) {
   assertConfigured();
   const body = buildLocalRequestBody(instructions, input, model);
-  const response = await fetchImpl(endpoint(), {
-    method: "POST",
-    headers: requestHeaders(),
-    body: JSON.stringify(body)
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw providerError("LOCAL_AI_REQUEST_FAILED", payload?.error?.message || "Local AI request failed.", response.status || 502);
-  }
-  return publicResult(payload, body.model);
-}
 
+  return runWithProviderDeadline(
+    "chat",
+    async ({ signal }) => {
+      const response = await fetchImpl(endpoint(), {
+        method: "POST",
+        headers: requestHeaders(),
+        signal,
+        body: JSON.stringify(body)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw providerError(
+          "LOCAL_AI_REQUEST_FAILED",
+          payload?.error?.message || "Local AI request failed.",
+          response.status || 502
+        );
+      }
+      return publicResult(payload, body.model);
+    },
+    {
+      code: "LOCAL_AI_REQUEST_TIMEOUT",
+      label: "Local AI request"
+    }
+  );
+}
 function parseOpenAiCompatibleSseEvent(block) {
   const data = String(block || "")
     .split(/\r?\n/)
@@ -125,115 +147,154 @@ async function streamChat({
   const headers = requestHeaders();
   headers.accept = "text/event-stream, application/json";
 
-  const response = await fetchImpl(endpoint(), {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body)
-  });
+  return runWithProviderDeadline(
+    "stream",
+    async ({ signal }) => {
+      const response = await fetchImpl(endpoint(), {
+        method: "POST",
+        headers,
+        signal,
+        body: JSON.stringify(body)
+      });
 
-  if (!response.ok) {
-    const payload = await parseErrorPayload(response);
-    throw providerError("LOCAL_AI_STREAM_REQUEST_FAILED", payload?.error?.message || "Local AI streaming request failed.", response.status || 502);
-  }
-
-  const contentType = String(response.headers?.get?.("content-type") || "").toLowerCase();
-  if (contentType.includes("application/json") && typeof response.json === "function") {
-    const payload = await response.json().catch(() => ({}));
-    const result = publicResult(payload, body.model);
-    if (onDelta && result.reply) await onDelta(result.reply);
-    return result;
-  }
-
-  if (!response.body) {
-    throw providerError("LOCAL_AI_STREAM_BODY_MISSING", "Local AI streaming response did not include a response body.", 502);
-  }
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let reply = "";
-  let usage = null;
-  let responseId = null;
-  let responseModel = body.model;
-
-  async function handlePayload(payload) {
-    if (!payload || typeof payload !== "object") return;
-    if (payload.error) {
-      throw providerError(
-        "LOCAL_AI_STREAM_REMOTE_ERROR",
-        String(payload?.error?.message || payload?.error || "Local AI streaming request failed.").slice(0, 1000),
-        502
-      );
-    }
-
-    if (payload.id) responseId = String(payload.id);
-    if (payload.model) responseModel = String(payload.model);
-    if (payload.usage && typeof payload.usage === "object") usage = payload.usage;
-
-    const delta = payload?.choices?.[0]?.delta?.content;
-    const text = typeof delta === "string"
-      ? delta
-      : Array.isArray(delta)
-        ? delta.map((part) => String(part?.text || "")).join("")
-        : "";
-
-    if (!text) return;
-    if (reply.length + text.length > MAX_STREAM_REPLY_CHARS) {
-      throw providerError("LOCAL_AI_STREAM_REPLY_TOO_LARGE", "Local AI streaming reply exceeded the allowed size.", 502);
-    }
-    reply += text;
-    if (onDelta) await onDelta(text);
-  }
-
-  async function consumeText(text, flush = false) {
-    buffer += String(text || "");
-    if (Buffer.byteLength(buffer, "utf8") > MAX_STREAM_BUFFER_BYTES) {
-      throw providerError("LOCAL_AI_STREAM_BUFFER_TOO_LARGE", "Local AI streaming event buffer exceeded the allowed size.", 502);
-    }
-
-    const blocks = buffer.split(/\r?\n\r?\n/);
-    if (!flush) {
-      buffer = blocks.pop() || "";
-    } else {
-      buffer = "";
-    }
-
-    for (const block of blocks) {
-      const payload = parseOpenAiCompatibleSseEvent(block);
-      if (payload) await handlePayload(payload);
-    }
-  }
-
-  if (typeof response.body.getReader === "function") {
-    const reader = response.body.getReader();
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        await consumeText(decoder.decode(value, { stream: true }));
+      if (!response.ok) {
+        const payload = await parseErrorPayload(response);
+        throw providerError(
+          "LOCAL_AI_STREAM_REQUEST_FAILED",
+          payload?.error?.message || "Local AI streaming request failed.",
+          response.status || 502
+        );
       }
-      await consumeText(decoder.decode(), true);
-    } finally {
-      try { reader.releaseLock(); } catch (_) {}
-    }
-  } else if (Symbol.asyncIterator in Object(response.body)) {
-    for await (const chunk of response.body) {
-      await consumeText(typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true }));
-    }
-    await consumeText(decoder.decode(), true);
-  } else {
-    throw providerError("LOCAL_AI_STREAM_UNREADABLE", "Local AI streaming response body is not readable.", 502);
-  }
 
-  return {
-    provider: "local",
-    model: responseModel,
-    reply,
-    usage,
-    responseId,
-    research: { sources: [], citations: [], webSearchCalls: 0 }
-  };
+      const contentType = String(
+        response.headers?.get?.("content-type") || ""
+      ).toLowerCase();
+      if (contentType.includes("application/json") && typeof response.json === "function") {
+        const payload = await response.json().catch(() => ({}));
+        const result = publicResult(payload, body.model);
+        if (onDelta && result.reply) await onDelta(result.reply);
+        return result;
+      }
+
+      if (!response.body) {
+        throw providerError(
+          "LOCAL_AI_STREAM_BODY_MISSING",
+          "Local AI streaming response did not include a response body.",
+          502
+        );
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let reply = "";
+      let usage = null;
+      let responseId = null;
+      let responseModel = body.model;
+
+      async function handlePayload(payload) {
+        if (!payload || typeof payload !== "object") return;
+        if (payload.error) {
+          throw providerError(
+            "LOCAL_AI_STREAM_REMOTE_ERROR",
+            String(
+              payload?.error?.message ||
+              payload?.error ||
+              "Local AI streaming request failed."
+            ).slice(0, 1000),
+            502
+          );
+        }
+
+        if (payload.id) responseId = String(payload.id);
+        if (payload.model) responseModel = String(payload.model);
+        if (payload.usage && typeof payload.usage === "object") usage = payload.usage;
+
+        const delta = payload?.choices?.[0]?.delta?.content;
+        const text = typeof delta === "string"
+          ? delta
+          : Array.isArray(delta)
+            ? delta.map((part) => String(part?.text || "")).join("")
+            : "";
+
+        if (!text) return;
+        if (reply.length + text.length > MAX_STREAM_REPLY_CHARS) {
+          throw providerError(
+            "LOCAL_AI_STREAM_REPLY_TOO_LARGE",
+            "Local AI streaming reply exceeded the allowed size.",
+            502
+          );
+        }
+        reply += text;
+        if (onDelta) await onDelta(text);
+      }
+
+      async function consumeText(text, flush = false) {
+        buffer += String(text || "");
+        if (Buffer.byteLength(buffer, "utf8") > MAX_STREAM_BUFFER_BYTES) {
+          throw providerError(
+            "LOCAL_AI_STREAM_BUFFER_TOO_LARGE",
+            "Local AI streaming event buffer exceeded the allowed size.",
+            502
+          );
+        }
+
+        const blocks = buffer.split(/\r?\n\r?\n/);
+        if (!flush) {
+          buffer = blocks.pop() || "";
+        } else {
+          buffer = "";
+        }
+
+        for (const block of blocks) {
+          const payload = parseOpenAiCompatibleSseEvent(block);
+          if (payload) await handlePayload(payload);
+        }
+      }
+
+      if (typeof response.body.getReader === "function") {
+        const reader = response.body.getReader();
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            await consumeText(decoder.decode(value, { stream: true }));
+          }
+          await consumeText(decoder.decode(), true);
+        } finally {
+          try { reader.releaseLock(); } catch (_) {}
+        }
+      } else if (Symbol.asyncIterator in Object(response.body)) {
+        for await (const chunk of response.body) {
+          await consumeText(
+            typeof chunk === "string"
+              ? chunk
+              : decoder.decode(chunk, { stream: true })
+          );
+        }
+        await consumeText(decoder.decode(), true);
+      } else {
+        throw providerError(
+          "LOCAL_AI_STREAM_UNREADABLE",
+          "Local AI streaming response body is not readable.",
+          502
+        );
+      }
+
+      return {
+        provider: "local",
+        model: responseModel,
+        reply,
+        usage,
+        responseId,
+        research: { sources: [], citations: [], webSearchCalls: 0 }
+      };
+    },
+    {
+      code: "LOCAL_AI_STREAM_TIMEOUT",
+      label: "Local AI streaming request"
+    }
+  );
 }
-
 module.exports = {
   id: "local",
   MAX_STREAM_BUFFER_BYTES,
