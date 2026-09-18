@@ -364,6 +364,10 @@ function getGatewayStatus() {
       fallbackProvider: null,
       fallbackModel: null,
       fallbackError: "active-provider-unsupported",
+      circuitBreaker: getProviderCircuitSnapshot({
+        primaryProviderId: name,
+        fallbackProviderId: null
+      }),
       fileAnalysis: false,
       error: "unsupported-provider"
     };
