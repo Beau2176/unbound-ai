@@ -120,6 +120,22 @@ AI_FILE_ANALYSIS_TIMEOUT_MS=180000
 
 All values are bounded to 5–300 seconds. Fetch-based providers receive an abort signal for the full operation, including stream/body reading and Anthropic research continuations. OpenAI requests use the same UNBOUND deadline and set SDK retries to zero so transient failures reach UNBOUND's failover/circuit layer without hidden retry delays.
 
+### Provider concurrency bulkheads
+
+UNBOUND isolates provider capacity with a separate in-memory bulkhead for each AI provider. By default, each provider allows up to 16 in-flight operations and a queue of up to 64 waiting operations. A queued request waits no longer than 2.5 seconds before it is rejected locally.
+
+Generic tuning:
+
+```bash
+AI_PROVIDER_MAX_CONCURRENT=16
+AI_PROVIDER_MAX_QUEUE=64
+AI_PROVIDER_QUEUE_TIMEOUT_MS=2500
+```
+
+Provider-specific overrides use `OPENAI_`, `ANTHROPIC_`, `GEMINI_`, or `LOCAL_AI_` with the same suffixes, for example `OPENAI_MAX_CONCURRENT=24`. Concurrency is bounded to 1–128, queue size to 0–512, and queue wait to 100–30000 ms.
+
+Bulkhead saturation is treated as local admission pressure, not proof that the upstream provider is unhealthy. Normal chat may fail over to a configured fallback when the primary bulkhead rejects or times out, but those local events do not increment the provider circuit breaker. Live active/queued counts are exposed only in admin operational diagnostics.
+
 ## Mobile
 
 From `mobile/`:
