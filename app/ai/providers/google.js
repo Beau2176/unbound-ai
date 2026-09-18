@@ -1,5 +1,6 @@
 const {
   combineSystemAndMessages,
+  retryAfterMsFromHeaders,
   providerError
 } = require("./provider-utils");
 const {
@@ -322,7 +323,8 @@ async function generateChat({
         throw providerError(
           "GEMINI_REQUEST_FAILED",
           payload?.error?.message || "Gemini request failed.",
-          response.status || 502
+          response.status || 502,
+          { retryAfterMs: retryAfterMsFromHeaders(response.headers) }
         );
       }
       const payload = await response.json().catch(() => ({}));
@@ -412,7 +414,8 @@ async function streamChat({
         throw providerError(
           "GEMINI_STREAM_REQUEST_FAILED",
           payload?.error?.message || "Gemini streaming request failed.",
-          response.status || 502
+          response.status || 502,
+          { retryAfterMs: retryAfterMsFromHeaders(response.headers) }
         );
       }
       if (!response.body) {
