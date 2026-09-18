@@ -207,7 +207,10 @@ async function main() {
       assert.strictEqual(snapshot.routing.failovers, 1);
       assert.strictEqual(snapshot.routing.circuitBypasses, 1);
 
-      const status = getGatewayStatus();
+      const publicStatus = getGatewayStatus();
+      assert.strictEqual(Object.prototype.hasOwnProperty.call(publicStatus, "telemetry"), false);
+
+      const status = getGatewayStatus({ includeTelemetry: true });
       assert.strictEqual(status.telemetry.routing.failovers, 1);
       assert.strictEqual(status.telemetry.routing.circuitBypasses, 1);
       assert.strictEqual(status.telemetry.privacy, "aggregate_content_blind");
@@ -223,6 +226,19 @@ async function main() {
       else process.env[key] = original[key];
     }
   }
+
+  const serverSource = fs.readFileSync(
+    path.join(__dirname, "..", "server.js"),
+    "utf8"
+  );
+  assert.ok(
+    serverSource.includes("const ai = getGatewayStatus({ includeTelemetry: true });"),
+    "Admin operational snapshot must explicitly opt into provider telemetry."
+  );
+  assert.ok(
+    serverSource.includes("ai: getGatewayStatus(),"),
+    "Public health must continue using telemetry-free gateway status."
+  );
 
   const selfHealSource = fs.readFileSync(
     path.join(__dirname, "..", "ops", "self-heal.js"),
