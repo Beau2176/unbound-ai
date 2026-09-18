@@ -1,3 +1,5 @@
+const MAX_PROVIDER_REPLY_CHARS = 4 * 1024 * 1024;
+
 function contentToText(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -77,6 +79,36 @@ function providerError(
   return error;
 }
 
+function assertProviderReplySize(
+  currentLength,
+  additionalLength = 0,
+  {
+    maxChars = MAX_PROVIDER_REPLY_CHARS,
+    code = "AI_PROVIDER_REPLY_TOO_LARGE",
+    label = "AI provider"
+  } = {}
+) {
+  const current = Math.max(0, Number(currentLength) || 0);
+  const additional = Math.max(0, Number(additionalLength) || 0);
+  const limit = Math.max(1, Number(maxChars) || MAX_PROVIDER_REPLY_CHARS);
+  const total = current + additional;
+
+  if (total > limit) {
+    throw providerError(
+      code,
+      `${String(label || "AI provider")} response exceeded the allowed size.`,
+      502
+    );
+  }
+  return total;
+}
+
+function boundedProviderReply(value, options = {}) {
+  const text = String(value || "");
+  assertProviderReplySize(0, text.length, options);
+  return text;
+}
+
 function normalizeHttpEndpoint(value, { allowHttp = false } = {}) {
   try {
     const parsed = new URL(String(value || "").trim());
@@ -88,11 +120,14 @@ function normalizeHttpEndpoint(value, { allowHttp = false } = {}) {
 }
 
 module.exports = {
+  MAX_PROVIDER_REPLY_CHARS,
   contentToText,
   normalizeInputMessages,
   combineSystemAndMessages,
   parseRetryAfterMs,
   retryAfterMsFromHeaders,
   providerError,
+  assertProviderReplySize,
+  boundedProviderReply,
   normalizeHttpEndpoint
 };
