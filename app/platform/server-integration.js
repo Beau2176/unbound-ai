@@ -25,7 +25,7 @@ function integratePlatformParityServerSource(serverSource) {
   }
   if (
     source.includes('createPlatformRouter({') &&
-    source.includes('"/api/platform"') &&
+    source.includes("/api/platform") &&
     source.includes("UNBOUND_PLATFORM_PARITY_ENABLED") &&
     source.includes("CREATE TABLE IF NOT EXISTS ai_projects")
   ) return source;
