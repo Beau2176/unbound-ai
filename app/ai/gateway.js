@@ -14,6 +14,9 @@ const {
   recordProviderRoutingEvent,
   getProviderTelemetrySnapshot
 } = require("./provider-telemetry");
+const {
+  getProviderDeadlinePolicy
+} = require("./provider-deadline");
 
 const providers = new Map([
   [openai.id, openai],
@@ -375,6 +378,7 @@ function getGatewayStatus({ includeTelemetry = false } = {}) {
         fallbackProviderId: null
       }),
       ...(includeTelemetry ? { telemetry: getProviderTelemetrySnapshot() } : {}),
+      deadlines: getProviderDeadlinePolicy(),
       fileAnalysis: false,
       error: "unsupported-provider"
     };
@@ -415,6 +419,7 @@ function getGatewayStatus({ includeTelemetry = false } = {}) {
     fallbackError: fallbackRoute.error || null,
     circuitBreaker,
     ...(includeTelemetry ? { telemetry: getProviderTelemetrySnapshot() } : {}),
+    deadlines: getProviderDeadlinePolicy(),
     fileAnalysis: providerSupportsFileAnalysis(provider),
     error: provider.isConfigured() ? null : "provider-not-configured"
   };
