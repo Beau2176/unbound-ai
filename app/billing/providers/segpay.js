@@ -5,13 +5,13 @@ const CONSUMER_PORTAL_URL = "https://cs.segpay.com/";
 const CHECKOUT_TTL_SECONDS = 30 * 60;
 const SUBJECT_CHUNK_SIZE = 32;
 const PLAN_PRICES = Object.freeze({
-  premium: "49.99",
-  ultra: "129.99",
+  premium: "29.99",
+  ultra: "99.99",
   max: "199.99"
 });
 const LEGACY_PLAN_PRICES = Object.freeze({
-  premium: Object.freeze(["59.99"]),
-  ultra: Object.freeze(["114.99"]),
+  premium: Object.freeze(["49.99", "59.99"]),
+  ultra: Object.freeze(["129.99", "114.99"]),
   max: Object.freeze([])
 });
 
