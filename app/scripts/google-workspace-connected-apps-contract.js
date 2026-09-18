@@ -22,7 +22,7 @@ const {
   listDriveMetadata
 } = require("../connections/providers/google-workspace");
 const { createPkceVerifier } = require("../connections/routes");
-const { providerCatalog } = require("../platform/registry");
+const { connectorCatalog } = require("../platform/registry");
 
 function jsonResponse(status, payload) {
   return {
@@ -275,9 +275,13 @@ async function main() {
     assert.strictEqual(new URLSearchParams(revokeRequest.options.body).get("token"), "long-refresh");
     assert.strictEqual(revoked.revoked, true);
 
-    const connectors = providerCatalog(env);
-    const googleConnector = connectors.find((item) => item.id === "google");
+    const connectors = connectorCatalog(env);
+    const googleConnector = connectors.find((item) => item.id === "google_workspace");
     assert(googleConnector);
+    assert.strictEqual(googleConnector.configured, true);
+    assert.strictEqual(googleConnector.read, true);
+    assert.strictEqual(googleConnector.write, false);
+    assert.strictEqual(googleConnector.dataAccess, "metadata-only");
 
     const routes = fs.readFileSync(path.join(__dirname, "..", "connections", "routes.js"), "utf8");
     assert(routes.includes('"/google/authorize"'));
