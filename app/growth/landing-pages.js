@@ -115,15 +115,24 @@ function landingForPath(pathname) {
   return FEATURE_LANDING_PAGES.find((page) => page.path === String(pathname || "")) || null;
 }
 
-function buildFeatureLandingHtml(page) {
+function cleanTrackingValue(value, maxLength = 120) {
+  const text = String(value || "").trim().replace(/[\u0000-\u001f\u007f]/g, "");
+  return text ? text.slice(0, maxLength) : null;
+}
+
+function buildFeatureLandingHtml(page, tracking = {}) {
   if (!page) return null;
   const params = new URLSearchParams({
-    utm_source: "unbound",
-    utm_medium: "feature_landing",
-    utm_campaign: "product_pages",
-    utm_content: page.id,
+    utm_source: cleanTrackingValue(tracking.source, 80) || "unbound",
+    utm_medium: cleanTrackingValue(tracking.medium, 80) || "feature_landing",
+    utm_campaign: cleanTrackingValue(tracking.campaign, 120) || "product_pages",
+    utm_content: cleanTrackingValue(tracking.content, 120) || page.id,
     landing: page.path
   });
+  const partnerCode = cleanTrackingValue(tracking.partnerCode, 40);
+  if (partnerCode && /^[A-Za-z0-9][A-Za-z0-9_-]{2,39}$/.test(partnerCode)) {
+    params.set("partner", partnerCode.toUpperCase());
+  }
   const ctaUrl = "/?" + params.toString();
   const bullets = page.bullets
     .map((bullet) => `<li>${escapeHtml(bullet)}</li>`)
@@ -175,7 +184,13 @@ function buildFeatureLandingHtml(page) {
 
 function sendFeatureLandingPage(req, res) {
   const page = landingForPath(req.path);
-  const html = buildFeatureLandingHtml(page);
+  const html = buildFeatureLandingHtml(page, {
+    source: req.query?.utm_source,
+    medium: req.query?.utm_medium,
+    campaign: req.query?.utm_campaign,
+    content: req.query?.utm_content,
+    partnerCode: req.query?.partner
+  });
   if (!html) return res.status(404).send("Not found.");
   res.setHeader("Cache-Control", "public, max-age=300");
   return res.type("html").send(html);
@@ -185,6 +200,7 @@ module.exports = {
   FEATURE_LANDING_PAGES,
   escapeHtml,
   landingForPath,
+  cleanTrackingValue,
   buildFeatureLandingHtml,
   sendFeatureLandingPage
 };
