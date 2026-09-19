@@ -1668,6 +1668,10 @@
             Share UNBOUND AI. Referral attribution is tracked; no reward program is being promised yet.
           </div>
         </div>
+        <div id="creatorComplimentaryActions" class="access-age-actions" hidden>
+          <button id="creatorComplimentaryActivateButton" class="auth-submit" type="button" hidden>ACTIVATE 6-MONTH ULTRA ACCESS</button>
+          <div id="creatorComplimentaryNote" class="history-empty" role="status" aria-live="polite"></div>
+        </div>
         <div class="access-section-title">Capabilities</div>
         <div id="accessCapabilityList" class="capability-list"></div>
         <div class="access-section-title">Your data</div>
@@ -1994,6 +1998,9 @@
     const billingPortalButton = document.getElementById("billingPortalButton");
     const referralCopyButton = document.getElementById("referralCopyButton");
     const referralActionNote = document.getElementById("referralActionNote");
+    const creatorComplimentaryActions = document.getElementById("creatorComplimentaryActions");
+    const creatorComplimentaryActivateButton = document.getElementById("creatorComplimentaryActivateButton");
+    const creatorComplimentaryNote = document.getElementById("creatorComplimentaryNote");
     const billingActionNote = document.getElementById("billingActionNote");
     const accessCapabilityList = document.getElementById("accessCapabilityList");
     const dataExportButton = document.getElementById("dataExportButton");
@@ -2069,6 +2076,7 @@
     let currentUser = null;
     let chatRequestPending = false;
     let accountAccess = null;
+    let creatorComplimentaryGrant = null;
     let activeConversationId = null;
     let conversationHistory = [];
     let productMode = "standard";
@@ -3750,6 +3758,92 @@
       }
     }
 
+    function formatCreatorGrantDate(value) {
+      const date = value ? new Date(value) : null;
+      return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString() : "";
+    }
+
+    function renderCreatorComplimentaryGrant(payload = null) {
+      const grant = payload?.grant || null;
+      const commercialLive = Boolean(payload?.commercialLive);
+      creatorComplimentaryGrant = grant;
+
+      if (!grant) {
+        creatorComplimentaryActions.hidden = true;
+        creatorComplimentaryActivateButton.hidden = true;
+        creatorComplimentaryActivateButton.disabled = true;
+        creatorComplimentaryNote.textContent = "";
+        return;
+      }
+
+      creatorComplimentaryActions.hidden = false;
+      const status = String(grant.status || "").toLowerCase();
+
+      if (status === "reserved") {
+        creatorComplimentaryActivateButton.hidden = false;
+        creatorComplimentaryActivateButton.disabled = !commercialLive;
+        creatorComplimentaryActivateButton.textContent = "ACTIVATE 6-MONTH ULTRA ACCESS";
+        creatorComplimentaryNote.textContent = commercialLive
+          ? "Your creator slot is reserved. The six-month clock starts only when you activate it."
+          : "Your creator slot is reserved. Activation stays locked until UNBOUND AI is fully live.";
+        return;
+      }
+
+      creatorComplimentaryActivateButton.hidden = true;
+      creatorComplimentaryActivateButton.disabled = true;
+      creatorComplimentaryNote.textContent = status === "active"
+        ? `Complimentary ULTRA is active through ${formatCreatorGrantDate(grant.expiresAt)}.`
+        : "This complimentary creator access has expired.";
+    }
+
+    async function loadCreatorComplimentaryGrant() {
+      if (!currentUser) {
+        renderCreatorComplimentaryGrant(null);
+        return null;
+      }
+      try {
+        const response = await fetch("/api/account/complimentary", {
+          method: "GET",
+          credentials: "same-origin",
+          headers: { "Accept": "application/json" }
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(data.error || "Could not load creator access.");
+        renderCreatorComplimentaryGrant(data);
+        return data;
+      } catch (error) {
+        creatorComplimentaryActions.hidden = true;
+        creatorComplimentaryActivateButton.hidden = true;
+        creatorComplimentaryNote.textContent = "";
+        console.warn("Could not load complimentary creator access:", error);
+        return null;
+      }
+    }
+
+    async function activateCreatorComplimentaryGrant() {
+      if (!currentUser || creatorComplimentaryActivateButton.disabled) return;
+      creatorComplimentaryActivateButton.disabled = true;
+      creatorComplimentaryActivateButton.textContent = "ACTIVATING...";
+      try {
+        const response = await fetch("/api/account/complimentary/activate", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: "{}"
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(data.error || "Could not activate creator access.");
+        showToast("Your six months of complimentary ULTRA access starts now.");
+        await refreshSession();
+        await refreshAccountAccess({ silent: true });
+        await loadCreatorComplimentaryGrant();
+      } catch (error) {
+        creatorComplimentaryNote.textContent = error.message || "Could not activate creator access.";
+        creatorComplimentaryActivateButton.disabled = false;
+        creatorComplimentaryActivateButton.textContent = "ACTIVATE 6-MONTH ULTRA ACCESS";
+      }
+    }
+
     async function openAccess() {
       if (!currentUser) { showToast("Sign in to view account access."); openAuth("login"); return; }
       rememberModalReturnFocus();
@@ -3757,7 +3851,10 @@
       accessModal.hidden = false; document.body.classList.add("modal-open");
       focusModal(accessModal, accessCloseButton);
       await refreshAccountAccess({ silent: false });
-      await loadLegalPolicyStatus();
+      await Promise.all([
+        loadLegalPolicyStatus(),
+        loadCreatorComplimentaryGrant()
+      ]);
     }
 
     function closeAccess() {
@@ -5287,6 +5384,7 @@
 
       currentUser = null;
       accountAccess = null;
+      creatorComplimentaryGrant = null;
       renderAccountUi();
       await switchConversationScope();
       logoutButton.disabled = false;
@@ -5305,6 +5403,7 @@
     billingMaxButton.addEventListener("click", () => startPlanCheckout("max"));
     billingPortalButton.addEventListener("click", openBillingPortal);
     referralCopyButton.addEventListener("click", copyReferralLink);
+    creatorComplimentaryActivateButton.addEventListener("click", activateCreatorComplimentaryGrant);
     ageVerificationStartButton.addEventListener("click", startAgeVerification);
     dataExportButton.addEventListener("click", handleDataExport);
     accessCloseButton.addEventListener("click", closeAccess);
