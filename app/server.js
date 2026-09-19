@@ -854,19 +854,34 @@ async function initializeDatabase() {
       slot SMALLINT PRIMARY KEY,
       user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
       granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '6 months'),
-      CONSTRAINT complimentary_slot_check CHECK (slot BETWEEN 1 AND 5)
+      activated_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ,
+      CONSTRAINT complimentary_slot_check CHECK (slot BETWEEN 1 AND 5),
+      CONSTRAINT complimentary_activation_dates_check CHECK (
+        (activated_at IS NULL AND expires_at IS NULL)
+        OR
+        (activated_at IS NOT NULL AND expires_at IS NOT NULL AND expires_at > activated_at)
+      )
     );
+
+    ALTER TABLE complimentary_top_tier_grants
+      ADD COLUMN IF NOT EXISTS activated_at TIMESTAMPTZ;
 
     ALTER TABLE complimentary_top_tier_grants
       ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 
-    UPDATE complimentary_top_tier_grants
-      SET expires_at = granted_at + INTERVAL '6 months'
-      WHERE expires_at IS NULL;
+    ALTER TABLE complimentary_top_tier_grants
+      ALTER COLUMN expires_at DROP NOT NULL;
 
     ALTER TABLE complimentary_top_tier_grants
-      ALTER COLUMN expires_at SET NOT NULL;
+      DROP CONSTRAINT IF EXISTS complimentary_activation_dates_check;
+
+    ALTER TABLE complimentary_top_tier_grants
+      ADD CONSTRAINT complimentary_activation_dates_check CHECK (
+        (activated_at IS NULL AND expires_at IS NULL)
+        OR
+        (activated_at IS NOT NULL AND expires_at IS NOT NULL AND expires_at > activated_at)
+      );
 
     CREATE INDEX IF NOT EXISTS complimentary_top_tier_grants_expiry_idx
       ON complimentary_top_tier_grants(expires_at);
@@ -917,19 +932,15 @@ async function initializeDatabase() {
   `);
 
   await pool.query(`
-    UPDATE users u
-    SET plan_tier = 'free',
-        updated_at = NOW()
-    WHERE u.role <> 'admin'
-      AND u.plan_tier IN ('top', 'ultra')
-      AND EXISTS (
-        SELECT 1
-        FROM complimentary_top_tier_grants g
-        WHERE g.user_id = u.id
-      );
+    UPDATE complimentary_top_tier_grants
+    SET activated_at = granted_at,
+        expires_at = granted_at + INTERVAL '6 months'
+    WHERE activated_at IS NULL
+      AND expires_at IS NOT NULL;
 
     DELETE FROM complimentary_top_tier_grants
-    WHERE expires_at <= NOW();
+    WHERE activated_at IS NOT NULL
+      AND expires_at <= NOW();
   `);
 
   await pool.query(`
@@ -1433,6 +1444,7 @@ async function findSessionUser(req) {
          SELECT 1
          FROM complimentary_top_tier_grants g
          WHERE g.user_id = u.id
+           AND g.activated_at IS NOT NULL
            AND g.expires_at > NOW()
        ) AS complimentary_top_tier
      FROM user_sessions s
@@ -2444,6 +2456,7 @@ app.post("/api/auth/login", requireDatabase, loginRateLimit, async (req, res) =>
          SELECT 1
          FROM complimentary_top_tier_grants
          WHERE user_id = $1
+           AND activated_at IS NOT NULL
            AND expires_at > NOW()
        ) AS complimentary_top_tier`,
       [user.id]
@@ -2495,6 +2508,131 @@ app.get("/api/auth/me", requireDatabase, async (req, res) => {
     return res.status(500).json({ error: "Could not load account." });
   }
 });
+
+async function loadComplimentaryCreatorGrant(userId, client = pool) {
+  const result = await client.query(
+    `SELECT slot, granted_at, activated_at, expires_at
+     FROM complimentary_top_tier_grants
+     WHERE user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+  return result.rows[0] || null;
+}
+
+function publicComplimentaryCreatorGrant(grant) {
+  if (!grant) return null;
+  const active = Boolean(
+    grant.activated_at &&
+    grant.expires_at &&
+    new Date(grant.expires_at).getTime() > Date.now()
+  );
+  return {
+    slot: Number(grant.slot),
+    status: !grant.activated_at ? "reserved" : active ? "active" : "expired",
+    reservedAt: grant.granted_at,
+    activatedAt: grant.activated_at || null,
+    expiresAt: grant.expires_at || null,
+    durationMonths: 6
+  };
+}
+
+app.get(
+  "/api/account/complimentary",
+  requireDatabase,
+  requireSignedIn,
+  async (req, res) => {
+    try {
+      const grant = await loadComplimentaryCreatorGrant(req.user.id);
+      return res.json({
+        grant: publicComplimentaryCreatorGrant(grant),
+        commercialLive:
+          IS_PRODUCTION &&
+          buildCurrentOperationalSnapshot().launch?.launchReady === true
+      });
+    } catch (error) {
+      console.error("UNBOUND AI COMPLIMENTARY STATUS ERROR:", error);
+      return res.status(500).json({ error: "Could not load complimentary creator access." });
+    }
+  }
+);
+
+app.post(
+  "/api/account/complimentary/activate",
+  requireDatabase,
+  requireSignedIn,
+  securityActionRateLimit,
+  async (req, res) => {
+    const snapshot = buildCurrentOperationalSnapshot();
+    const commercialLive = Boolean(
+      IS_PRODUCTION &&
+      snapshot.launch?.launchReady === true
+    );
+
+    if (!commercialLive) {
+      return res.status(409).json({
+        error:
+          "Complimentary creator access can be activated only after UNBOUND AI is live and the commercial launch gate is fully ready.",
+        code: "COMPLIMENTARY_ACTIVATION_NOT_LIVE",
+        launch: {
+          status: snapshot.launch?.status || "blocked",
+          blockerCount: Number(snapshot.launch?.blockerCount || 0)
+        }
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(
+        `SELECT slot, granted_at, activated_at, expires_at
+         FROM complimentary_top_tier_grants
+         WHERE user_id = $1
+         LIMIT 1
+         FOR UPDATE`,
+        [req.user.id]
+      );
+      const grant = result.rows[0];
+
+      if (!grant) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({
+          error: "This account does not have a reserved complimentary creator slot."
+        });
+      }
+
+      if (grant.activated_at) {
+        await client.query("COMMIT");
+        return res.json({
+          ok: true,
+          alreadyActivated: true,
+          grant: publicComplimentaryCreatorGrant(grant)
+        });
+      }
+
+      const activated = await client.query(
+        `UPDATE complimentary_top_tier_grants
+         SET activated_at = NOW(),
+             expires_at = NOW() + INTERVAL '6 months'
+         WHERE user_id = $1
+         RETURNING slot, granted_at, activated_at, expires_at`,
+        [req.user.id]
+      );
+
+      await client.query("COMMIT");
+      return res.status(201).json({
+        ok: true,
+        grant: publicComplimentaryCreatorGrant(activated.rows[0])
+      });
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch (_) {}
+      console.error("UNBOUND AI COMPLIMENTARY ACTIVATION ERROR:", error);
+      return res.status(500).json({ error: "Could not activate complimentary creator access." });
+    } finally {
+      client.release();
+    }
+  }
+);
 
 
 app.post(
@@ -5773,6 +5911,7 @@ async function loadAdminTargetUser(userId, client = pool) {
          SELECT 1
          FROM complimentary_top_tier_grants g
          WHERE g.user_id = u.id
+           AND g.activated_at IS NOT NULL
            AND g.expires_at > NOW()
        ) AS complimentary_top_tier
      FROM users u
@@ -6300,11 +6439,11 @@ app.get(
           u.created_at,
           g.slot AS complimentary_slot,
           g.granted_at AS complimentary_granted_at,
+          g.activated_at AS complimentary_activated_at,
           g.expires_at AS complimentary_expires_at
         FROM users u
         LEFT JOIN complimentary_top_tier_grants g
           ON g.user_id = u.id
-         AND g.expires_at > NOW()
         ORDER BY u.created_at DESC, u.id DESC
         LIMIT 500
       `);
@@ -6320,7 +6459,16 @@ app.get(
             ? null
             : Number(user.complimentary_slot),
         complimentaryGrantedAt: user.complimentary_granted_at,
+        complimentaryActivatedAt: user.complimentary_activated_at,
         complimentaryExpiresAt: user.complimentary_expires_at,
+        complimentaryStatus:
+          user.complimentary_slot === null
+            ? null
+            : user.complimentary_activated_at === null
+              ? "reserved"
+              : new Date(user.complimentary_expires_at).getTime() > Date.now()
+                ? "active"
+                : "expired",
         createdAt: user.created_at
       }));
 
@@ -6340,6 +6488,8 @@ app.get(
                 id: user.id,
                 email: user.email,
                 displayName: user.displayName,
+                status: user.complimentaryStatus,
+                activatedAt: user.complimentaryActivatedAt,
                 expiresAt: user.complimentaryExpiresAt
               }
             : null
@@ -6678,14 +6828,13 @@ app.post(
         );
 
         await client.query(
-          "DELETE FROM complimentary_top_tier_grants WHERE expires_at <= NOW()"
+          "DELETE FROM complimentary_top_tier_grants WHERE activated_at IS NOT NULL AND expires_at <= NOW()"
         );
 
         const existingResult = await client.query(
-          `SELECT slot, expires_at
+          `SELECT slot, activated_at, expires_at
            FROM complimentary_top_tier_grants
            WHERE user_id = $1
-             AND expires_at > NOW()
            LIMIT 1`,
           [user.id]
         );
@@ -6696,6 +6845,8 @@ app.post(
             ok: true,
             alreadyGranted: true,
             slot: Number(existingResult.rows[0].slot),
+            status: existingResult.rows[0].activated_at ? "active" : "reserved",
+            activatedAt: existingResult.rows[0].activated_at,
             expiresAt: existingResult.rows[0].expires_at,
             user: {
               id: String(user.id),
@@ -6728,20 +6879,14 @@ app.post(
         const slot = Number(slotResult.rows[0].slot);
 
         await client.query(
-          `INSERT INTO complimentary_top_tier_grants (slot, user_id, expires_at)
-           VALUES ($1, $2, NOW() + INTERVAL '6 months')
-           RETURNING expires_at`,
+          `INSERT INTO complimentary_top_tier_grants (
+             slot, user_id, granted_at, activated_at, expires_at
+           )
+           VALUES ($1, $2, NOW(), NULL, NULL)`,
           [slot, user.id]
         );
 
-        const expiryResult = await client.query(
-          `SELECT expires_at
-           FROM complimentary_top_tier_grants
-           WHERE user_id = $1
-           LIMIT 1`,
-          [user.id]
-        );
-        const expiresAt = expiryResult.rows[0]?.expires_at || null;
+        const expiresAt = null;
 
         await writeAdminAudit(
           client,
@@ -6751,8 +6896,9 @@ app.post(
           {
             slot,
             previousPlanTier: user.plan_tier,
-            effectivePlanTier: "ultra",
-            expiresAt
+            reservedPlanTier: "ultra",
+            activationRequired: true,
+            expiresAt: null
           }
         );
 
@@ -6761,7 +6907,9 @@ app.post(
         return res.status(201).json({
           ok: true,
           slot,
-          expiresAt,
+          status: "reserved",
+          activatedAt: null,
+          expiresAt: null,
           user: {
             id: String(user.id),
             email: user.email,
