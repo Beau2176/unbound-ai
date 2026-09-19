@@ -53,7 +53,11 @@ function main() {
   assert.match(source, /initializeGrowthSchema\(pool\)/);
   assert.match(source, /captureRegistrationGrowth/);
   assert.match(source, /"\/api\/account\/referral"/);
+  assert.match(source, /"\/api\/admin\/growth\/summary"/);
+  assert.match(source, /"\/growth-admin"/);
   assert.match(source, /eventName: "checkout_started"/);
+  assert.match(source, /eventName: "subscription_activated"/);
+  assert.match(source, /eventName: "subscription_churned"/);
 
   const reappliedError = (() => {
     try {
