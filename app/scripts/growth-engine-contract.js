@@ -12,6 +12,11 @@ const {
   normalizeAcquisition,
   safeMetadata
 } = require("../growth/store");
+const {
+  FEATURE_LANDING_PAGES,
+  landingForPath,
+  buildFeatureLandingHtml
+} = require("../growth/landing-pages");
 
 function main() {
   assert.equal(cleanReferralCode("ab12cd34"), "AB12CD34");
@@ -44,6 +49,15 @@ function main() {
   });
   assert.deepEqual(metadata, { provider: "segpay", ok: true, count: 2 });
 
+  assert.equal(FEATURE_LANDING_PAGES.length, 7);
+  assert.equal(landingForPath("/work-mode")?.id, "work_mode");
+  assert.equal(landingForPath("/privacy-control")?.plan, "FREE");
+  const researchLanding = buildFeatureLandingHtml(landingForPath("/research"));
+  assert.match(researchLanding, /Research Mode/);
+  assert.match(researchLanding, /utm_campaign=product_pages/);
+  assert.match(researchLanding, /landing=%2Fresearch/);
+  assert.doesNotMatch(researchLanding, /<script/i);
+
   const appRoot = path.resolve(__dirname, "..");
   const rawServer = fs.readFileSync(path.join(appRoot, "server.js"), "utf8");
   let source = integrateEmailVerificationServerSource(rawServer);
@@ -55,6 +69,8 @@ function main() {
   assert.match(source, /"\/api\/account\/referral"/);
   assert.match(source, /"\/api\/admin\/growth\/summary"/);
   assert.match(source, /"\/growth-admin"/);
+  assert.match(source, /FEATURE_LANDING_PAGES/);
+  assert.match(source, /eventName: "landing_view"/);
   assert.match(source, /eventName: "checkout_started"/);
   assert.match(source, /eventName: "subscription_activated"/);
   assert.match(source, /eventName: "subscription_churned"/);
