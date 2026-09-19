@@ -1662,6 +1662,16 @@
           </div>
           <div id="billingActionNote" class="history-empty" role="status" aria-live="polite"></div>
         </div>
+        <div id="referralActions" class="access-age-actions">
+          <button id="referralCopyButton" class="auth-submit secondary" type="button">COPY REFERRAL LINK</button>
+          <div id="referralActionNote" class="history-empty" role="status" aria-live="polite">
+            Share UNBOUND AI. Referral attribution is tracked; no reward program is being promised yet.
+          </div>
+        </div>
+        <div id="creatorComplimentaryActions" class="access-age-actions" hidden>
+          <button id="creatorComplimentaryActivateButton" class="auth-submit" type="button" hidden>ACTIVATE 6-MONTH ULTRA ACCESS</button>
+          <div id="creatorComplimentaryNote" class="history-empty" role="status" aria-live="polite"></div>
+        </div>
         <div class="access-section-title">Capabilities</div>
         <div id="accessCapabilityList" class="capability-list"></div>
         <div class="access-section-title">Your data</div>
@@ -1937,6 +1947,8 @@
     const DEPTH_STYLE_KEY_BASE = "unbound-ai-depth-style-v1";
     const PRODUCT_MODE_KEY_BASE = "unbound-ai-product-mode-v1";
     const AI_STYLE_KEY_BASE = "unbound-ai-style-v1";
+    const ACQUISITION_KEY = "unbound-ai-acquisition-v1";
+    const ACQUISITION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
     const MAX_STORED_MESSAGES = 50;
     const MAX_CONTEXT_MESSAGES = 20;
 
@@ -1984,6 +1996,11 @@
     const billingUltraButton = document.getElementById("billingUltraButton");
     const billingMaxButton = document.getElementById("billingMaxButton");
     const billingPortalButton = document.getElementById("billingPortalButton");
+    const referralCopyButton = document.getElementById("referralCopyButton");
+    const referralActionNote = document.getElementById("referralActionNote");
+    const creatorComplimentaryActions = document.getElementById("creatorComplimentaryActions");
+    const creatorComplimentaryActivateButton = document.getElementById("creatorComplimentaryActivateButton");
+    const creatorComplimentaryNote = document.getElementById("creatorComplimentaryNote");
     const billingActionNote = document.getElementById("billingActionNote");
     const accessCapabilityList = document.getElementById("accessCapabilityList");
     const dataExportButton = document.getElementById("dataExportButton");
@@ -2059,6 +2076,7 @@
     let currentUser = null;
     let chatRequestPending = false;
     let accountAccess = null;
+    let creatorComplimentaryGrant = null;
     let activeConversationId = null;
     let conversationHistory = [];
     let productMode = "standard";
@@ -3324,6 +3342,48 @@
       }
     }
 
+    async function copyReferralLink() {
+      if (!currentUser) {
+        showToast("Sign in to get your referral link.");
+        return;
+      }
+
+      referralCopyButton.disabled = true;
+      const previousLabel = referralCopyButton.textContent;
+      referralCopyButton.textContent = "LOADING...";
+      try {
+        const response = await fetch("/api/account/referral", {
+          method: "GET",
+          credentials: "same-origin",
+          headers: { "Accept": "application/json" }
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(data.error || "Could not load your referral link.");
+
+        const rawLink = String(data.referral?.referralLink || "").trim();
+        const parsed = new URL(rawLink, window.location.origin);
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          throw new Error("The referral link was invalid.");
+        }
+
+        const link = parsed.toString();
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(link);
+          referralActionNote.textContent =
+            `Referral link copied. ${Number(data.referral?.referredAccounts || 0)} account(s) attributed so far.`;
+          showToast("Referral link copied.");
+        } else {
+          referralActionNote.textContent = link;
+          showToast("Referral link is shown in Account Access.");
+        }
+      } catch (error) {
+        referralActionNote.textContent = error.message || "Could not load your referral link.";
+      } finally {
+        referralCopyButton.disabled = false;
+        referralCopyButton.textContent = previousLabel;
+      }
+    }
+
     async function openBillingPortal() {
       if (!currentUser || !accountAccess) return;
       const gateway = accountAccess.billingGateway || {};
@@ -3698,6 +3758,92 @@
       }
     }
 
+    function formatCreatorGrantDate(value) {
+      const date = value ? new Date(value) : null;
+      return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString() : "";
+    }
+
+    function renderCreatorComplimentaryGrant(payload = null) {
+      const grant = payload?.grant || null;
+      const commercialLive = Boolean(payload?.commercialLive);
+      creatorComplimentaryGrant = grant;
+
+      if (!grant) {
+        creatorComplimentaryActions.hidden = true;
+        creatorComplimentaryActivateButton.hidden = true;
+        creatorComplimentaryActivateButton.disabled = true;
+        creatorComplimentaryNote.textContent = "";
+        return;
+      }
+
+      creatorComplimentaryActions.hidden = false;
+      const status = String(grant.status || "").toLowerCase();
+
+      if (status === "reserved") {
+        creatorComplimentaryActivateButton.hidden = false;
+        creatorComplimentaryActivateButton.disabled = !commercialLive;
+        creatorComplimentaryActivateButton.textContent = "ACTIVATE 6-MONTH ULTRA ACCESS";
+        creatorComplimentaryNote.textContent = commercialLive
+          ? "Your creator slot is reserved. The six-month clock starts only when you activate it."
+          : "Your creator slot is reserved. Activation stays locked until UNBOUND AI is fully live.";
+        return;
+      }
+
+      creatorComplimentaryActivateButton.hidden = true;
+      creatorComplimentaryActivateButton.disabled = true;
+      creatorComplimentaryNote.textContent = status === "active"
+        ? `Complimentary ULTRA is active through ${formatCreatorGrantDate(grant.expiresAt)}.`
+        : "This complimentary creator access has expired.";
+    }
+
+    async function loadCreatorComplimentaryGrant() {
+      if (!currentUser) {
+        renderCreatorComplimentaryGrant(null);
+        return null;
+      }
+      try {
+        const response = await fetch("/api/account/complimentary", {
+          method: "GET",
+          credentials: "same-origin",
+          headers: { "Accept": "application/json" }
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(data.error || "Could not load creator access.");
+        renderCreatorComplimentaryGrant(data);
+        return data;
+      } catch (error) {
+        creatorComplimentaryActions.hidden = true;
+        creatorComplimentaryActivateButton.hidden = true;
+        creatorComplimentaryNote.textContent = "";
+        console.warn("Could not load complimentary creator access:", error);
+        return null;
+      }
+    }
+
+    async function activateCreatorComplimentaryGrant() {
+      if (!currentUser || creatorComplimentaryActivateButton.disabled) return;
+      creatorComplimentaryActivateButton.disabled = true;
+      creatorComplimentaryActivateButton.textContent = "ACTIVATING...";
+      try {
+        const response = await fetch("/api/account/complimentary/activate", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: "{}"
+        });
+        const data = await readJson(response);
+        if (!response.ok) throw new Error(data.error || "Could not activate creator access.");
+        showToast("Your six months of complimentary ULTRA access starts now.");
+        await refreshSession();
+        await refreshAccountAccess({ silent: true });
+        await loadCreatorComplimentaryGrant();
+      } catch (error) {
+        creatorComplimentaryNote.textContent = error.message || "Could not activate creator access.";
+        creatorComplimentaryActivateButton.disabled = false;
+        creatorComplimentaryActivateButton.textContent = "ACTIVATE 6-MONTH ULTRA ACCESS";
+      }
+    }
+
     async function openAccess() {
       if (!currentUser) { showToast("Sign in to view account access."); openAuth("login"); return; }
       rememberModalReturnFocus();
@@ -3705,7 +3851,10 @@
       accessModal.hidden = false; document.body.classList.add("modal-open");
       focusModal(accessModal, accessCloseButton);
       await refreshAccountAccess({ silent: false });
-      await loadLegalPolicyStatus();
+      await Promise.all([
+        loadLegalPolicyStatus(),
+        loadCreatorComplimentaryGrant()
+      ]);
     }
 
     function closeAccess() {
@@ -4127,6 +4276,65 @@
       }
     }
 
+    function cleanAcquisitionValue(value, maxLength = 120) {
+      const text = String(value || "").trim().replace(/[\u0000-\u001f\u007f]/g, "");
+      return text ? text.slice(0, maxLength) : null;
+    }
+
+    function captureAcquisitionFromUrl() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const acquisition = {
+          source: cleanAcquisitionValue(params.get("utm_source"), 80),
+          medium: cleanAcquisitionValue(params.get("utm_medium"), 80),
+          campaign: cleanAcquisitionValue(params.get("utm_campaign"), 120),
+          content: cleanAcquisitionValue(params.get("utm_content"), 120),
+          referralCode: cleanAcquisitionValue(params.get("ref"), 24),
+          partnerCode: cleanAcquisitionValue(params.get("partner"), 40),
+          landingPath: cleanAcquisitionValue(params.get("landing") || window.location.pathname, 240),
+          capturedAt: Date.now()
+        };
+        const hasAttribution = Boolean(
+          acquisition.source ||
+          acquisition.medium ||
+          acquisition.campaign ||
+          acquisition.content ||
+          acquisition.referralCode ||
+          acquisition.partnerCode ||
+          acquisition.landingPath
+        );
+        if (hasAttribution) {
+          localStorage.setItem(ACQUISITION_KEY, JSON.stringify(acquisition));
+        }
+      } catch (error) {
+        console.warn("Could not store UNBOUND AI acquisition attribution:", error);
+      }
+    }
+
+    function loadAcquisition() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(ACQUISITION_KEY) || "null");
+        if (!saved || typeof saved !== "object") return null;
+        const capturedAt = Number(saved.capturedAt || 0);
+        if (!capturedAt || Date.now() - capturedAt > ACQUISITION_MAX_AGE_MS) {
+          localStorage.removeItem(ACQUISITION_KEY);
+          return null;
+        }
+        return {
+          source: cleanAcquisitionValue(saved.source, 80),
+          medium: cleanAcquisitionValue(saved.medium, 80),
+          campaign: cleanAcquisitionValue(saved.campaign, 120),
+          content: cleanAcquisitionValue(saved.content, 120),
+          referralCode: cleanAcquisitionValue(saved.referralCode, 24),
+          partnerCode: cleanAcquisitionValue(saved.partnerCode, 40),
+          landingPath: cleanAcquisitionValue(saved.landingPath, 240)
+        };
+      } catch (error) {
+        localStorage.removeItem(ACQUISITION_KEY);
+        return null;
+      }
+    }
+
     async function handleRegister(event) {
       event.preventDefault();
       clearAuthFeedback();
@@ -4165,7 +4373,8 @@
             displayName,
             email,
             password,
-            adultConfirmed
+            adultConfirmed,
+            acquisition: loadAcquisition()
           })
         });
 
@@ -4180,6 +4389,7 @@
         closeAuth();
         await switchConversationScope();
         registerForm.reset();
+        localStorage.removeItem(ACQUISITION_KEY);
         showToast(`Welcome to UNBOUND AI, ${currentUser?.displayName || "UNBOUND User"}.`);
       } catch (error) {
         showAuthFeedback(error.message || "Account creation failed.");
@@ -5174,6 +5384,7 @@
 
       currentUser = null;
       accountAccess = null;
+      creatorComplimentaryGrant = null;
       renderAccountUi();
       await switchConversationScope();
       logoutButton.disabled = false;
@@ -5191,6 +5402,8 @@
     billingUltraButton.addEventListener("click", () => startPlanCheckout("ultra"));
     billingMaxButton.addEventListener("click", () => startPlanCheckout("max"));
     billingPortalButton.addEventListener("click", openBillingPortal);
+    referralCopyButton.addEventListener("click", copyReferralLink);
+    creatorComplimentaryActivateButton.addEventListener("click", activateCreatorComplimentaryGrant);
     ageVerificationStartButton.addEventListener("click", startAgeVerification);
     dataExportButton.addEventListener("click", handleDataExport);
     accessCloseButton.addEventListener("click", closeAccess);
@@ -5310,6 +5523,7 @@ adminButton.addEventListener("click", () => {
     });
 
     async function initializePage() {
+      captureAcquisitionFromUrl();
       serviceStatus.dataset.state = "checking";
       serviceStatusText.textContent = "CHECKING";
       await refreshServiceStatus();

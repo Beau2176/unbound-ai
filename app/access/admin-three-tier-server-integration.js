@@ -17,7 +17,7 @@ function integrateAdminThreeTierServerSource(serverSource) {
     error.code = "ADMIN_THREE_TIER_SOURCE_EMPTY";
     throw error;
   }
-  if (source.includes("ADMIN_THREE_TIER_V097_APPLIED")) return source;
+  if (source.includes("ADMIN_THREE_TIER_V098_APPLIED")) return source;
 
   source = replaceOnce(
     source,
@@ -63,30 +63,9 @@ function integrateAdminThreeTierServerSource(serverSource) {
 
   source = replaceOnce(
     source,
-    `          \`UPDATE users\n           SET plan_tier = 'top',\n               updated_at = NOW()\n           WHERE id = $1\`,`,
-    `          \`UPDATE users\n           SET plan_tier = 'ultra',\n               updated_at = NOW()\n           WHERE id = $1\`,`,
-    "gift-ultra-update"
-  );
-
-  source = replaceOnce(
-    source,
-    `            newPlanTier: "top"`,
-    `            newPlanTier: "ultra"`,
-    "gift-audit-ultra"
-  );
-
-  source = replaceOnce(
-    source,
     `        error: "Could not grant complimentary TOP-tier access."`,
     `        error: "Could not grant complimentary ULTRA access."`,
     "gift-error-ultra"
-  );
-
-  source = replaceOnce(
-    source,
-    `            resultingPlanTier: target.role === "admin" ? "top" : "free"`,
-    `            resultingPlanTier: target.role === "admin" ? "ultra" : "free"`,
-    "revoke-audit-ultra"
   );
 
   source = replaceOnce(
@@ -112,7 +91,7 @@ function integrateAdminThreeTierServerSource(serverSource) {
   const route = `app.get("/admin-three-tier.js", requireDatabase, requireAdmin, (req, res) => {\n  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");\n  res.type("application/javascript");\n  return res.sendFile(path.join(__dirname, "admin-three-tier.js"));\n});\n\n`;
   source = source.replace(adminApiMarker, route + adminApiMarker);
 
-  return `${source}\n/* ADMIN_THREE_TIER_V097_APPLIED */\n`;
+  return `${source}\n/* ADMIN_THREE_TIER_V098_APPLIED */\n`;
 }
 
 module.exports = { integrateAdminThreeTierServerSource };

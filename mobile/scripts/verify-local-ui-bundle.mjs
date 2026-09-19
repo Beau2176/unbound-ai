@@ -140,7 +140,7 @@ if (manifest) {
     }
     for (const expected of [
       'unbound-mobile-layout-v102',
-      'unbound-simple-shell-v100',
+      'unbound-simple-shell-v101',
       'unboundVoiceListenButton',
       'let streamCompleted = false;',
       '[Response interrupted before completion.]'

@@ -8,6 +8,9 @@ const {
   integrateBillingServerSource
 } = require("./billing/server-integration");
 const {
+  integrateGrowthServerSource
+} = require("./growth/server-integration");
+const {
   integrateFileAnalysisServerSource
 } = require("./files/server-integration");
 const {
@@ -135,6 +138,7 @@ function compileIntegratedServer({
   integratedSource = integrateLawEnforcementServerSource(integratedSource);
   integratedSource = integrateAdultStepUpServerSource(integratedSource);
   integratedSource = integrateNativeShellServerSource(integratedSource);
+  integratedSource = integrateGrowthServerSource(integratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
   runtimeModule.filename = serverPath;

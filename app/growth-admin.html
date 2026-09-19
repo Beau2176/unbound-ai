@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#050913" />
+  <title>UNBOUND AI Growth</title>
+  <style>
+    :root {
+      --bg:#050913; --panel:rgba(5,10,20,.92); --line:rgba(88,179,255,.34);
+      --text:#f7fbff; --muted:#aab8c9; --blue:#6bc1ff; --gold:#ffad43;
+      --success:#65e8a4; --danger:#ff8c8c;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; min-height:100vh; color:var(--text);
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background:linear-gradient(180deg,rgba(2,6,14,.46),rgba(2,6,14,.94)),
+        url("./unbound-cosmic.png") center top / cover fixed no-repeat;
+    }
+    .topbar {
+      position:sticky; top:0; z-index:10; display:flex; justify-content:space-between;
+      align-items:center; gap:12px; padding:14px 20px; background:rgba(3,8,16,.88);
+      border-bottom:1px solid rgba(255,255,255,.08); backdrop-filter:blur(16px);
+    }
+    .brand { font-weight:900; letter-spacing:.15em; }
+    .brand span { color:var(--blue); }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; }
+    button,a {
+      border:1px solid rgba(107,193,255,.38); border-radius:10px; background:rgba(66,165,255,.10);
+      color:#eef9ff; padding:9px 12px; font:inherit; font-weight:800; text-decoration:none; cursor:pointer;
+    }
+    main { width:min(1180px,calc(100% - 24px)); margin:0 auto; padding:28px 0 60px; }
+    h1 { margin:0; font-size:clamp(28px,5vw,44px); }
+    .lede { color:var(--muted); margin:8px 0 18px; max-width:850px; line-height:1.55; }
+    .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:18px; }
+    select,input {
+      border:1px solid rgba(107,193,255,.36); border-radius:10px; background:rgba(2,8,18,.9);
+      color:white; padding:9px 12px; font:inherit;
+    }
+    .partner-form{display:grid;grid-template-columns:minmax(130px,.7fr) minmax(220px,1.4fr) auto;gap:9px;margin:12px 0}
+    .small-btn{padding:7px 9px;font-size:11px}
+    .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+    .card {
+      border:1px solid var(--line); border-radius:18px; background:var(--panel);
+      box-shadow:0 22px 70px rgba(0,0,0,.48); backdrop-filter:blur(16px);
+    }
+    .stat { padding:18px; }
+    .label { color:var(--muted); font-size:11px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
+    .value { margin-top:7px; font-size:30px; font-weight:900; }
+    .sub { margin-top:5px; color:var(--muted); font-size:11px; line-height:1.4; }
+    .section { margin-top:16px; padding:18px; }
+    .section h2 { margin:0 0 5px; }
+    .section p { margin:0 0 13px; color:var(--muted); font-size:12px; }
+    .funnel { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; align-items:stretch; }
+    .funnel-step { padding:14px; border:1px solid rgba(255,255,255,.08); border-radius:13px; background:rgba(255,255,255,.025); }
+    .funnel-step strong { display:block; margin-top:4px; font-size:25px; }
+    .rate { color:var(--success); font-size:12px; font-weight:800; margin-top:5px; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:10px; text-align:left; border-bottom:1px solid rgba(255,255,255,.07); }
+    th { color:#bcd0e0; font-size:10px; letter-spacing:.06em; text-transform:uppercase; }
+    td { font-size:13px; }
+    .target { color:#ffd297; font-weight:900; }
+    .status { min-height:22px; margin-top:12px; color:var(--muted); font-size:12px; }
+    .bar { height:8px; overflow:hidden; border-radius:999px; background:rgba(255,255,255,.08); margin-top:7px; }
+    .bar span { display:block; height:100%; background:linear-gradient(90deg,#42a5ff,#ffad43); width:0; }
+    @media(max-width:850px){ .stats,.funnel{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}.partner-form{grid-template-columns:1fr} }
+    @media(max-width:520px){ .stats,.funnel{grid-template-columns:1fr}.topbar{align-items:flex-start;flex-direction:column} }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">UNBOUND <span>AI</span> GROWTH</div>
+    <div class="actions">
+      <a href="/admin.html">Admin</a>
+      <a href="/">Chat</a>
+    </div>
+  </header>
+  <main>
+    <h1>Growth Command Board</h1>
+    <p class="lede">First-party, privacy-minimized funnel reporting for the Year 1–5 target plan. Counts begin when the growth engine is deployed; this page does not infer historical events that were never recorded.</p>
+
+    <div class="toolbar">
+      <label for="windowDays">Reporting window</label>
+      <select id="windowDays">
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="365">Last 365 days</option>
+      </select>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+
+    <section class="stats">
+      <div class="card stat"><div class="label">Active Paid</div><div class="value" id="activePaid">—</div><div class="sub">Year 1 target: <span class="target">250</span></div><div class="bar"><span id="year1Bar"></span></div></div>
+      <div class="card stat"><div class="label">Registration → Checkout</div><div class="value" id="checkoutRate">—</div><div class="sub">Measures checkout starts against new accounts in the selected window.</div></div>
+      <div class="card stat"><div class="label">Registration → Paid</div><div class="value" id="paidRate">—</div><div class="sub">New paid activations divided by new accounts in the selected window.</div></div>
+      <div class="card stat"><div class="label">Referral Share</div><div class="value" id="referralShare">—</div><div class="sub">Year 1 operating target: <span class="target">10%</span> of registrations from referrals.</div></div>
+    </section>
+
+    <section class="card section">
+      <h2>Acquisition Funnel</h2>
+      <p>Use this to find the bottleneck before spending harder on traffic.</p>
+      <div class="funnel">
+        <div class="funnel-step"><div class="label">Feature Page Views</div><strong id="landingViews">—</strong><div class="rate" id="landingRatio">—</div></div>
+        <div class="funnel-step"><div class="label">Registrations</div><strong id="registrations">—</strong></div>
+        <div class="funnel-step"><div class="label">Checkout Starts</div><strong id="checkouts">—</strong></div>
+        <div class="funnel-step"><div class="label">Paid Activations</div><strong id="activations">—</strong></div>
+        <div class="funnel-step"><div class="label">Paid Churn Events</div><strong id="churned">—</strong></div>
+      </div>
+    </section>
+
+    <div class="grid2">
+      <section class="card section">
+        <h2>Registrations by Source</h2>
+        <p>UTM/referral attribution only; direct or unknown traffic stays visibly labeled.</p>
+        <table><thead><tr><th>Source</th><th>Registrations</th></tr></thead><tbody id="sources"></tbody></table>
+      </section>
+      <section class="card section">
+        <h2>Active Paid Plan Mix</h2>
+        <p>Current active/trialing subscriptions.</p>
+        <table><thead><tr><th>Plan</th><th>Subscribers</th></tr></thead><tbody id="plans"></tbody></table>
+      </section>
+    </div>
+
+    <section class="card section">
+      <h2>Feature Landing Pages</h2>
+      <p>Page views are aggregate request counts, not unique visitors. Use them directionally with registrations and paid activation.</p>
+      <table><thead><tr><th>Feature</th><th>Views</th></tr></thead><tbody id="landingPages"></tbody></table>
+    </section>
+
+    <section class="card section">
+      <h2>Creator / Affiliate Attribution Codes</h2>
+      <p>Tracking only. Creating a code does not promise commissions, cash, credits, free months, or any other reward.</p>
+      <form class="partner-form" id="partnerForm">
+        <input id="partnerCode" maxlength="40" placeholder="CODE" required />
+        <input id="partnerLabel" maxlength="120" placeholder="Creator or partner label" required />
+        <button type="submit">Create Code</button>
+      </form>
+      <table>
+        <thead><tr><th>Code</th><th>Label</th><th>All-time Registrations</th><th>Status</th><th>Control</th></tr></thead>
+        <tbody id="partnerCodes"><tr><td colspan="5">Loading partner codes…</td></tr></tbody>
+      </table>
+      <div class="status" id="partnerStatus"></div>
+    </section>
+
+    <section class="card section">
+      <h2>Partner Registrations in Selected Window</h2>
+      <p>Registrations attributed to active creator/affiliate codes during the reporting window above.</p>
+      <table><thead><tr><th>Partner Code</th><th>Registrations</th></tr></thead><tbody id="partnerWindow"></tbody></table>
+    </section>
+
+    <section class="card section">
+      <h2>Campaign Attribution</h2>
+      <p>Shows which named campaigns create registered accounts. Pair this with retention and revenue before increasing spend.</p>
+      <table><thead><tr><th>Campaign</th><th>Registrations</th></tr></thead><tbody id="campaigns"></tbody></table>
+    </section>
+
+    <div class="status" id="status">Loading growth data…</div>
+  </main>
+
+  <script>
+    const byId = (id) => document.getElementById(id);
+    const number = (value) => Number(value || 0).toLocaleString();
+    const percent = (value) => (Number(value || 0) * 100).toFixed(1) + "%";
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    })[ch]);
+
+    async function readJson(response) {
+      try { return await response.json(); } catch (_) { return {}; }
+    }
+
+    function renderRows(target, rows, labelKey, countKey) {
+      target.innerHTML = rows.length
+        ? rows.map((row) => `<tr><td>${escapeHtml(row[labelKey])}</td><td>${number(row[countKey])}</td></tr>`).join("")
+        : '<tr><td colspan="2">No data in this window yet.</td></tr>';
+    }
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, {
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        ...options
+      });
+      const data = await readJson(response);
+      if (!response.ok) {
+        const error = new Error(data.error || "Request failed.");
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    }
+
+    function partnerShareUrl(code) {
+      const url = new URL("/", window.location.origin);
+      url.searchParams.set("partner", code);
+      return url.toString();
+    }
+
+    async function loadPartners() {
+      const body = byId("partnerCodes");
+      try {
+        const data = await api("/api/admin/growth/partners", {
+          method: "GET",
+          headers: { "Accept": "application/json" }
+        });
+        const partners = Array.isArray(data.partners) ? data.partners : [];
+        body.innerHTML = partners.length
+          ? partners.map((partner) => `
+              <tr>
+                <td><strong>${escapeHtml(partner.code)}</strong></td>
+                <td>${escapeHtml(partner.label)}</td>
+                <td>${number(partner.attributedRegistrations)}</td>
+                <td>${partner.active ? "ACTIVE" : "PAUSED"}</td>
+                <td>
+                  <button class="small-btn partner-toggle" data-code="${escapeHtml(partner.code)}" data-active="${partner.active ? "false" : "true"}" type="button">
+                    ${partner.active ? "Pause" : "Activate"}
+                  </button>
+                  <button class="small-btn partner-copy" data-code="${escapeHtml(partner.code)}" type="button">Copy Link</button>
+                </td>
+              </tr>`).join("")
+          : '<tr><td colspan="5">No creator/affiliate codes created yet.</td></tr>';
+
+        document.querySelectorAll(".partner-toggle").forEach((button) => {
+          button.addEventListener("click", async () => {
+            button.disabled = true;
+            try {
+              await api("/api/admin/growth/partners/" + encodeURIComponent(button.dataset.code), {
+                method: "PATCH",
+                body: JSON.stringify({ active: button.dataset.active === "true" })
+              });
+              byId("partnerStatus").textContent = "Partner code updated.";
+              await loadPartners();
+            } catch (error) {
+              byId("partnerStatus").textContent = error.message;
+              button.disabled = false;
+            }
+          });
+        });
+
+        document.querySelectorAll(".partner-copy").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const link = partnerShareUrl(button.dataset.code);
+            try {
+              await navigator.clipboard.writeText(link);
+              byId("partnerStatus").textContent = "Tracking link copied: " + link;
+            } catch (_) {
+              byId("partnerStatus").textContent = "Tracking link: " + link;
+            }
+          });
+        });
+      } catch (error) {
+        if (error.status === 401 || error.status === 403) {
+          window.location.href = "/";
+          return;
+        }
+        body.innerHTML = '<tr><td colspan="5">Could not load partner codes.</td></tr>';
+        byId("partnerStatus").textContent = error.message;
+      }
+    }
+
+    async function load() {
+      const days = Number(byId("windowDays").value || 30);
+      byId("status").textContent = "Refreshing…";
+      try {
+        const response = await fetch("/api/admin/growth/summary?days=" + encodeURIComponent(days), {
+          credentials:"same-origin",
+          headers:{"Accept":"application/json"}
+        });
+        const data = await readJson(response);
+        if (!response.ok) {
+          if (response.status === 401 || response.status === 403) {
+            window.location.href = "/";
+            return;
+          }
+          throw new Error(data.error || "Could not load growth data.");
+        }
+
+        const summary = data.summary || {};
+        const funnel = summary.funnel || {};
+        byId("activePaid").textContent = number(summary.activePaidSubscribers);
+        byId("checkoutRate").textContent = percent(funnel.registrationToCheckoutRate);
+        byId("paidRate").textContent = percent(funnel.registrationToPaidRate);
+        byId("referralShare").textContent = percent(funnel.referralShare);
+        byId("landingViews").textContent = number(funnel.landingViews);
+        byId("landingRatio").textContent =
+          "View → registration ratio: " + percent(funnel.landingViewToRegistrationRatio);
+        byId("registrations").textContent = number(funnel.registrations);
+        byId("checkouts").textContent = number(funnel.checkoutStarts);
+        byId("activations").textContent = number(funnel.paidActivations);
+        byId("churned").textContent = number(funnel.churned);
+        byId("year1Bar").style.width = Math.min(100, (Number(summary.activePaidSubscribers || 0) / 250) * 100) + "%";
+
+        renderRows(byId("sources"), summary.registrationsBySource || [], "label", "registrations");
+        renderRows(byId("landingPages"), summary.landingViewsByFeature || [], "label", "views");
+        renderRows(byId("campaigns"), summary.registrationsByCampaign || [], "label", "registrations");
+        renderRows(byId("partnerWindow"), summary.registrationsByPartner || [], "label", "registrations");
+        renderRows(byId("plans"), summary.activePlanMix || [], "planTier", "count");
+
+        byId("status").textContent =
+          "Updated " + new Date(summary.generatedAt || Date.now()).toLocaleString() +
+          " · " + number(funnel.referredRegistrations) + " referred registration(s) in this window.";
+      } catch (error) {
+        byId("status").textContent = error.message || "Growth dashboard unavailable.";
+      }
+    }
+
+    byId("partnerForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const code = byId("partnerCode").value.trim();
+      const label = byId("partnerLabel").value.trim();
+      if (!code || !label) return;
+      const submit = event.currentTarget.querySelector('button[type="submit"]');
+      submit.disabled = true;
+      try {
+        const data = await api("/api/admin/growth/partners", {
+          method: "POST",
+          body: JSON.stringify({ code, label })
+        });
+        byId("partnerCode").value = "";
+        byId("partnerLabel").value = "";
+        byId("partnerStatus").textContent =
+          "Created " + data.partner.code + ". Tracking link: " + partnerShareUrl(data.partner.code);
+        await loadPartners();
+      } catch (error) {
+        byId("partnerStatus").textContent = error.message;
+      } finally {
+        submit.disabled = false;
+      }
+    });
+
+    byId("refresh").addEventListener("click", async () => {
+      await Promise.all([load(), loadPartners()]);
+    });
+    byId("windowDays").addEventListener("change", load);
+    Promise.all([load(), loadPartners()]);
+  </script>
+</body>
+</html>
