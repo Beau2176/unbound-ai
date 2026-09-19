@@ -36,6 +36,9 @@ const {
   captureRegistrationGrowth,
   recordGrowthEvent,
   getReferralSummary,
+  createGrowthPartnerCode,
+  setGrowthPartnerActive,
+  listGrowthPartnerCodes,
   getGrowthAdminSummary
 } = require("./growth/store");
 const {
@@ -121,6 +124,72 @@ app.get(
     } catch (error) {
       console.error("UNBOUND AI GROWTH SUMMARY ERROR:", error);
       return res.status(500).json({ error: "Could not load growth summary." });
+    }
+  }
+);
+
+app.get(
+  "/api/admin/growth/partners",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const partners = await listGrowthPartnerCodes(pool);
+      return res.json({ partners });
+    } catch (error) {
+      console.error("UNBOUND AI GROWTH PARTNER LIST ERROR:", error);
+      return res.status(500).json({ error: "Could not load partner attribution codes." });
+    }
+  }
+);
+
+app.post(
+  "/api/admin/growth/partners",
+  requireDatabase,
+  requireAdmin,
+  securityActionRateLimit,
+  async (req, res) => {
+    try {
+      const partner = await createGrowthPartnerCode(pool, {
+        code: req.body?.code,
+        label: req.body?.label
+      });
+      return res.status(201).json({ partner });
+    } catch (error) {
+      if (error?.code === "GROWTH_PARTNER_INPUT_INVALID") {
+        return res.status(400).json({ error: error.message, code: error.code });
+      }
+      if (error?.code === "GROWTH_PARTNER_CODE_EXISTS") {
+        return res.status(409).json({ error: error.message, code: error.code });
+      }
+      console.error("UNBOUND AI GROWTH PARTNER CREATE ERROR:", error);
+      return res.status(500).json({ error: "Could not create partner attribution code." });
+    }
+  }
+);
+
+app.patch(
+  "/api/admin/growth/partners/:code",
+  requireDatabase,
+  requireAdmin,
+  securityActionRateLimit,
+  async (req, res) => {
+    try {
+      const active = req.body?.active;
+      if (typeof active !== "boolean") {
+        return res.status(400).json({ error: "active must be true or false." });
+      }
+      const partner = await setGrowthPartnerActive(pool, req.params.code, active);
+      if (!partner) {
+        return res.status(404).json({ error: "Partner attribution code was not found." });
+      }
+      return res.json({ partner });
+    } catch (error) {
+      if (error?.code === "GROWTH_PARTNER_INPUT_INVALID") {
+        return res.status(400).json({ error: error.message, code: error.code });
+      }
+      console.error("UNBOUND AI GROWTH PARTNER UPDATE ERROR:", error);
+      return res.status(500).json({ error: "Could not update partner attribution code." });
     }
   }
 );
