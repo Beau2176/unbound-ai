@@ -854,8 +854,22 @@ async function initializeDatabase() {
       slot SMALLINT PRIMARY KEY,
       user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
       granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '6 months'),
       CONSTRAINT complimentary_slot_check CHECK (slot BETWEEN 1 AND 5)
     );
+
+    ALTER TABLE complimentary_top_tier_grants
+      ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+
+    UPDATE complimentary_top_tier_grants
+      SET expires_at = granted_at + INTERVAL '6 months'
+      WHERE expires_at IS NULL;
+
+    ALTER TABLE complimentary_top_tier_grants
+      ALTER COLUMN expires_at SET NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS complimentary_top_tier_grants_expiry_idx
+      ON complimentary_top_tier_grants(expires_at);
 
     CREATE TABLE IF NOT EXISTS admin_audit_log (
       id BIGSERIAL PRIMARY KEY,
@@ -900,6 +914,22 @@ async function initializeDatabase() {
 
     CREATE INDEX IF NOT EXISTS usage_events_provider_model_idx
       ON usage_events(provider, model);
+  `);
+
+  await pool.query(`
+    UPDATE users u
+    SET plan_tier = 'free',
+        updated_at = NOW()
+    WHERE u.role <> 'admin'
+      AND u.plan_tier IN ('top', 'ultra')
+      AND EXISTS (
+        SELECT 1
+        FROM complimentary_top_tier_grants g
+        WHERE g.user_id = u.id
+      );
+
+    DELETE FROM complimentary_top_tier_grants
+    WHERE expires_at <= NOW();
   `);
 
   await pool.query(`
@@ -1403,6 +1433,7 @@ async function findSessionUser(req) {
          SELECT 1
          FROM complimentary_top_tier_grants g
          WHERE g.user_id = u.id
+           AND g.expires_at > NOW()
        ) AS complimentary_top_tier
      FROM user_sessions s
      JOIN users u ON u.id = s.user_id
@@ -2413,6 +2444,7 @@ app.post("/api/auth/login", requireDatabase, loginRateLimit, async (req, res) =>
          SELECT 1
          FROM complimentary_top_tier_grants
          WHERE user_id = $1
+           AND expires_at > NOW()
        ) AS complimentary_top_tier`,
       [user.id]
     );
@@ -2665,7 +2697,9 @@ app.post(
            u.adult_confirmed_at,
            u.created_at,
            EXISTS (
-             SELECT 1 FROM complimentary_top_tier_grants g WHERE g.user_id = u.id
+             SELECT 1 FROM complimentary_top_tier_grants g
+             WHERE g.user_id = u.id
+               AND g.expires_at > NOW()
            ) AS complimentary_top_tier
          FROM account_passkeys p
          JOIN users u ON u.id = p.user_id
@@ -5739,6 +5773,7 @@ async function loadAdminTargetUser(userId, client = pool) {
          SELECT 1
          FROM complimentary_top_tier_grants g
          WHERE g.user_id = u.id
+           AND g.expires_at > NOW()
        ) AS complimentary_top_tier
      FROM users u
      WHERE u.id = $1
@@ -6264,10 +6299,12 @@ app.get(
           u.plan_tier,
           u.created_at,
           g.slot AS complimentary_slot,
-          g.granted_at AS complimentary_granted_at
+          g.granted_at AS complimentary_granted_at,
+          g.expires_at AS complimentary_expires_at
         FROM users u
         LEFT JOIN complimentary_top_tier_grants g
           ON g.user_id = u.id
+         AND g.expires_at > NOW()
         ORDER BY u.created_at DESC, u.id DESC
         LIMIT 500
       `);
@@ -6283,6 +6320,7 @@ app.get(
             ? null
             : Number(user.complimentary_slot),
         complimentaryGrantedAt: user.complimentary_granted_at,
+        complimentaryExpiresAt: user.complimentary_expires_at,
         createdAt: user.created_at
       }));
 
@@ -6301,7 +6339,8 @@ app.get(
             ? {
                 id: user.id,
                 email: user.email,
-                displayName: user.displayName
+                displayName: user.displayName,
+                expiresAt: user.complimentaryExpiresAt
               }
             : null
         };
@@ -6638,10 +6677,15 @@ app.post(
           "LOCK TABLE complimentary_top_tier_grants IN SHARE ROW EXCLUSIVE MODE"
         );
 
+        await client.query(
+          "DELETE FROM complimentary_top_tier_grants WHERE expires_at <= NOW()"
+        );
+
         const existingResult = await client.query(
-          `SELECT slot
+          `SELECT slot, expires_at
            FROM complimentary_top_tier_grants
            WHERE user_id = $1
+             AND expires_at > NOW()
            LIMIT 1`,
           [user.id]
         );
@@ -6652,6 +6696,7 @@ app.post(
             ok: true,
             alreadyGranted: true,
             slot: Number(existingResult.rows[0].slot),
+            expiresAt: existingResult.rows[0].expires_at,
             user: {
               id: String(user.id),
               email: user.email,
@@ -6683,18 +6728,20 @@ app.post(
         const slot = Number(slotResult.rows[0].slot);
 
         await client.query(
-          `INSERT INTO complimentary_top_tier_grants (slot, user_id)
-           VALUES ($1, $2)`,
+          `INSERT INTO complimentary_top_tier_grants (slot, user_id, expires_at)
+           VALUES ($1, $2, NOW() + INTERVAL '6 months')
+           RETURNING expires_at`,
           [slot, user.id]
         );
 
-        await client.query(
-          `UPDATE users
-           SET plan_tier = 'top',
-               updated_at = NOW()
-           WHERE id = $1`,
+        const expiryResult = await client.query(
+          `SELECT expires_at
+           FROM complimentary_top_tier_grants
+           WHERE user_id = $1
+           LIMIT 1`,
           [user.id]
         );
+        const expiresAt = expiryResult.rows[0]?.expires_at || null;
 
         await writeAdminAudit(
           client,
@@ -6704,7 +6751,8 @@ app.post(
           {
             slot,
             previousPlanTier: user.plan_tier,
-            newPlanTier: "top"
+            effectivePlanTier: "ultra",
+            expiresAt
           }
         );
 
@@ -6713,6 +6761,7 @@ app.post(
         return res.status(201).json({
           ok: true,
           slot,
+          expiresAt,
           user: {
             id: String(user.id),
             email: user.email,
@@ -6793,16 +6842,6 @@ app.delete(
           });
         }
 
-        if (target.role !== "admin") {
-          await client.query(
-            `UPDATE users
-             SET plan_tier = 'free',
-                 updated_at = NOW()
-             WHERE id = $1`,
-            [userId]
-          );
-        }
-
         await writeAdminAudit(
           client,
           req.adminUser,
@@ -6810,7 +6849,7 @@ app.delete(
           target,
           {
             slot: Number(deleted.rows[0].slot),
-            resultingPlanTier: target.role === "admin" ? "top" : "free"
+            resultingPlanTier: target.role === "admin" ? "ultra" : "manual-or-free"
           }
         );
 
