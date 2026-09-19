@@ -101,6 +101,7 @@
       <h2>Acquisition Funnel</h2>
       <p>Use this to find the bottleneck before spending harder on traffic.</p>
       <div class="funnel">
+        <div class="funnel-step"><div class="label">Feature Page Views</div><strong id="landingViews">—</strong><div class="rate" id="landingRatio">—</div></div>
         <div class="funnel-step"><div class="label">Registrations</div><strong id="registrations">—</strong></div>
         <div class="funnel-step"><div class="label">Checkout Starts</div><strong id="checkouts">—</strong></div>
         <div class="funnel-step"><div class="label">Paid Activations</div><strong id="activations">—</strong></div>
@@ -120,6 +121,12 @@
         <table><thead><tr><th>Plan</th><th>Subscribers</th></tr></thead><tbody id="plans"></tbody></table>
       </section>
     </div>
+
+    <section class="card section">
+      <h2>Feature Landing Pages</h2>
+      <p>Page views are aggregate request counts, not unique visitors. Use them directionally with registrations and paid activation.</p>
+      <table><thead><tr><th>Feature</th><th>Views</th></tr></thead><tbody id="landingPages"></tbody></table>
+    </section>
 
     <section class="card section">
       <h2>Campaign Attribution</h2>
@@ -171,6 +178,9 @@
         byId("checkoutRate").textContent = percent(funnel.registrationToCheckoutRate);
         byId("paidRate").textContent = percent(funnel.registrationToPaidRate);
         byId("referralShare").textContent = percent(funnel.referralShare);
+        byId("landingViews").textContent = number(funnel.landingViews);
+        byId("landingRatio").textContent =
+          "View → registration ratio: " + percent(funnel.landingViewToRegistrationRatio);
         byId("registrations").textContent = number(funnel.registrations);
         byId("checkouts").textContent = number(funnel.checkoutStarts);
         byId("activations").textContent = number(funnel.paidActivations);
@@ -178,6 +188,7 @@
         byId("year1Bar").style.width = Math.min(100, (Number(summary.activePaidSubscribers || 0) / 250) * 100) + "%";
 
         renderRows(byId("sources"), summary.registrationsBySource || [], "label", "registrations");
+        renderRows(byId("landingPages"), summary.landingViewsByFeature || [], "label", "views");
         renderRows(byId("campaigns"), summary.registrationsByCampaign || [], "label", "registrations");
         renderRows(byId("plans"), summary.activePlanMix || [], "planTier", "count");
 
