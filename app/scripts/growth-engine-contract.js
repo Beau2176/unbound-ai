@@ -8,6 +8,7 @@ const { integrateBillingServerSource } = require("../billing/server-integration"
 const { integrateGrowthServerSource } = require("../growth/server-integration");
 const {
   cleanReferralCode,
+  cleanPartnerCode,
   cleanLandingPath,
   normalizeAcquisition,
   safeMetadata
@@ -21,6 +22,8 @@ const {
 function main() {
   assert.equal(cleanReferralCode("ab12cd34"), "AB12CD34");
   assert.equal(cleanReferralCode("bad code!"), null);
+  assert.equal(cleanPartnerCode("creator_01"), "CREATOR_01");
+  assert.equal(cleanPartnerCode("no spaces"), null);
   assert.equal(cleanLandingPath("/research?x=1"), "/research?x=1");
   assert.equal(cleanLandingPath("https://evil.example"), null);
 
@@ -38,6 +41,7 @@ function main() {
     campaign: "launch-wave-1",
     content: "work-mode-demo",
     referralCode: "ABC12345",
+    partnerCode: null,
     landingPath: "/work"
   });
 
@@ -52,9 +56,16 @@ function main() {
   assert.equal(FEATURE_LANDING_PAGES.length, 7);
   assert.equal(landingForPath("/work-mode")?.id, "work_mode");
   assert.equal(landingForPath("/privacy-control")?.plan, "FREE");
-  const researchLanding = buildFeatureLandingHtml(landingForPath("/research"));
+  const researchLanding = buildFeatureLandingHtml(landingForPath("/research"), {
+    source: "youtube",
+    medium: "creator",
+    campaign: "creator-wave-1",
+    partnerCode: "creator_01"
+  });
   assert.match(researchLanding, /Research Mode/);
-  assert.match(researchLanding, /utm_campaign=product_pages/);
+  assert.match(researchLanding, /utm_source=youtube/);
+  assert.match(researchLanding, /utm_campaign=creator-wave-1/);
+  assert.match(researchLanding, /partner=CREATOR_01/);
   assert.match(researchLanding, /landing=%2Fresearch/);
   assert.doesNotMatch(researchLanding, /<script/i);
 
@@ -68,6 +79,9 @@ function main() {
   assert.match(source, /captureRegistrationGrowth/);
   assert.match(source, /"\/api\/account\/referral"/);
   assert.match(source, /"\/api\/admin\/growth\/summary"/);
+  assert.match(source, /"\/api\/admin\/growth\/partners"/);
+  assert.match(source, /createGrowthPartnerCode/);
+  assert.match(source, /setGrowthPartnerActive/);
   assert.match(source, /"\/growth-admin"/);
   assert.match(source, /FEATURE_LANDING_PAGES/);
   assert.match(source, /eventName: "landing_view"/);
