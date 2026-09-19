@@ -34,10 +34,12 @@
     h1 { margin:0; font-size:clamp(28px,5vw,44px); }
     .lede { color:var(--muted); margin:8px 0 18px; max-width:850px; line-height:1.55; }
     .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:18px; }
-    select {
+    select,input {
       border:1px solid rgba(107,193,255,.36); border-radius:10px; background:rgba(2,8,18,.9);
       color:white; padding:9px 12px; font:inherit;
     }
+    .partner-form{display:grid;grid-template-columns:minmax(130px,.7fr) minmax(220px,1.4fr) auto;gap:9px;margin:12px 0}
+    .small-btn{padding:7px 9px;font-size:11px}
     .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
     .card {
       border:1px solid var(--line); border-radius:18px; background:var(--panel);
@@ -63,7 +65,7 @@
     .status { min-height:22px; margin-top:12px; color:var(--muted); font-size:12px; }
     .bar { height:8px; overflow:hidden; border-radius:999px; background:rgba(255,255,255,.08); margin-top:7px; }
     .bar span { display:block; height:100%; background:linear-gradient(90deg,#42a5ff,#ffad43); width:0; }
-    @media(max-width:850px){ .stats,.funnel{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr} }
+    @media(max-width:850px){ .stats,.funnel{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}.partner-form{grid-template-columns:1fr} }
     @media(max-width:520px){ .stats,.funnel{grid-template-columns:1fr}.topbar{align-items:flex-start;flex-direction:column} }
   </style>
 </head>
@@ -129,6 +131,27 @@
     </section>
 
     <section class="card section">
+      <h2>Creator / Affiliate Attribution Codes</h2>
+      <p>Tracking only. Creating a code does not promise commissions, cash, credits, free months, or any other reward.</p>
+      <form class="partner-form" id="partnerForm">
+        <input id="partnerCode" maxlength="40" placeholder="CODE" required />
+        <input id="partnerLabel" maxlength="120" placeholder="Creator or partner label" required />
+        <button type="submit">Create Code</button>
+      </form>
+      <table>
+        <thead><tr><th>Code</th><th>Label</th><th>All-time Registrations</th><th>Status</th><th>Control</th></tr></thead>
+        <tbody id="partnerCodes"><tr><td colspan="5">Loading partner codes…</td></tr></tbody>
+      </table>
+      <div class="status" id="partnerStatus"></div>
+    </section>
+
+    <section class="card section">
+      <h2>Partner Registrations in Selected Window</h2>
+      <p>Registrations attributed to active creator/affiliate codes during the reporting window above.</p>
+      <table><thead><tr><th>Partner Code</th><th>Registrations</th></tr></thead><tbody id="partnerWindow"></tbody></table>
+    </section>
+
+    <section class="card section">
       <h2>Campaign Attribution</h2>
       <p>Shows which named campaigns create registered accounts. Pair this with retention and revenue before increasing spend.</p>
       <table><thead><tr><th>Campaign</th><th>Registrations</th></tr></thead><tbody id="campaigns"></tbody></table>
@@ -153,6 +176,89 @@
       target.innerHTML = rows.length
         ? rows.map((row) => `<tr><td>${escapeHtml(row[labelKey])}</td><td>${number(row[countKey])}</td></tr>`).join("")
         : '<tr><td colspan="2">No data in this window yet.</td></tr>';
+    }
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, {
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        ...options
+      });
+      const data = await readJson(response);
+      if (!response.ok) {
+        const error = new Error(data.error || "Request failed.");
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    }
+
+    function partnerShareUrl(code) {
+      const url = new URL("/", window.location.origin);
+      url.searchParams.set("partner", code);
+      return url.toString();
+    }
+
+    async function loadPartners() {
+      const body = byId("partnerCodes");
+      try {
+        const data = await api("/api/admin/growth/partners", {
+          method: "GET",
+          headers: { "Accept": "application/json" }
+        });
+        const partners = Array.isArray(data.partners) ? data.partners : [];
+        body.innerHTML = partners.length
+          ? partners.map((partner) => `
+              <tr>
+                <td><strong>${escapeHtml(partner.code)}</strong></td>
+                <td>${escapeHtml(partner.label)}</td>
+                <td>${number(partner.attributedRegistrations)}</td>
+                <td>${partner.active ? "ACTIVE" : "PAUSED"}</td>
+                <td>
+                  <button class="small-btn partner-toggle" data-code="${escapeHtml(partner.code)}" data-active="${partner.active ? "false" : "true"}" type="button">
+                    ${partner.active ? "Pause" : "Activate"}
+                  </button>
+                  <button class="small-btn partner-copy" data-code="${escapeHtml(partner.code)}" type="button">Copy Link</button>
+                </td>
+              </tr>`).join("")
+          : '<tr><td colspan="5">No creator/affiliate codes created yet.</td></tr>';
+
+        document.querySelectorAll(".partner-toggle").forEach((button) => {
+          button.addEventListener("click", async () => {
+            button.disabled = true;
+            try {
+              await api("/api/admin/growth/partners/" + encodeURIComponent(button.dataset.code), {
+                method: "PATCH",
+                body: JSON.stringify({ active: button.dataset.active === "true" })
+              });
+              byId("partnerStatus").textContent = "Partner code updated.";
+              await loadPartners();
+            } catch (error) {
+              byId("partnerStatus").textContent = error.message;
+              button.disabled = false;
+            }
+          });
+        });
+
+        document.querySelectorAll(".partner-copy").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const link = partnerShareUrl(button.dataset.code);
+            try {
+              await navigator.clipboard.writeText(link);
+              byId("partnerStatus").textContent = "Tracking link copied: " + link;
+            } catch (_) {
+              byId("partnerStatus").textContent = "Tracking link: " + link;
+            }
+          });
+        });
+      } catch (error) {
+        if (error.status === 401 || error.status === 403) {
+          window.location.href = "/";
+          return;
+        }
+        body.innerHTML = '<tr><td colspan="5">Could not load partner codes.</td></tr>';
+        byId("partnerStatus").textContent = error.message;
+      }
     }
 
     async function load() {
@@ -190,6 +296,7 @@
         renderRows(byId("sources"), summary.registrationsBySource || [], "label", "registrations");
         renderRows(byId("landingPages"), summary.landingViewsByFeature || [], "label", "views");
         renderRows(byId("campaigns"), summary.registrationsByCampaign || [], "label", "registrations");
+        renderRows(byId("partnerWindow"), summary.registrationsByPartner || [], "label", "registrations");
         renderRows(byId("plans"), summary.activePlanMix || [], "planTier", "count");
 
         byId("status").textContent =
@@ -200,9 +307,35 @@
       }
     }
 
-    byId("refresh").addEventListener("click", load);
+    byId("partnerForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const code = byId("partnerCode").value.trim();
+      const label = byId("partnerLabel").value.trim();
+      if (!code || !label) return;
+      const submit = event.currentTarget.querySelector('button[type="submit"]');
+      submit.disabled = true;
+      try {
+        const data = await api("/api/admin/growth/partners", {
+          method: "POST",
+          body: JSON.stringify({ code, label })
+        });
+        byId("partnerCode").value = "";
+        byId("partnerLabel").value = "";
+        byId("partnerStatus").textContent =
+          "Created " + data.partner.code + ". Tracking link: " + partnerShareUrl(data.partner.code);
+        await loadPartners();
+      } catch (error) {
+        byId("partnerStatus").textContent = error.message;
+      } finally {
+        submit.disabled = false;
+      }
+    });
+
+    byId("refresh").addEventListener("click", async () => {
+      await Promise.all([load(), loadPartners()]);
+    });
     byId("windowDays").addEventListener("change", load);
-    load();
+    Promise.all([load(), loadPartners()]);
   </script>
 </body>
 </html>
