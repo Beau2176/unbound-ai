@@ -111,8 +111,7 @@ function compileIntegratedServer({
   const emailIntegratedSource = integrateEmailVerificationServerSource(source);
   const billingIntegratedSource = integrateBillingServerSource(emailIntegratedSource);
   const fileIntegratedSource = integrateFileAnalysisServerSource(billingIntegratedSource);
-  const growthIntegratedSource = integrateGrowthServerSource(fileIntegratedSource);
-  const artifactIntegratedSource = integrateArtifactServerSource(growthIntegratedSource);
+  const artifactIntegratedSource = integrateArtifactServerSource(fileIntegratedSource);
   let integratedSource = integrateImageUnderstandingServerSource(artifactIntegratedSource);
   integratedSource = integrateVoiceServerSource(integratedSource);
   integratedSource = integrateCommandCenterServerSource(integratedSource);
@@ -139,6 +138,7 @@ function compileIntegratedServer({
   integratedSource = integrateLawEnforcementServerSource(integratedSource);
   integratedSource = integrateAdultStepUpServerSource(integratedSource);
   integratedSource = integrateNativeShellServerSource(integratedSource);
+  integratedSource = integrateGrowthServerSource(integratedSource);
 
   const runtimeModule = new Module(serverPath, parentModule);
   runtimeModule.filename = serverPath;
