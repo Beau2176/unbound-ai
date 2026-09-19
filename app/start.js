@@ -110,9 +110,9 @@ function compileIntegratedServer({
   const source = fs.readFileSync(serverPath, "utf8");
   const emailIntegratedSource = integrateEmailVerificationServerSource(source);
   const billingIntegratedSource = integrateBillingServerSource(emailIntegratedSource);
-  const growthIntegratedSource = integrateGrowthServerSource(billingIntegratedSource);
-  const fileIntegratedSource = integrateFileAnalysisServerSource(growthIntegratedSource);
-  const artifactIntegratedSource = integrateArtifactServerSource(fileIntegratedSource);
+  const fileIntegratedSource = integrateFileAnalysisServerSource(billingIntegratedSource);
+  const growthIntegratedSource = integrateGrowthServerSource(fileIntegratedSource);
+  const artifactIntegratedSource = integrateArtifactServerSource(growthIntegratedSource);
   let integratedSource = integrateImageUnderstandingServerSource(artifactIntegratedSource);
   integratedSource = integrateVoiceServerSource(integratedSource);
   integratedSource = integrateCommandCenterServerSource(integratedSource);
