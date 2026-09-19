@@ -20,6 +20,12 @@ function main() {
   assert.match(integrated, /effectivePlanTier: "ultra"/);
   assert.match(integrated, /INTERVAL '6 months'/);
   assert.match(integrated, /expires_at > NOW\(\)/);
+  assert.match(integrated, /\/api\/account\/complimentary\/activate/);
+  assert.match(integrated, /COMPLIMENTARY_ACTIVATION_NOT_LIVE/);
+  assert.match(integrated, /IS_PRODUCTION/);
+  assert.match(integrated, /activated_at = NOW\(\)/);
+  assert.match(integrated, /expires_at = NOW\(\) \+ INTERVAL '6 months'/);
+  assert.match(integrated, /VALUES \(\$1, \$2, NOW\(\), NULL, NULL\)/);
   assert.match(integrated, /complimentary ULTRA/i);
   assert.doesNotMatch(integrated, /SET plan_tier = 'ultra'[\s\S]{0,180}complimentary_top_tier/);
   assert.match(integrated, /\["ultra", "top"\]\.includes\(user\.planTier\)/);
