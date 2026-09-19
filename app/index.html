@@ -4193,6 +4193,7 @@
           campaign: cleanAcquisitionValue(params.get("utm_campaign"), 120),
           content: cleanAcquisitionValue(params.get("utm_content"), 120),
           referralCode: cleanAcquisitionValue(params.get("ref"), 24),
+          partnerCode: cleanAcquisitionValue(params.get("partner"), 40),
           landingPath: cleanAcquisitionValue(params.get("landing") || window.location.pathname, 240),
           capturedAt: Date.now()
         };
@@ -4202,6 +4203,7 @@
           acquisition.campaign ||
           acquisition.content ||
           acquisition.referralCode ||
+          acquisition.partnerCode ||
           acquisition.landingPath
         );
         if (hasAttribution) {
@@ -4227,6 +4229,7 @@
           campaign: cleanAcquisitionValue(saved.campaign, 120),
           content: cleanAcquisitionValue(saved.content, 120),
           referralCode: cleanAcquisitionValue(saved.referralCode, 24),
+          partnerCode: cleanAcquisitionValue(saved.partnerCode, 40),
           landingPath: cleanAcquisitionValue(saved.landingPath, 240)
         };
       } catch (error) {
