@@ -3,6 +3,7 @@
 const crypto = require("crypto");
 
 const GROWTH_EVENT_NAMES = Object.freeze([
+  "landing_view",
   "account_registered",
   "checkout_started",
   "referral_link_viewed",
@@ -96,9 +97,16 @@ async function initializeGrowthSchema(pool) {
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT growth_events_name_check CHECK (
-        event_name IN ('account_registered','checkout_started','referral_link_viewed','referral_signup','subscription_activated','subscription_churned')
+        event_name IN ('landing_view','account_registered','checkout_started','referral_link_viewed','referral_signup','subscription_activated','subscription_churned')
       )
     );
+
+    ALTER TABLE growth_events
+      DROP CONSTRAINT IF EXISTS growth_events_name_check;
+    ALTER TABLE growth_events
+      ADD CONSTRAINT growth_events_name_check CHECK (
+        event_name IN ('landing_view','account_registered','checkout_started','referral_link_viewed','referral_signup','subscription_activated','subscription_churned')
+      );
 
     CREATE INDEX IF NOT EXISTS growth_events_name_created_idx
       ON growth_events(event_name, created_at DESC);
@@ -230,7 +238,8 @@ async function getGrowthAdminSummary(pool, days = 30) {
     planMixResult,
     sourcesResult,
     campaignsResult,
-    referralResult
+    referralResult,
+    landingPagesResult
   ] = await Promise.all([
     pool.query(
       `SELECT COUNT(*)::int AS count
@@ -285,12 +294,24 @@ async function getGrowthAdminSummary(pool, days = 30) {
        WHERE referrer_user_id IS NOT NULL
          AND created_at >= NOW() - ($1::int * INTERVAL '1 day')`,
       [windowDays]
+    ),
+    pool.query(
+      `SELECT COALESCE(NULLIF(metadata->>'feature', ''), '(unknown)') AS label,
+              COUNT(*)::int AS views
+       FROM growth_events
+       WHERE event_name = 'landing_view'
+         AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
+       GROUP BY COALESCE(NULLIF(metadata->>'feature', ''), '(unknown)')
+       ORDER BY views DESC, label ASC
+       LIMIT 20`,
+      [windowDays]
     )
   ]);
 
   const eventCounts = Object.fromEntries(
     eventsResult.rows.map((row) => [String(row.event_name), Number(row.count || 0)])
   );
+  const landingViews = Number(eventCounts.landing_view || 0);
   const registrations = Number(registrationsResult.rows[0]?.count || 0);
   const checkoutStarts = Number(eventCounts.checkout_started || 0);
   const paidActivations = Number(eventCounts.subscription_activated || 0);
@@ -301,11 +322,13 @@ async function getGrowthAdminSummary(pool, days = 30) {
     windowDays,
     generatedAt: new Date().toISOString(),
     funnel: {
+      landingViews,
       registrations,
       checkoutStarts,
       paidActivations,
       churned,
       referredRegistrations,
+      landingViewToRegistrationRatio: landingViews > 0 ? registrations / landingViews : 0,
       registrationToCheckoutRate: registrations > 0 ? checkoutStarts / registrations : 0,
       registrationToPaidRate: registrations > 0 ? paidActivations / registrations : 0,
       referralShare: registrations > 0 ? referredRegistrations / registrations : 0
@@ -322,6 +345,10 @@ async function getGrowthAdminSummary(pool, days = 30) {
     registrationsByCampaign: campaignsResult.rows.map((row) => ({
       label: String(row.label || "(none)"),
       registrations: Number(row.registrations || 0)
+    })),
+    landingViewsByFeature: landingPagesResult.rows.map((row) => ({
+      label: String(row.label || "(unknown)"),
+      views: Number(row.views || 0)
     }))
   };
 }
