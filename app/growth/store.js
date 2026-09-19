@@ -6,7 +6,9 @@ const GROWTH_EVENT_NAMES = Object.freeze([
   "account_registered",
   "checkout_started",
   "referral_link_viewed",
-  "referral_signup"
+  "referral_signup",
+  "subscription_activated",
+  "subscription_churned"
 ]);
 
 function cleanText(value, maxLength = 120) {
@@ -94,7 +96,7 @@ async function initializeGrowthSchema(pool) {
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT growth_events_name_check CHECK (
-        event_name IN ('account_registered','checkout_started','referral_link_viewed','referral_signup')
+        event_name IN ('account_registered','checkout_started','referral_link_viewed','referral_signup','subscription_activated','subscription_churned')
       )
     );
 
@@ -217,6 +219,113 @@ async function captureRegistrationGrowth({ pool, userId, acquisition } = {}) {
   return { referralCode: ownCode, referred: Boolean(referrerUserId) };
 }
 
+async function getGrowthAdminSummary(pool, days = 30) {
+  const parsedDays = Number.parseInt(String(days || "30"), 10);
+  const windowDays = Math.min(365, Math.max(1, Number.isFinite(parsedDays) ? parsedDays : 30));
+
+  const [
+    registrationsResult,
+    eventsResult,
+    activePaidResult,
+    planMixResult,
+    sourcesResult,
+    campaignsResult,
+    referralResult
+  ] = await Promise.all([
+    pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM users
+       WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')`,
+      [windowDays]
+    ),
+    pool.query(
+      `SELECT event_name, COUNT(*)::int AS count
+       FROM growth_events
+       WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+       GROUP BY event_name`,
+      [windowDays]
+    ),
+    pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM account_subscriptions
+       WHERE status IN ('active', 'trialing')
+         AND plan_tier IN ('premium', 'ultra', 'max')`
+    ),
+    pool.query(
+      `SELECT plan_tier, COUNT(*)::int AS count
+       FROM account_subscriptions
+       WHERE status IN ('active', 'trialing')
+         AND plan_tier IN ('premium', 'ultra', 'max')
+       GROUP BY plan_tier
+       ORDER BY plan_tier`
+    ),
+    pool.query(
+      `SELECT COALESCE(NULLIF(source, ''), '(direct / unknown)') AS label,
+              COUNT(*)::int AS registrations
+       FROM growth_attributions
+       WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+       GROUP BY COALESCE(NULLIF(source, ''), '(direct / unknown)')
+       ORDER BY registrations DESC, label ASC
+       LIMIT 12`,
+      [windowDays]
+    ),
+    pool.query(
+      `SELECT COALESCE(NULLIF(campaign, ''), '(none)') AS label,
+              COUNT(*)::int AS registrations
+       FROM growth_attributions
+       WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
+       GROUP BY COALESCE(NULLIF(campaign, ''), '(none)')
+       ORDER BY registrations DESC, label ASC
+       LIMIT 12`,
+      [windowDays]
+    ),
+    pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM growth_attributions
+       WHERE referrer_user_id IS NOT NULL
+         AND created_at >= NOW() - ($1::int * INTERVAL '1 day')`,
+      [windowDays]
+    )
+  ]);
+
+  const eventCounts = Object.fromEntries(
+    eventsResult.rows.map((row) => [String(row.event_name), Number(row.count || 0)])
+  );
+  const registrations = Number(registrationsResult.rows[0]?.count || 0);
+  const checkoutStarts = Number(eventCounts.checkout_started || 0);
+  const paidActivations = Number(eventCounts.subscription_activated || 0);
+  const churned = Number(eventCounts.subscription_churned || 0);
+  const referredRegistrations = Number(referralResult.rows[0]?.count || 0);
+
+  return {
+    windowDays,
+    generatedAt: new Date().toISOString(),
+    funnel: {
+      registrations,
+      checkoutStarts,
+      paidActivations,
+      churned,
+      referredRegistrations,
+      registrationToCheckoutRate: registrations > 0 ? checkoutStarts / registrations : 0,
+      registrationToPaidRate: registrations > 0 ? paidActivations / registrations : 0,
+      referralShare: registrations > 0 ? referredRegistrations / registrations : 0
+    },
+    activePaidSubscribers: Number(activePaidResult.rows[0]?.count || 0),
+    activePlanMix: planMixResult.rows.map((row) => ({
+      planTier: String(row.plan_tier || ""),
+      count: Number(row.count || 0)
+    })),
+    registrationsBySource: sourcesResult.rows.map((row) => ({
+      label: String(row.label || "(unknown)"),
+      registrations: Number(row.registrations || 0)
+    })),
+    registrationsByCampaign: campaignsResult.rows.map((row) => ({
+      label: String(row.label || "(none)"),
+      registrations: Number(row.registrations || 0)
+    }))
+  };
+}
+
 async function getReferralSummary(pool, userId, publicOrigin = "") {
   const code = await ensureReferralCode(pool, userId);
   const countResult = await pool.query(
@@ -244,5 +353,6 @@ module.exports = {
   ensureReferralCode,
   recordGrowthEvent,
   captureRegistrationGrowth,
-  getReferralSummary
+  getReferralSummary,
+  getGrowthAdminSummary
 };
