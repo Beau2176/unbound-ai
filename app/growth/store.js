@@ -52,6 +52,7 @@ function safeMetadata(value) {
       output[cleanKey] = raw;
       continue;
     }
+    if (typeof raw !== "string") continue;
     const text = cleanText(raw, 160);
     if (text !== null) output[cleanKey] = text;
   }
