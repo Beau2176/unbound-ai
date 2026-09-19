@@ -1,0 +1,25 @@
+name: Fetch existing Boyd voice audio
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fetch-boyd-voice.yml'
+  workflow_dispatch:
+
+jobs:
+  fetch-audio:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download existing narration
+        run: |
+          curl -fL --retry 3 --retry-delay 2 \
+            'https://resource2.heygen.ai/text_to_speech/7ba78a61655a44a0a8ce55f7e8652b88/cbca446e24b94d66a6ef405d9eb8355f/id=ce479938-eadd-438b-bc9c-7c71478de735.wav' \
+            -o boyd_voice_v3.wav
+          file boyd_voice_v3.wav
+          ls -lh boyd_voice_v3.wav
+      - name: Upload narration artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: boyd-voice-v3-existing
+          path: boyd_voice_v3.wav
+          retention-days: 1
