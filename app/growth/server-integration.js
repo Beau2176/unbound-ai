@@ -35,7 +35,8 @@ const {
   initializeGrowthSchema,
   captureRegistrationGrowth,
   recordGrowthEvent,
-  getReferralSummary
+  getReferralSummary,
+  getGrowthAdminSummary
 } = require("./growth/store");`,
     "imports"
   );
@@ -77,7 +78,27 @@ const {
   source = replaceExactlyOnce(
     source,
     healthMarker,
-    `app.get(
+    `app.get("/growth-admin", requireDatabase, requireAdmin, (req, res) => {
+  res.setHeader("Cache-Control", "no-cache");
+  return res.sendFile(path.join(__dirname, "growth-admin.html"));
+});
+
+app.get(
+  "/api/admin/growth/summary",
+  requireDatabase,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const summary = await getGrowthAdminSummary(pool, req.query?.days);
+      return res.json({ summary });
+    } catch (error) {
+      console.error("UNBOUND AI GROWTH SUMMARY ERROR:", error);
+      return res.status(500).json({ error: "Could not load growth summary." });
+    }
+  }
+);
+
+app.get(
   "/api/account/referral",
   requireDatabase,
   requireSignedIn,
@@ -103,6 +124,48 @@ const {
 
 ${healthMarker}`,
     "referral-route"
+  );
+
+  const billingLifecycleMarker = `      await client.query(
+        \`UPDATE billing_webhook_events
+         SET status = 'processed', error_text = NULL, processed_at = NOW()
+         WHERE id = $1\`,
+        [eventRowId]
+      );
+
+      await client.query("COMMIT");
+      return sendBillingWebhookSuccess(res, 200);`;
+  source = replaceExactlyOnce(
+    source,
+    billingLifecycleMarker,
+    `      await client.query(
+        \`UPDATE billing_webhook_events
+         SET status = 'processed', error_text = NULL, processed_at = NOW()
+         WHERE id = $1\`,
+        [eventRowId]
+      );
+
+      const wasPaid = subscriptionStatusAllowsAccess(subscription.status);
+      const isPaid = subscriptionStatusAllowsAccess(event.status);
+      if (!wasPaid && isPaid) {
+        await recordGrowthEvent(client, {
+          userId: subscription.user_id,
+          eventName: "subscription_activated",
+          planTier: event.planTier || subscription.plan_tier,
+          metadata: { provider: event.provider }
+        });
+      } else if (wasPaid && !isPaid && ["canceled", "unpaid"].includes(event.status)) {
+        await recordGrowthEvent(client, {
+          userId: subscription.user_id,
+          eventName: "subscription_churned",
+          planTier: event.planTier || subscription.plan_tier,
+          metadata: { provider: event.provider, status: event.status }
+        });
+      }
+
+      await client.query("COMMIT");
+      return sendBillingWebhookSuccess(res, 200);`,
+    "billing-lifecycle-events"
   );
 
   const checkoutResponse = `      return res.status(201).json({
