@@ -8,6 +8,9 @@ const {
   integrateBillingServerSource
 } = require("./billing/server-integration");
 const {
+  integrateGrowthServerSource
+} = require("./growth/server-integration");
+const {
   integrateFileAnalysisServerSource
 } = require("./files/server-integration");
 const {
@@ -107,7 +110,8 @@ function compileIntegratedServer({
   const source = fs.readFileSync(serverPath, "utf8");
   const emailIntegratedSource = integrateEmailVerificationServerSource(source);
   const billingIntegratedSource = integrateBillingServerSource(emailIntegratedSource);
-  const fileIntegratedSource = integrateFileAnalysisServerSource(billingIntegratedSource);
+  const growthIntegratedSource = integrateGrowthServerSource(billingIntegratedSource);
+  const fileIntegratedSource = integrateFileAnalysisServerSource(growthIntegratedSource);
   const artifactIntegratedSource = integrateArtifactServerSource(fileIntegratedSource);
   let integratedSource = integrateImageUnderstandingServerSource(artifactIntegratedSource);
   integratedSource = integrateVoiceServerSource(integratedSource);
