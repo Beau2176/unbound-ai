@@ -37,7 +37,11 @@ const {
   recordGrowthEvent,
   getReferralSummary,
   getGrowthAdminSummary
-} = require("./growth/store");`,
+} = require("./growth/store");
+const {
+  FEATURE_LANDING_PAGES,
+  sendFeatureLandingPage
+} = require("./growth/landing-pages");`,
     "imports"
   );
 
@@ -78,7 +82,30 @@ const {
   source = replaceExactlyOnce(
     source,
     healthMarker,
-    `app.get("/growth-admin", requireDatabase, requireAdmin, (req, res) => {
+    `for (const featureLanding of FEATURE_LANDING_PAGES) {
+  app.get(featureLanding.path, async (req, res) => {
+    if (databaseReady && pool) {
+      try {
+        await recordGrowthEvent(pool, {
+          eventName: "landing_view",
+          acquisition: {
+            source: req.query?.utm_source,
+            medium: req.query?.utm_medium,
+            campaign: req.query?.utm_campaign,
+            content: req.query?.utm_content,
+            landingPath: featureLanding.path
+          },
+          metadata: { feature: featureLanding.id }
+        });
+      } catch (growthError) {
+        console.warn("UNBOUND AI LANDING VIEW GROWTH EVENT ERROR:", growthError);
+      }
+    }
+    return sendFeatureLandingPage(req, res);
+  });
+}
+
+app.get("/growth-admin", requireDatabase, requireAdmin, (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   return res.sendFile(path.join(__dirname, "growth-admin.html"));
 });
