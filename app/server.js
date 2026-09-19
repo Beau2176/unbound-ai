@@ -2837,6 +2837,7 @@ app.post(
            EXISTS (
              SELECT 1 FROM complimentary_top_tier_grants g
              WHERE g.user_id = u.id
+               AND g.activated_at IS NOT NULL
                AND g.expires_at > NOW()
            ) AS complimentary_top_tier
          FROM account_passkeys p
