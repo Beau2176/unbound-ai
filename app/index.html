@@ -4193,7 +4193,7 @@
           campaign: cleanAcquisitionValue(params.get("utm_campaign"), 120),
           content: cleanAcquisitionValue(params.get("utm_content"), 120),
           referralCode: cleanAcquisitionValue(params.get("ref"), 24),
-          landingPath: cleanAcquisitionValue(window.location.pathname, 240),
+          landingPath: cleanAcquisitionValue(params.get("landing") || window.location.pathname, 240),
           capturedAt: Date.now()
         };
         const hasAttribution = Boolean(
