@@ -13,6 +13,9 @@ const {
 
 function safeImageError(error) {
   const code = String(error?.code || "");
+  if (code === "USAGE_MONTHLY_LIMIT_REACHED") {
+    return { statusCode: Number(error?.statusCode) || 429, code, message: error?.publicMessage || error?.message || "Monthly usage allowance reached." };
+  }
   if (code === "IMAGE_PROVIDER_NOT_CONFIGURED") {
     return {
       statusCode: 503,
@@ -88,6 +91,10 @@ function createImageUnderstandingRouter({
           error: "Image understanding is temporarily unavailable.",
           code: ai.configured ? "IMAGE_PROVIDER_UNSUPPORTED" : "IMAGE_PROVIDER_NOT_CONFIGURED"
         });
+      }
+
+      if (typeof assertUsageBudget === "function") {
+        await assertUsageBudget({ userId: req.user?.id || null, category: "image_understanding" });
       }
 
       const input = normalizeImageUnderstandingRequest(req.body, env);

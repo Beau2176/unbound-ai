@@ -1,8 +1,8 @@
 # UNBOUND AI launch economics worksheet
 
-Status: **working launch-planning document — not a pricing decision**
+Status: **working launch-planning document with approved customer price points; external provider economics still require launch verification**
 
-Last verified: 2026-09-12
+Last verified: 2026-09-18
 
 This worksheet turns the remaining external launch blockers into concrete cost categories and formulas. It deliberately does **not** choose a production customer subscription price, promise a provider fee, or mark any external readiness gate green.
 
@@ -172,7 +172,7 @@ Everything below remains variable or quote-dependent and must be added before a 
 - Legal/compliance/accounting/business costs.
 - Taxes, refunds, fraud, chargebacks, customer support, and contingency reserve.
 
-## 8. Revenue and break-even formulas — without choosing a price
+## 8. Revenue and break-even formulas
 
 Let:
 
@@ -191,9 +191,12 @@ Let:
 Then:
 
 ```text
+Gross revenue =
+  (Pp × Np) + (Pu × Nu) + (Pm × Nm)
+
 Net contribution before tax =
-  (P × N)
-- ((P × N) × B)
+  R
+- (R × B)
 - F
 - Y
 - A
@@ -203,7 +206,13 @@ Net contribution before tax =
 - O
 ```
 
-Do not set `SEGPAY_TOP_AMOUNT` until `P` is deliberately chosen from actual provider economics and market strategy.
+Do not create or enable production Segpay packages until the merchant account is approved and the pay pages exactly match the server-enforced prices. Preserve legacy amount mappings for existing rebills when prices change.
+
+## 8A. Launch usage allowances
+
+UNBOUND now uses calendar-month plan guardrails so customer prices are not exposed to unlimited provider spend. Default estimated-compute ceilings are **$1 Free**, **$8 Premium**, **$30 Ultra**, and **$70 Max**, with separate category ceilings for web search, files, artifacts, image tools, voice, and agents. These are launch defaults and are environment-overridable after real usage data is collected.
+
+See `docs/BILLING.md` and `app/usage/plan-budgets.js` for the current allowances.
 
 ## 9. External launch decision register
 
@@ -224,4 +233,4 @@ Do not set `SEGPAY_TOP_AMOUNT` until `P` is deliberately chosen from actual prov
 4. A reserve is a cash-flow requirement, not the same thing as a permanent processing expense.
 5. Do not turn launch-readiness flags green merely because a projected cost is affordable.
 6. Do not commit provider credentials, quotes containing confidential merchant details, bank information, or secrets to the public repository.
-7. Do not convert historical planning prices into the production TOP price without an explicit business decision.
+7. Treat customer price changes as explicit business decisions and preserve legacy billing mappings so existing rebills remain attributable to the correct plan.
