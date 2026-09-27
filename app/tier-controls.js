@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const PLAN_RANK = Object.freeze({ free: 0, premium: 50, ultra: 100 });
+  const PLAN_RANK = Object.freeze({ free: 0, premium: 50, ultra: 100, max: 150, unlimited: 200 });
   const PLAN_COPY = Object.freeze({
     free: {
       name: "FREE",
@@ -17,6 +17,16 @@
       name: "ULTRA",
       price: "$129.99 / month",
       note: "Everything in Premium plus advanced image tools, agents, scheduled monitoring, multi-model routing, connected apps, Command Center and verified-18+ Adult Mode."
+    },
+    max: {
+      name: "MAX",
+      price: "$199.99 / month",
+      note: "Higher five-hour and weekly allowances for heavy users, with all Ultra capabilities."
+    },
+    unlimited: {
+      name: "UNLIMITED",
+      price: "$299.99 / month",
+      note: "No five-hour or weekly cap on normal chat. Highest fair-use allowances for research, files, images, cloud voice and agents."
     }
   });
 
@@ -30,9 +40,10 @@
     const style = document.createElement("style");
     style.id = "unbound-tier-controls-style";
     style.textContent = `
-      .unbound-tier-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:10px 0 12px}
+      .unbound-tier-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:10px 0 12px}
       .unbound-tier-card{display:flex;flex-direction:column;gap:7px;min-width:0;padding:13px;border:1px solid rgba(107,193,255,.28);border-radius:14px;background:rgba(6,14,27,.8)}
-      .unbound-tier-card[data-plan="ultra"]{border-color:rgba(255,173,67,.45);background:linear-gradient(160deg,rgba(255,173,67,.1),rgba(6,14,27,.88) 45%)}
+      .unbound-tier-card[data-plan="ultra"],.unbound-tier-card[data-plan="max"]{border-color:rgba(255,173,67,.45);background:linear-gradient(160deg,rgba(255,173,67,.1),rgba(6,14,27,.88) 45%)}
+      .unbound-tier-card[data-plan="unlimited"]{border-color:rgba(180,142,255,.6);background:linear-gradient(160deg,rgba(180,142,255,.14),rgba(6,14,27,.9) 48%)}
       .unbound-tier-name{font-size:12px;font-weight:900;letter-spacing:.09em}
       .unbound-tier-price{font-size:18px;font-weight:900;color:#fff}
       .unbound-tier-note{flex:1;color:#b9c9da;font-size:11px;line-height:1.45}
@@ -86,8 +97,9 @@
     const card = document.createElement("div");
     card.className = "unbound-tier-card";
     card.dataset.plan = planId;
+    const tierNumber = ({ free: 1, premium: 2, ultra: 3, max: 4, unlimited: 5 })[planId];
     card.innerHTML = `
-      <div class="unbound-tier-name">TIER ${planId === "free" ? "1" : planId === "premium" ? "2" : "3"} · ${plan.name}</div>
+      <div class="unbound-tier-name">TIER ${tierNumber} · ${plan.name}</div>
       <div class="unbound-tier-price">${plan.price}</div>
       <div class="unbound-tier-note">${plan.note}</div>
       <div class="unbound-tier-current" data-tier-current hidden>CURRENT ACCESS</div>
@@ -97,7 +109,7 @@
       button.type = "button";
       button.className = `unbound-tier-button ${planId}`;
       button.dataset.tierCheckout = planId;
-      button.textContent = planId === "premium" ? "CHOOSE PREMIUM" : "CHOOSE ULTRA";
+      button.textContent = `CHOOSE ${plan.name}`;
       card.appendChild(button);
     }
     return card;
@@ -125,12 +137,12 @@
       grid = document.createElement("div");
       grid.id = "unboundTierGrid";
       grid.className = "unbound-tier-grid";
-      grid.append(buildCard("free"), buildCard("premium"), buildCard("ultra"));
+      grid.append(buildCard("free"), buildCard("premium"), buildCard("ultra"), buildCard("max"), buildCard("unlimited"));
       billingActions.prepend(grid);
 
       const disclosure = document.createElement("div");
       disclosure.className = "unbound-tier-disclosure";
-      disclosure.textContent = "Adult Mode is Ultra-only and still requires successful hard 18+ verification. Payment alone never bypasses the age gate.";
+      disclosure.textContent = "Adult Mode is available on Ultra and higher plans and still requires successful hard 18+ verification. Payment alone never bypasses the age gate. Unlimited everyday chat remains subject to fair-use and abuse safeguards.";
       grid.after(disclosure);
     }
     return { billingActions, grid };
@@ -152,6 +164,7 @@
       ["active", "trialing"].includes(String(access.subscription?.status || "").toLowerCase())
     );
     const checkoutAvailable = Boolean(access.billingGateway?.configured && access.billingGateway?.checkout);
+    const launchedPlans = Array.isArray(access.billingGateway?.paidPlans) ? access.billingGateway.paidPlans : [];
 
     for (const card of ui.grid.querySelectorAll(".unbound-tier-card")) {
       const planId = card.dataset.plan;
@@ -166,6 +179,12 @@
         button.textContent = currentPlan === planId ? "CURRENT PLAN" : "INCLUDED";
         continue;
       }
+      const launchAvailable = launchedPlans.includes(planId);
+      if (!launchAvailable) {
+        button.disabled = true;
+        button.textContent = "COMING LATER";
+        continue;
+      }
       if (activePaid) {
         button.disabled = false;
         button.textContent = "MANAGE BILLING TO UPGRADE";
@@ -173,12 +192,12 @@
         continue;
       }
       button.disabled = !checkoutAvailable;
-      button.textContent = planId === "premium" ? "CHOOSE PREMIUM · $49.99" : "CHOOSE ULTRA · $129.99";
+      button.textContent = `CHOOSE ${PLAN_COPY[planId].name} · ${PLAN_COPY[planId].price.split(" ")[0]}`;
       button.onclick = () => startCheckout(planId, note, button);
     }
 
     if (!checkoutAvailable && note && !activePaid) {
-      note.textContent = "Premium and Ultra are defined and ready in UNBOUND, but live payment checkout stays off until the billing provider is approved and connected.";
+      note.textContent = "UNBOUND paid plans are defined, but live checkout stays off until the billing provider is approved and connected. Future plans remain disabled until their launch flags and payment pages are configured.";
     }
   }
 
