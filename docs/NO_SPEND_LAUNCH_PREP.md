@@ -70,6 +70,8 @@ Stop point requiring external approval and possibly funding: opening and validat
 
 ### 4. Segpay — free preparation now
 
+**Initial public launch tier policy:** Premium **$49.99**, Ultra **$129.99**, and Unlimited **$299.99** launch together. Max **$199.99** remains disabled and marked Coming Later. The launch preflight must fail if Unlimited is not enabled or if Max is accidentally enabled.
+
 Complete now:
 
 - prepare the truthful underwriting packet and product description;
