@@ -52,7 +52,7 @@ const PUBLIC_PAGES = [
   'images.html',
   'files.html'
 ];
-const STATIC_ASSETS = ['unbound-cosmic.png'];
+const STATIC_ASSETS = ['unbound-cosmic.png', 'usage-panel.js'];
 
 function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
