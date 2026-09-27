@@ -15,6 +15,10 @@ async function main() {
   assert.deepEqual(policiesFor("top", { chat: 1 }), policiesFor("ultra", { chat: 1 }));
   assert.equal(policiesFor("bogus", { images: 1 })[0].limit, 0);
   assert.equal(publicUsagePolicy().plans.find(p => p.id === "max").commercialState, "future");
+  assert.equal(publicUsagePolicy().plans.find(p => p.id === "unlimited").commercialState, "future");
+  assert.equal(LIMITS.unlimited.chat, null);
+  assert.deepEqual(policiesFor("unlimited", { chat: 1 }), []);
+  assert(policiesFor("unlimited", { research: 1 })[0].limit > policiesFor("max", { research: 1 })[0].limit);
   for (const feature of Object.keys(LIMITS.premium)) assert(LIMITS.ultra[feature][1] > LIMITS.premium[feature][1]);
   const policy = policiesFor("free", { chat: 1 })[0];
   const now = Date.now();
@@ -43,6 +47,6 @@ async function main() {
     storage = false; assert.equal((await request({})).status, 503);
     const count = reservations; assert.equal((await fetch(origin + "/api/voice/status")).status, 200); assert.equal(reservations, count);
   } finally { await new Promise(resolve => server.close(resolve)); }
-  console.log("PASS usage policy: shared endpoints, tier normalization, expiry, future Max, 429/reset, refunds, unmetered reads and fail-closed storage.");
+  console.log("PASS usage policy: shared endpoints, tier normalization, expiry, future Max/Unlimited, unmetered Unlimited chat, metered expensive tools, 429/reset, refunds and fail-closed storage.");
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
