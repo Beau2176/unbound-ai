@@ -1,12 +1,14 @@
 # UNBOUND AI commercial billing
 
-UNBOUND AI has three customer tiers:
+UNBOUND AI has five defined customer tiers:
 
 - **Tier 1 — Free:** $0/month.
-- **Tier 2 — Premium:** **$59.99/month**.
-- **Tier 3 — Ultra:** **$114.99/month**.
+- **Tier 2 — Premium:** **$49.99/month**.
+- **Tier 3 — Ultra:** **$129.99/month**.
+- **Tier 4 — Max:** **$199.99/month**, intentionally held for a later launch.
+- **Tier 5 — Unlimited:** **$299.99/month**, included in the initial public paid launch once billing is approved and configured.
 
-Adult Mode is **Ultra-only** and payment never bypasses the separate hard 18+ verification gate.
+Adult Mode is available on Ultra and higher plans and payment never bypasses the separate hard 18+ verification gate.
 
 UNBOUND uses a provider-neutral billing gateway. The production target is **Segpay**, subject to Segpay underwriting and approval of the actual UNBOUND AI business, content, policies, and launch configuration. Selecting Segpay in code does not create a merchant account, approve UNBOUND for processing, or turn billing on by itself.
 
@@ -35,8 +37,10 @@ Required values:
 
 The exact prices are enforced server-side in the adapter:
 
-- Premium: `59.99`
-- Ultra: `114.99`
+- Premium: `49.99`
+- Ultra: `129.99`
+- Max: `199.99` — launch-disabled initially.
+- Unlimited: `299.99` — intended for the initial public launch.
 
 The browser cannot choose an arbitrary price. Both paid pay-page references plus shared credentials/attestations must be present before the Segpay adapter reports fully configured.
 
@@ -79,7 +83,7 @@ UNBOUND accepts authenticated GET and POST delivery. Configure the relevant Segp
 - `ref1=<REF1>`
 - `ref2=<REF2>`
 
-For sale/rebill events where a trustworthy amount is present, UNBOUND maps `59.99 -> premium` and `114.99 -> ultra`. Lifecycle events such as cancel/disable/reactivate that do not contain a reliable plan amount return no new plan value; the database keeps the existing tier rather than guessing or accidentally upgrading a customer.
+For sale/rebill events where a trustworthy amount is present, UNBOUND maps current and supported legacy amounts to the corresponding plan. Current amounts are `49.99 -> premium`, `129.99 -> ultra`, `199.99 -> max`, and `299.99 -> unlimited`. Lifecycle events such as cancel/disable/reactivate that do not contain a reliable plan amount return no new plan value; the database keeps the existing tier rather than guessing or accidentally upgrading a customer.
 
 Successful webhook acknowledgements return plain text `OK`. Authentication is timing-safe and provider retries remain idempotent through deterministic event identifiers.
 
@@ -103,11 +107,12 @@ The code does not equal provider approval. Before live paid launch:
 
 1. Obtain explicit Segpay approval for UNBOUND's actual AI/adults-only business model.
 2. Complete Segpay/card-brand compliance requirements.
-3. Create **two recurring packages/pay pages**: Premium $59.99 and Ultra $114.99.
-4. Confirm signed `amount`, `REF1`, and `REF2` on both packages.
+3. Create recurring packages/pay pages for Premium $49.99, Ultra $129.99, and Unlimited $299.99 for initial launch. Prepare Max $199.99 separately but keep it disabled.
+4. Confirm signed `amount`, `REF1`, and `REF2` on every launch-enabled package.
 5. Configure authenticated transaction/member-management postbacks and verify the `REF1`/`REF2` round trip.
 6. Verify initial Premium sale, initial Ultra sale, recurring billing, cancellation, disable/expiry, refund/chargeback, reactivation, and failure paths.
-7. Verify provider-supported Premium↔Ultra subscription changes before enabling an in-app direct plan-change workflow.
-8. Only then set the three Segpay production attestations to true.
+7. Verify provider-supported plan changes among Premium, Ultra, and Unlimited before enabling an in-app direct plan-change workflow.
+8. For initial public launch, set `UNBOUND_UNLIMITED_LAUNCH_ENABLED=true` and keep `UNBOUND_MAX_LAUNCH_ENABLED` unset/false.
+9. Only then set the three Segpay production attestations to true.
 
 Never commit Segpay signing keys, postback passwords, cardholder data, or merchant credentials. UNBOUND must not collect or store card numbers or CVV data.

@@ -15,6 +15,14 @@ assert.strictEqual(empty.stages.find((stage) => stage.key === "infrastructure").
 assert.strictEqual(empty.stages.find((stage) => stage.key === "backup_restore").ready, false);
 assert.strictEqual(empty.stages.find((stage) => stage.key === "business_bank").ready, false);
 assert.strictEqual(empty.stages.find((stage) => stage.key === "segpay").ready, false);
+assert.deepStrictEqual(
+  empty.stages.find((stage) => stage.key === "segpay").launchPlanPolicy.intendedPaidPlans,
+  ["premium", "ultra", "unlimited"]
+);
+assert.strictEqual(
+  empty.stages.find((stage) => stage.key === "segpay").launchPlanPolicy.maxMustRemainDisabled,
+  true
+);
 assert.strictEqual(empty.stages.find((stage) => stage.key === "yoti").ready, false);
 assert.strictEqual(empty.stages.find((stage) => stage.key === "ses").ready, false);
 assert.strictEqual(empty.stages.find((stage) => stage.key === "legal").ready, false);
@@ -70,6 +78,31 @@ assert.strictEqual(
   secretReport.stages.find((stage) => stage.key === "clamav").ready,
   false,
   "configuration alone must not mark ClamAV launch-ready"
+);
+
+const intendedLaunchPlans = buildNoSpendLaunchPreflight({
+  env: { UNBOUND_UNLIMITED_LAUNCH_ENABLED: "true" },
+  nowMs: NOW
+});
+assert.strictEqual(
+  intendedLaunchPlans.stages.find((stage) => stage.key === "segpay").launchPlanPolicy.ready,
+  true
+);
+const accidentalMaxLaunch = buildNoSpendLaunchPreflight({
+  env: {
+    UNBOUND_UNLIMITED_LAUNCH_ENABLED: "true",
+    UNBOUND_MAX_LAUNCH_ENABLED: "true"
+  },
+  nowMs: NOW
+});
+assert.strictEqual(
+  accidentalMaxLaunch.stages.find((stage) => stage.key === "segpay").launchPlanPolicy.ready,
+  false
+);
+assert(
+  accidentalMaxLaunch.stages.find((stage) => stage.key === "segpay").blockers.some((item) =>
+    /Max \$199\.99 must remain disabled/i.test(item)
+  )
 );
 
 const operationalClamav = buildNoSpendLaunchPreflight({
