@@ -10,12 +10,12 @@
     },
     premium: {
       name: "PREMIUM",
-      price: "$59.99 / month",
+      price: "$49.99 / month",
       note: "Everything in Free plus web research, citations, file analysis, photo/image understanding, voice and Memory."
     },
     ultra: {
       name: "ULTRA",
-      price: "$114.99 / month",
+      price: "$129.99 / month",
       note: "Everything in Premium plus advanced image tools, agents, scheduled monitoring, multi-model routing, connected apps, Command Center and verified-18+ Adult Mode."
     }
   });
@@ -173,7 +173,7 @@
         continue;
       }
       button.disabled = !checkoutAvailable;
-      button.textContent = planId === "premium" ? "CHOOSE PREMIUM · $59.99" : "CHOOSE ULTRA · $114.99";
+      button.textContent = planId === "premium" ? "CHOOSE PREMIUM · $49.99" : "CHOOSE ULTRA · $129.99";
       button.onclick = () => startCheckout(planId, note, button);
     }
 

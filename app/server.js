@@ -1,3 +1,6 @@
+const { publicUsagePolicy, policiesFor, LIMITS } = require("./access/usage-policy");
+const { readUsage } = require("./access/usage-store");
+const { createUsageMiddleware } = require("./access/usage-middleware");
 const express = require("express");
 const compression = require("compression");
 const path = require("path");
@@ -263,6 +266,11 @@ app.use("/api", createMaintenanceMiddleware());
 app.use("/api", (req, res, next) => {
   res.setHeader("Cache-Control", "no-store");
   next();
+});
+app.get("/usage-panel.js", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache");
+  res.type("application/javascript");
+  return res.sendFile(path.join(__dirname, "usage-panel.js"));
 });
 app.get("/index.html", (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
@@ -2247,6 +2255,31 @@ async function chatRateLimit(req, res, next) {
     });
   }
 }
+
+app.use(createUsageMiddleware({
+  getPool: () => databaseReady ? pool : null,
+  secret: RATE_LIMIT_SECRET,
+  resolveAccount: async (req) => {
+    const user = req.user || await findSessionUser(req);
+    if (!user) return null;
+    req.user = user;
+    const subscription = await loadAccountSubscription(user.id);
+    return { user, tier: resolveEffectivePlan(user, subscription).plan.id };
+  },
+  guestSubject: (req, res) => ({ kind: "guest_browser", value: ensureGuestRateToken(req, res) })
+}));
+
+app.get("/api/usage-policy", (req, res) => res.json(publicUsagePolicy()));
+app.get("/api/account/usage", requireDatabase, requireSignedIn, async (req, res) => {
+  try {
+    const subscription = await loadAccountSubscription(req.user.id);
+    const tier = resolveEffectivePlan(req.user, subscription).plan.id;
+    const charges = Object.fromEntries(Object.keys(LIMITS[tier]).map(feature => [feature, 1]));
+    const windows = await readUsage(pool, RATE_LIMIT_SECRET, { kind: "account", value: String(req.user.id) }, policiesFor(tier, charges));
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ tier, windows });
+  } catch (_) { return res.status(503).json({ error: "Could not load usage. Please try again shortly." }); }
+});
 
 const loginRateLimit = rateLimitMiddleware({
   policy: RATE_LIMIT_POLICY.login,
