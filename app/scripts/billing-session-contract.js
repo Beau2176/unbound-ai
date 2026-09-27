@@ -70,7 +70,7 @@ async function main() {
   const missing = getBillingGatewayStatus({});
   assert.equal(missing.configured, false);
   assert.deepEqual(missing.paidPlans, ["premium", "ultra"]);
-  assert.deepEqual(missing.futurePlans, ["max"]);
+  assert.deepEqual(missing.futurePlans, ["max", "unlimited"]);
 
   const env = {
     BILLING_PROVIDER: provider,
@@ -79,7 +79,7 @@ async function main() {
   const ready = getBillingGatewayStatus(env);
   assert.equal(ready.configured, true);
   assert.deepEqual(ready.paidPlans, ["premium", "ultra"]);
-  assert.deepEqual(ready.futurePlans, ["max"]);
+  assert.deepEqual(ready.futurePlans, ["max", "unlimited"]);
 
   for (const planTier of ["premium", "ultra"]) {
     const checkout = await startBillingCheckoutSession({
@@ -112,7 +112,7 @@ async function main() {
   const maxEnv = { ...env, UNBOUND_MAX_LAUNCH_ENABLED: "true" };
   const maxGateway = getBillingGatewayStatus(maxEnv);
   assert.deepEqual(maxGateway.paidPlans, ["premium", "ultra", "max"]);
-  assert.deepEqual(maxGateway.futurePlans, []);
+  assert.deepEqual(maxGateway.futurePlans, ["unlimited"]);
   const maxCheckout = await startBillingCheckoutSession({
     subject: "subject-opaque-123",
     email: "user@example.com",
@@ -121,6 +121,19 @@ async function main() {
   });
   assert.equal(maxCheckout.planTier, "max");
   assert.equal(checkoutInput.planTier, "max");
+
+  const unlimitedEnv = { ...env, UNBOUND_UNLIMITED_LAUNCH_ENABLED: "true" };
+  const unlimitedGateway = getBillingGatewayStatus(unlimitedEnv);
+  assert.deepEqual(unlimitedGateway.paidPlans, ["premium", "ultra", "unlimited"]);
+  assert.deepEqual(unlimitedGateway.futurePlans, ["max"]);
+  const unlimitedCheckout = await startBillingCheckoutSession({
+    subject: "subject-opaque-123",
+    email: "user@example.com",
+    planTier: "unlimited",
+    env: unlimitedEnv
+  });
+  assert.equal(unlimitedCheckout.planTier, "unlimited");
+  assert.equal(checkoutInput.planTier, "unlimited");
 
   const legacyCheckout = await startBillingCheckoutSession({
     subject: "subject-opaque-123",
@@ -162,6 +175,14 @@ async function main() {
     env: maxEnv
   });
   assert.equal(maxWebhook.planTier, "max");
+
+  webhookPlanTier = "unlimited";
+  const unlimitedWebhook = await processBillingWebhook({
+    rawBody: Buffer.from("{}"),
+    headers: { "x-contract-signature": "valid" },
+    env: unlimitedEnv
+  });
+  assert.equal(unlimitedWebhook.planTier, "unlimited");
 
   webhookPlanTier = "top";
   const legacyWebhook = await processBillingWebhook({
@@ -220,7 +241,7 @@ async function main() {
     );
   }
 
-  console.log("PASS billing contract: revised Premium/Ultra checkout, launch-gated Max, legacy TOP alias, safe lifecycle webhooks.");
+  console.log("PASS billing contract: Premium/Ultra checkout, independently launch-gated Max and Unlimited, legacy TOP alias, safe lifecycle webhooks.");
 }
 
 main().catch((error) => {
