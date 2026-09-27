@@ -2,7 +2,8 @@ const PLAN_DEFINITIONS = Object.freeze({
   free: Object.freeze({ id: "free", displayName: "FREE", rank: 0, priceMonthlyUsd: 0 }),
   premium: Object.freeze({ id: "premium", displayName: "PREMIUM", rank: 50, priceMonthlyUsd: 49.99, commercialState: "live" }),
   ultra: Object.freeze({ id: "ultra", displayName: "ULTRA", rank: 100, priceMonthlyUsd: 129.99, commercialState: "live" }),
-  max: Object.freeze({ id: "max", displayName: "MAX", rank: 150, priceMonthlyUsd: 199.99, commercialState: "future" })
+  max: Object.freeze({ id: "max", displayName: "MAX", rank: 150, priceMonthlyUsd: 199.99, commercialState: "future" }),
+  unlimited: Object.freeze({ id: "unlimited", displayName: "UNLIMITED", rank: 200, priceMonthlyUsd: 299.99, commercialState: "future" })
 });
 
 const LEGACY_PLAN_ALIASES = Object.freeze({
@@ -35,7 +36,7 @@ const CAPABILITY_CATALOG = Object.freeze({
   multi_model: Object.freeze({ label: "Multi-model routing", description: "Route Ultra chat through server-configured Fast, Deep, and Research model profiles without accepting arbitrary browser-supplied model IDs.", implemented: true, minimumPlan: "ultra" }),
   connected_apps: Object.freeze({ label: "Connected apps", description: "Permission-based external-service connections with encrypted server-side credentials, explicit authorization, and user-controlled disconnect/revocation.", implemented: true, minimumPlan: "ultra" }),
   command_center: Object.freeze({ label: "UNBOUND Command Center", description: "Central view of account access, usage, costs, security, platform status, and product controls.", implemented: true, minimumPlan: "ultra" }),
-  adult_mode: Object.freeze({ label: "Adult Mode", description: "Ultra-only verified-18+ mature conversation protected by a server-side hard age-verification gate.", implemented: true, minimumPlan: "ultra" })
+  adult_mode: Object.freeze({ label: "Adult Mode", description: "Ultra-and-higher verified-18+ mature conversation protected by a server-side hard age-verification gate.", implemented: true, minimumPlan: "ultra" })
 });
 
 function normalizePlanTier(value) {
