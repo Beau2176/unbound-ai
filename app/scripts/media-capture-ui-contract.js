@@ -38,7 +38,9 @@ function main() {
   const tier = fs.readFileSync(path.join(appRoot, "tier-controls.js"), "utf8");
   assert.match(tier, /\$49\.99 \/ month/);
   assert.match(tier, /\$129\.99 \/ month/);
-  assert.match(tier, /Adult Mode is Ultra-only/i);
+  assert.match(tier, /Adult Mode is available on Ultra and higher plans/i);
+  assert.match(tier, /\$199\.99 \/ month/);
+  assert.match(tier, /\$299\.99 \/ month/);
   assert.match(tier, /JSON\.stringify\(\{ planTier \}\)/);
 
   const rawServer = fs.readFileSync(path.join(appRoot, "server.js"), "utf8");
@@ -46,7 +48,7 @@ function main() {
   assert.match(integrated, /app\.get\("\/tier-controls\.js"/);
   assert.match(integrated, /app\.get\("\/media-capture\.js"/);
   assert.match(integrated, /app\.get\("\/voice-media-shortcuts\.js"/);
-  assert.match(integrated, /tier-controls\.js\?v=20260914/);
+  assert.match(integrated, /tier-controls\.js\?v=20260927/);
   assert.match(integrated, /media-capture\.js\?v=20260914/);
   assert.match(integrated, /voice-media-shortcuts\.js\?v=20260914/);
 
