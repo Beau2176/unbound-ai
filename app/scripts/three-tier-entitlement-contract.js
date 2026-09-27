@@ -13,7 +13,7 @@ function accessMap(planTier) {
 function main() {
   assert.deepStrictEqual(
     Object.keys(PLAN_DEFINITIONS),
-    ["free", "premium", "ultra", "max"]
+    ["free", "premium", "ultra", "max", "unlimited"]
   );
   assert.strictEqual(PLAN_DEFINITIONS.free.priceMonthlyUsd, 0);
   assert.strictEqual(PLAN_DEFINITIONS.premium.priceMonthlyUsd, 49.99);
@@ -21,8 +21,11 @@ function main() {
   assert.ok(PLAN_DEFINITIONS.free.rank < PLAN_DEFINITIONS.premium.rank);
   assert.strictEqual(PLAN_DEFINITIONS.max.priceMonthlyUsd, 199.99);
   assert.strictEqual(PLAN_DEFINITIONS.max.commercialState, "future");
+  assert.strictEqual(PLAN_DEFINITIONS.unlimited.priceMonthlyUsd, 299.99);
+  assert.strictEqual(PLAN_DEFINITIONS.unlimited.commercialState, "future");
   assert.ok(PLAN_DEFINITIONS.premium.rank < PLAN_DEFINITIONS.ultra.rank);
   assert.ok(PLAN_DEFINITIONS.ultra.rank < PLAN_DEFINITIONS.max.rank);
+  assert.ok(PLAN_DEFINITIONS.max.rank < PLAN_DEFINITIONS.unlimited.rank);
 
   assert.strictEqual(normalizePlanTier("top"), "ultra");
   assert.strictEqual(normalizePlanTier("premium"), "premium");
@@ -32,6 +35,7 @@ function main() {
   const premium = accessMap("premium");
   const ultra = accessMap("ultra");
   const max = accessMap("max");
+  const unlimited = accessMap("unlimited");
   const legacyTop = accessMap("top");
 
   for (const capability of ["chat", "casual_mode", "work_mode", "creative_mode", "unbound_mode"]) {
@@ -46,13 +50,14 @@ function main() {
     assert.strictEqual(ultra.get(capability).usable, true, `${capability} must be Ultra`);
     assert.strictEqual(legacyTop.get(capability).usable, true, `legacy TOP must retain ${capability} through Ultra alias`);
     assert.strictEqual(max.get(capability).usable, true, `MAX must inherit launched Ultra capability ${capability}`);
+    assert.strictEqual(unlimited.get(capability).usable, true, `UNLIMITED must inherit launched Ultra capability ${capability}`);
   }
 
   assert.strictEqual(CAPABILITY_CATALOG.adult_mode.minimumPlan, "ultra");
   assert.match(CAPABILITY_CATALOG.adult_mode.description, /18\+/i);
   assert.match(CAPABILITY_CATALOG.adult_mode.description, /Ultra/i);
 
-  console.log("Four-plan entitlement contract passed: Free, Premium, Ultra, and future Max.");
+  console.log("Five-plan entitlement contract passed: Free, Premium, Ultra, future Max, and future Unlimited.");
 }
 
 try {
