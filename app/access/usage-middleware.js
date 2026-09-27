@@ -12,6 +12,7 @@ function createUsageMiddleware({ getPool, resolveAccount, guestSubject, secret, 
       const subject = account ? { kind: "account", value: String(account.user.id) } : guestSubject(req, res);
       const policies = policiesFor(account?.tier || "free", charges);
       if (policies.some(p => p.limit === 0)) return res.status(403).json({ error: "This feature is not included in your plan.", code: "PLAN_FEATURE_REQUIRED" });
+      if (!policies.length) return next();
       const reservation = await reserve(pool, secret, subject, policies);
       if (!reservation.allowed) {
         res.setHeader("Retry-After", String(reservation.retryAfter));
