@@ -93,6 +93,16 @@ function buildNoSpendLaunchPreflight({ env = process.env, nowMs = Date.now() } =
   const bankingRails = findOwnerCheck(owner, "banking_rails_verified");
   const segpayMerchant = findOwnerCheck(owner, "segpay_merchant_approved");
   const legalCounsel = findOwnerCheck(owner, "legal_counsel_review");
+  const intendedLaunchPaidPlans = ["premium", "ultra", "unlimited"];
+  const activePaidPlans = Array.isArray(billing.paidPlans) ? billing.paidPlans : [];
+  const initialLaunchPlanPolicy = {
+    intendedPaidPlans: intendedLaunchPaidPlans,
+    activePaidPlans,
+    maxMustRemainDisabled: true,
+    ready:
+      intendedLaunchPaidPlans.every((plan) => activePaidPlans.includes(plan)) &&
+      !activePaidPlans.includes("max")
+  };
 
   const stages = [
     {
@@ -101,6 +111,7 @@ function buildNoSpendLaunchPreflight({ env = process.env, nowMs = Date.now() } =
       ready: bool(infrastructure.launchReady),
       status: infrastructure.status,
       blockers: infrastructure.blockers,
+      launchPlanPolicy: initialLaunchPlanPolicy,
       freeWorkNow: [
         "Keep current infrastructure truthfully marked non-production until the paid migration actually occurs.",
         "Document the target Render service/database plans, health-check path, cutover steps, rollback steps, and verification evidence.",
@@ -139,15 +150,25 @@ function buildNoSpendLaunchPreflight({ env = process.env, nowMs = Date.now() } =
     {
       key: "segpay",
       label: "Segpay",
-      ready: bool(billing.configured && billing.checkout && billing.customerPortal && billing.webhooks && segpayMerchant.ready),
+      ready: bool(
+        billing.configured &&
+        billing.checkout &&
+        billing.customerPortal &&
+        billing.webhooks &&
+        segpayMerchant.ready &&
+        initialLaunchPlanPolicy.ready
+      ),
       status: billing.configured ? "configured" : "external_action_required",
       blockers: [
         ...(billing.configured ? [] : ["Segpay production configuration and attestations are not complete."]),
-        ...(segpayMerchant.ready ? [] : [segpayMerchant.detail])
+        ...(segpayMerchant.ready ? [] : [segpayMerchant.detail]),
+        ...(activePaidPlans.includes("unlimited") ? [] : ["Unlimited $299.99 must be enabled for the initial public launch."]),
+        ...(!activePaidPlans.includes("max") ? [] : ["Max $199.99 must remain disabled for the initial public launch."])
       ],
       freeWorkNow: [
         "Prepare the merchant-underwriting packet using the real product description, 18+ controls, prohibited-content policy, refund/cancellation approach, and data-flow summary.",
         "Prepare the exact hosted-pay-page, REF1/REF2 signed-field, authenticated postback, lifecycle, and portal test matrix.",
+        "Initial public launch plan: Premium $49.99, Ultra $129.99, and Unlimited $299.99 enabled; Max $199.99 remains Coming Later.",
         "Do not set Segpay approval attestations or production secrets before real Merchant Services confirmation."
       ],
       finishRequiresSpendOrExternalApproval: true
