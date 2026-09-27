@@ -11,7 +11,7 @@
       const account = accountResponse.ok ? await accountResponse.json() : null;
       content.replaceChildren();
       const description = document.createElement("p");
-      description.textContent = "Casual chat uses 1 credit. Work Mode and Research use 3 chat credits. Research also uses 1 research request. Each cloud voice reply counts separately; device speech has no cloud-voice quota. Both five-hour and weekly limits apply.";
+      description.textContent = "Casual chat uses 1 chat credit and Work/Research use 3 when a plan is metered. Unlimited has no five-hour or weekly normal-chat cap. Research and other high-cost tools remain metered, and fair-use/abuse safeguards still apply.";
       content.append(description);
       if (account) {
         const title = document.createElement("h4"); title.textContent = "Your remaining allowance"; content.append(title);
@@ -30,7 +30,9 @@
         const list = document.createElement("ul");
         for (const [feature, limits] of Object.entries(plan.limits)) {
           const item = document.createElement("li");
-          item.textContent = `${policy.features[feature]}: ${limits[0]} per 5 hours; ${limits[1]} per 7 days.`;
+          item.textContent = limits === null
+            ? `${policy.features[feature]}: Unlimited everyday use; fair-use and abuse safeguards apply.`
+            : `${policy.features[feature]}: ${limits[0]} per 5 hours; ${limits[1]} per 7 days.`;
           list.append(item);
         }
         content.append(list);
