@@ -14,7 +14,7 @@ const BILLING_STATUSES = Object.freeze([
   "unpaid"
 ]);
 
-const PAID_PLAN_TIERS = Object.freeze(["premium", "ultra", "max"]);
+const PAID_PLAN_TIERS = Object.freeze(["premium", "ultra", "max", "unlimited"]);
 const DEFAULT_ACTIVE_PAID_PLAN_TIERS = Object.freeze(["premium", "ultra"]);
 
 function truthy(value) {
@@ -25,6 +25,7 @@ function isPaidPlanLaunchEnabled(planTier, env = process.env) {
   const plan = String(planTier || "").trim().toLowerCase();
   if (DEFAULT_ACTIVE_PAID_PLAN_TIERS.includes(plan)) return true;
   if (plan === "max") return truthy(env.UNBOUND_MAX_LAUNCH_ENABLED);
+  if (plan === "unlimited") return truthy(env.UNBOUND_UNLIMITED_LAUNCH_ENABLED);
   return false;
 }
 

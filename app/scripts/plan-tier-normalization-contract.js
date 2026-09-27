@@ -21,7 +21,7 @@ let source = integrateBillingServerSource(baseSource);
 source = integrateAdminThreeTierServerSource(source);
 source = integratePlanTierNormalizationServerSource(source);
 
-assert.deepStrictEqual(Object.keys(PLAN_DEFINITIONS), ["free", "premium", "ultra", "max"]);
+assert.deepStrictEqual(Object.keys(PLAN_DEFINITIONS), ["free", "premium", "ultra", "max", "unlimited"]);
 assert.strictEqual(LEGACY_PLAN_ALIASES.top, "ultra");
 assert.strictEqual(normalizePlanTier("top"), "ultra");
 assert.strictEqual(normalizePlanTier(" TOP "), "ultra");
@@ -30,6 +30,8 @@ assert.strictEqual(getPlanDefinition("premium").priceMonthlyUsd, 49.99);
 assert.strictEqual(getPlanDefinition("ultra").priceMonthlyUsd, 129.99);
 assert.strictEqual(getPlanDefinition("max").priceMonthlyUsd, 199.99);
 assert.strictEqual(getPlanDefinition("max").commercialState, "future");
+assert.strictEqual(getPlanDefinition("unlimited").priceMonthlyUsd, 299.99);
+assert.strictEqual(getPlanDefinition("unlimited").commercialState, "future");
 
 assert(source.includes("UPDATE users\n    SET plan_tier = 'ultra'"));
 assert(source.includes("WHERE LOWER(TRIM(plan_tier)) = 'top';"));
@@ -58,4 +60,4 @@ assert(source.includes("complimentary_top_tier.granted"));
 const reapplied = integratePlanTierNormalizationServerSource(source);
 assert.strictEqual(reapplied, source, "plan-tier normalization integration must be idempotent");
 
-console.log("Canonical plan normalization contract passed with future MAX support.");
+console.log("Canonical plan normalization contract passed with future MAX and UNLIMITED support.");

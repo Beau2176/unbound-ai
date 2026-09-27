@@ -7,12 +7,14 @@ const SUBJECT_CHUNK_SIZE = 32;
 const PLAN_PRICES = Object.freeze({
   premium: "49.99",
   ultra: "129.99",
-  max: "199.99"
+  max: "199.99",
+  unlimited: "299.99"
 });
 const LEGACY_PLAN_PRICES = Object.freeze({
   premium: Object.freeze(["59.99"]),
   ultra: Object.freeze(["114.99"]),
-  max: Object.freeze([])
+  max: Object.freeze([]),
+  unlimited: Object.freeze([])
 });
 
 const capabilities = Object.freeze({
@@ -59,7 +61,9 @@ function getSegpayConfig(env = process.env) {
     env.SEGPAY_ULTRA_PAY_PAGE_REF || env.SEGPAY_PAY_PAGE_REF
   );
   const maxPayPageRef = normalizePageRef(env.SEGPAY_MAX_PAY_PAGE_REF);
+  const unlimitedPayPageRef = normalizePageRef(env.SEGPAY_UNLIMITED_PAY_PAGE_REF);
   const maxLaunchEnabled = truthy(env.UNBOUND_MAX_LAUNCH_ENABLED);
+  const unlimitedLaunchEnabled = truthy(env.UNBOUND_UNLIMITED_LAUNCH_ENABLED);
   const signingKey = safeText(env.SEGPAY_SIGNING_KEY, 500);
   const postbackUsername = safeText(env.SEGPAY_POSTBACK_USERNAME, 200);
   const postbackPassword = safeText(env.SEGPAY_POSTBACK_PASSWORD, 300);
@@ -88,6 +92,13 @@ function getSegpayConfig(env = process.env) {
       payPageRef: maxPayPageRef,
       configured: Boolean(maxPayPageRef),
       launchEnabled: maxLaunchEnabled
+    }),
+    unlimited: Object.freeze({
+      id: "unlimited",
+      amount: PLAN_PRICES.unlimited,
+      payPageRef: unlimitedPayPageRef,
+      configured: Boolean(unlimitedPayPageRef),
+      launchEnabled: unlimitedLaunchEnabled
     })
   });
 
