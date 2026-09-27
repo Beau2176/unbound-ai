@@ -1,3 +1,6 @@
+const { storedUsageTier } = require("../access/usage-account");
+const { policiesFor } = require("../access/usage-policy");
+const { reserveUsageInTransaction } = require("../access/usage-store");
 const crypto = require("crypto");
 const { buildFuturePlan } = require("../orchestration/planner");
 const { createJobState } = require("../orchestration/state");
@@ -118,6 +121,17 @@ async function runDueAgentSchedules({ getPool, now = new Date() } = {}) {
     );
 
     for (const schedule of due.rows) {
+      const tier = await storedUsageTier(client, schedule.user_id);
+      const secret = process.env.RATE_LIMIT_HASH_SECRET || process.env.DATABASE_URL;
+      if (!secret) throw new Error("Usage identity is not configured");
+      const reservation = await reserveUsageInTransaction(client, secret,
+        { kind: "account", value: String(schedule.user_id) }, policiesFor(tier, { agents: 1 }));
+      if (!reservation.allowed) {
+        // Leave the schedule enabled and postpone until its quota can reset.
+        await client.query("UPDATE background_agent_schedules SET next_run_at = $1::timestamptz, updated_at = NOW() WHERE id = $2",
+          [new Date(Date.now() + reservation.retryAfter * 1000).toISOString(), schedule.id]);
+        continue;
+      }
       const job = await createScheduledFutureCoreJob(client, schedule, now);
       const next = nextRunAfter({
         recurrence: schedule.recurrence,

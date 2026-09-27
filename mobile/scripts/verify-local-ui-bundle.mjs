@@ -62,6 +62,7 @@ if (manifest) {
     'device-inspector.js',
     'action-bridge.js',
     'tier-controls.js',
+    'usage-panel.js',
     'media-capture.js',
     'voice-media-shortcuts.js',
     'adult-step-up.js'
@@ -140,7 +141,7 @@ if (manifest) {
     }
     for (const expected of [
       'unbound-mobile-layout-v102',
-      'unbound-simple-shell-v100',
+      'unbound-simple-shell-v101',
       'unboundVoiceListenButton',
       'let streamCompleted = false;',
       '[Response interrupted before completion.]'

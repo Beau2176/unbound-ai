@@ -36,8 +36,8 @@ function main() {
   assert.match(shortcuts, /unboundMediaActions/);
 
   const tier = fs.readFileSync(path.join(appRoot, "tier-controls.js"), "utf8");
-  assert.match(tier, /\$59\.99 \/ month/);
-  assert.match(tier, /\$114\.99 \/ month/);
+  assert.match(tier, /\$49\.99 \/ month/);
+  assert.match(tier, /\$129\.99 \/ month/);
   assert.match(tier, /Adult Mode is Ultra-only/i);
   assert.match(tier, /JSON\.stringify\(\{ planTier \}\)/);
 
