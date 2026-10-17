@@ -7,7 +7,13 @@ const {
   handleCancelledJsonResponse
 } = require("../ops/request-cancellation");
 const { injectEmailAccountUi } = require("../email/account-page");
-const { listAiStyles } = require("../preferences/ai-style");
+const {
+  LEGACY_STYLE_OPTIONS,
+  LEGACY_STYLE_FUNCTIONS,
+  buildAiStyleOptions,
+  buildAiStyleBrowserFunctions,
+  buildAiStyleIndexHtml
+} = require("../preferences/mode-ui");
 const {
   scanBufferForMalware,
   publicMalwareScanStatus
@@ -30,28 +36,6 @@ const MEMORY_NAV_LINK = '<a class="account-button advertiser-link" href="/memory
 const MODES_NAV_LINK = '<a class="account-button advertiser-link" href="/modes.html">MODES</a>';
 const COMMAND_CENTER_NAV_LINK = '<a class="account-button advertiser-link" href="/command-center.html">CENTER</a>';
 
-const LEGACY_STYLE_OPTIONS = `              <option value="balanced">BALANCED</option>
-              <option value="straight">STRAIGHT SHOOTER</option>
-              <option value="professional">PROFESSIONAL</option>
-              <option value="warm">WARM</option>
-              <option value="playful">PLAYFUL</option>`;
-
-const LEGACY_STYLE_FUNCTIONS = `    function normalizeAiStyle(value) {
-      return ["balanced", "straight", "professional", "warm", "playful"].includes(value)
-        ? value
-        : "balanced";
-    }
-
-    function aiStyleLabel(value) {
-      return ({
-        balanced: "Balanced",
-        straight: "Straight Shooter",
-        professional: "Professional",
-        warm: "Warm",
-        playful: "Playful"
-      })[normalizeAiStyle(value)];
-    }`;
-
 function replaceExactlyOnce(source, marker, replacement, code) {
   const first = source.indexOf(marker);
   const last = source.lastIndexOf(marker);
@@ -61,28 +45,6 @@ function replaceExactlyOnce(source, marker, replacement, code) {
     throw error;
   }
   return source.slice(0, first) + replacement + source.slice(first + marker.length);
-}
-
-function buildAiStyleOptions(styles = listAiStyles()) {
-  return styles
-    .map((style) => `              <option value="${style.id}">${style.label.toUpperCase()}</option>`)
-    .join("\n");
-}
-
-function buildAiStyleBrowserFunctions(styles = listAiStyles()) {
-  const ids = styles.map((style) => style.id);
-  const labels = Object.fromEntries(styles.map((style) => [style.id, style.label]));
-  return `    const UNBOUND_AI_STYLE_IDS = Object.freeze(${JSON.stringify(ids)});
-    const UNBOUND_AI_STYLE_LABELS = Object.freeze(${JSON.stringify(labels)});
-
-    function normalizeAiStyle(value) {
-      const normalized = String(value || "").trim().toLowerCase();
-      return UNBOUND_AI_STYLE_IDS.includes(normalized) ? normalized : "balanced";
-    }
-
-    function aiStyleLabel(value) {
-      return UNBOUND_AI_STYLE_LABELS[normalizeAiStyle(value)] || "Balanced";
-    }`;
 }
 
 function safeProviderError(error) {
@@ -189,18 +151,7 @@ function buildFileAwareIndexHtml(indexHtml) {
     `${INDEX_NAV_MARKER}\n      ${FILES_NAV_LINK}\n      ${ARTIFACTS_NAV_LINK}\n      ${IMAGES_NAV_LINK}\n      ${IMAGE_STUDIO_NAV_LINK}\n      ${VOICE_NAV_LINK}\n      ${TASKS_NAV_LINK}\n      ${AGENTS_NAV_LINK}\n      ${MEMORY_NAV_LINK}\n      ${MODES_NAV_LINK}\n      ${COMMAND_CENTER_NAV_LINK}`,
     "product-navigation"
   );
-  source = replaceExactlyOnce(
-    source,
-    LEGACY_STYLE_OPTIONS,
-    buildAiStyleOptions(),
-    "100-mode-options"
-  );
-  source = replaceExactlyOnce(
-    source,
-    LEGACY_STYLE_FUNCTIONS,
-    buildAiStyleBrowserFunctions(),
-    "100-mode-browser-functions"
-  );
+  source = buildAiStyleIndexHtml(source);
   return injectEmailAccountUi(source);
 }
 

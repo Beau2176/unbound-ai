@@ -17,7 +17,7 @@ The existing `listener` account preference is now labeled **Conversation**. Keep
 
 Both chat endpoints use conversation-specific depth instructions. Casual favors brief, speakable replies. Work allows a longer exchange without requiring analysis or a structured solution. The other 99 modes retain their original depth prompts. Explicit product-mode selections and existing access, age, usage, privacy, and safety controls still apply.
 
-The native web shell now applies the shared mode catalog before its UI enhancements, so the served homepage includes Conversation and the full selector. Desktop and mobile summaries use the selected label and refresh when the saved setting changes.
+The native web shell and packaged mobile UI now apply the shared mode catalog before their UI enhancements, so they include Conversation and the full selector. The catalog builder is independent of server dependencies. The mobile bundle verifier checks the selector and Conversation control; catalog changes also trigger mobile CI. Desktop and mobile summaries use the selected label and refresh when the saved setting changes.
 
 This uses the existing AI chat provider separately from artifact generation. It adds no provider, subscription, or credential. Normal chat and optional voice usage remain subject to the platform's existing limits and costs.
 
@@ -37,5 +37,7 @@ These checks do not evaluate live model quality or microphone/audio playback. Be
 This feature is prepared for the full platform. It does not publish the full platform or modify the separate Founders Beta site.
 
 Validation on 2026-10-17 with Node 24.19.0: the focused Conversation checks, source validation, security contracts, other regression checks, and backup contracts passed. The full `npm run ci` stopped at `no-spend-launch-preflight-contract.js:19` because `launchPlanPolicy` is undefined. That failure was reproduced on unchanged main commit `107deace639de8a1cbaf490acb731551cff2fb12`. The remaining launch-validation, completion, and usage checks passed when run separately.
+
+The packaged mobile UI also passed `npm run build:local-ui` and `npm run verify:local-ui`, including Android/iOS local-origin transport, native validation contracts, the shared selector, and the bundle hash checks. These are packaging checks, not signed-device or store-release evidence.
 
 The dependency audit also reports an existing critical `proxy-addr` advisory (`GHSA-jqcg-44mw-7w3h`) on both this branch and unchanged main; the dependency lockfile is unchanged. These existing full-site release issues are not fixed by this feature. Real-browser visual verification was unavailable because Chromium was not installed and its download failed; the real served HTML and inline scripts were verified through the contract instead.

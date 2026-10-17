@@ -4,7 +4,7 @@ const path = require("path");
 const vm = require("vm");
 const { createRequire } = require("module");
 const styles = require("../preferences/ai-style");
-const { buildAiStyleBrowserFunctions } = require("../files/routes");
+const { buildAiStyleBrowserFunctions, buildAiStyleIndexHtml } = require("../preferences/mode-ui");
 const { integrateNativeShellServerSource } = require("../ui/native-shell-server-integration");
 
 const appRoot = path.join(__dirname, "..");
@@ -224,6 +224,7 @@ async function checkModeControls() {
 
 async function main() {
   assert.strictEqual(styles.getAiStyleDefinition("listener").label, "Conversation");
+  assert.throws(() => buildAiStyleIndexHtml("<html></html>"), { code: "AI_STYLE_INDEX_MARKER_CHANGED" });
   await checkChatRoutes();
   checkServedHomepage();
   await checkModeControls();
