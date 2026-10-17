@@ -438,6 +438,28 @@
       letter-spacing: 0.08em;
     }
 
+    .conversation-entry {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 12px 22px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .conversation-entry button {
+      min-height: 44px;
+    }
+
+    .conversation-entry button[aria-pressed="true"] {
+      border-color: #6bc1ff;
+      background: rgba(66, 165, 255, 0.18);
+      color: #e7f5ff;
+    }
+
     .chat-actions {
       display: flex;
       align-items: center;
@@ -1601,6 +1623,11 @@
         </div>
       </div>
 
+      <div class="conversation-entry">
+        <button id="conversationModeButton" class="new-chat" type="button" aria-pressed="false" aria-describedby="conversationModeDescription">CONVERSATION</button>
+        <span id="conversationModeDescription">Just talk with AI. Advice only when you ask.</span>
+      </div>
+
       <div id="messages" class="messages" aria-live="polite"></div>
 
       <div class="composer-wrap">
@@ -1958,6 +1985,7 @@
     const productStatus = document.getElementById("productStatus");
     const aiStyleSelect = document.getElementById("aiStyleSelect");
     const styleStatus = document.getElementById("styleStatus");
+    const conversationModeButton = document.getElementById("conversationModeButton");
     const casualModeButton = document.getElementById("casualModeButton");
     const workModeButton = document.getElementById("workModeButton");
     const depthStatus = document.getElementById("depthStatus");
@@ -2065,6 +2093,7 @@
     let productMode = "standard";
     let depthStyle = "casual";
     let aiStyle = "balanced";
+    let aiStyleSaving = false;
     let toastTimer = null;
     let securityDevices = [];
     let securityEvents = [];
@@ -2130,9 +2159,7 @@
       input.disabled = serviceWriteBlocked;
       sendButton.disabled = serviceWriteBlocked;
       goDeeperButton.disabled = serviceWriteBlocked;
-      input.placeholder = serviceWriteBlocked
-        ? "Chat temporarily paused..."
-        : "Message UNBOUND AI...";
+      renderMessagePlaceholder();
     }
 
     async function refreshServiceStatus() {
@@ -2405,6 +2432,7 @@
         lastItem &&
         lastItem.role === "assistant"
       );
+      if (aiStyle === "listener") goDeeperButton.hidden = true;
     }
 
     function renderDepthStyle() {
@@ -2413,7 +2441,9 @@
       workModeButton.classList.toggle("active", isWork);
       casualModeButton.setAttribute("aria-pressed", isWork ? "false" : "true");
       workModeButton.setAttribute("aria-pressed", isWork ? "true" : "false");
-      depthStatus.textContent = isWork
+      depthStatus.textContent = aiStyle === "listener"
+        ? (isWork ? "Room for a longer conversation" : "Short, relaxed replies")
+        : isWork
         ? "Work Mode — Deep answers when the work matters."
         : "Casual Mode — Fast answers when you need them.";
       updateGoDeeperVisibility();
@@ -2475,7 +2505,23 @@
 
     function renderAiStyle() {
       aiStyleSelect.value = normalizeAiStyle(aiStyle);
-      styleStatus.textContent = `${aiStyleLabel(aiStyle)} style`;
+      const isConversation = aiStyle === "listener";
+      styleStatus.textContent = isConversation
+        ? "Conversation mode — advice when you ask"
+        : `${aiStyleLabel(aiStyle)} style`;
+      conversationModeButton.setAttribute("aria-pressed", String(isConversation));
+      conversationModeButton.textContent = isConversation ? "CONVERSATION ON · EXIT" : "CONVERSATION";
+      renderMessagePlaceholder();
+      renderDepthStyle();
+      window.dispatchEvent(new CustomEvent("unbound:ai-style-changed"));
+    }
+
+    function renderMessagePlaceholder() {
+      input.placeholder = serviceWriteBlocked
+        ? "Chat temporarily paused..."
+        : aiStyle === "listener"
+          ? "What's on your mind?"
+          : "Message UNBOUND AI...";
     }
 
     async function syncAiStyleForScope() {
@@ -2503,34 +2549,53 @@
     }
 
     async function handleAiStyleChange() {
-      const previous = aiStyle;
-      aiStyle = normalizeAiStyle(aiStyleSelect.value);
-      saveAiStyleLocal();
-      renderAiStyle();
+      if (aiStyleSaving) return false;
+      const requested = normalizeAiStyle(aiStyleSelect.value);
+      const requestUserId = currentUser?.id || null;
+      aiStyleSaving = true;
+      aiStyleSelect.disabled = true;
+      conversationModeButton.disabled = true;
 
-      if (currentUser) {
-        try {
+      try {
+        if (currentUser) {
           const response = await fetch("/api/account/ai-preferences", {
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ aiStyle })
+            body: JSON.stringify({ aiStyle: requested })
           });
           const data = await readJson(response);
+          if ((currentUser?.id || null) !== requestUserId) return false;
           if (!response.ok) throw new Error(data.error || "Could not save AI style.");
           aiStyle = normalizeAiStyle(data.preferences?.aiStyle);
-          saveAiStyleLocal();
-          renderAiStyle();
-        } catch (error) {
-          aiStyle = previous;
-          saveAiStyleLocal();
-          renderAiStyle();
-          showToast(error.message || "Could not save AI style.");
-          return;
+        } else {
+          aiStyle = requested;
         }
+        saveAiStyleLocal();
+        renderAiStyle();
+        showToast(`${aiStyleLabel(aiStyle)} mode is active.`);
+        return true;
+      } catch (error) {
+        renderAiStyle();
+        showToast(error.message || "Could not save AI style.");
+        return false;
+      } finally {
+        aiStyleSaving = false;
+        aiStyleSelect.disabled = false;
+        conversationModeButton.disabled = false;
       }
+    }
 
-      showToast(`${aiStyleLabel(aiStyle)} style is active.`);
+    async function handleConversationModeClick() {
+      if (aiStyleSaving || chatRequestPending) return;
+      aiStyleSelect.value = aiStyle === "listener" ? "balanced" : "listener";
+      if (!(await handleAiStyleChange())) return;
+      if (aiStyle === "listener") {
+        setProductMode("standard");
+        setDepthStyle("casual");
+        renderAiStyle();
+      }
+      input.focus();
     }
 
     function normalizeHistory(items) {
@@ -2932,6 +2997,10 @@
 
     async function sendMessage() {
       if (chatRequestPending) return;
+      if (aiStyleSaving) {
+        showToast("Your conversation setting is still saving.");
+        return;
+      }
       if (serviceWriteBlocked) {
         showToast(serviceWriteBlockMessage);
         return;
@@ -5224,6 +5293,7 @@
     );
     goDeeperButton.addEventListener("click", goDeeper);
     aiStyleSelect.addEventListener("change", handleAiStyleChange);
+    conversationModeButton.addEventListener("click", handleConversationModeClick);
 
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {

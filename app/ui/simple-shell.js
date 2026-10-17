@@ -312,7 +312,7 @@ const SIMPLE_SHELL_SCRIPT = `<script id="${SIMPLE_SHELL_SCRIPT_ID}">
     const style = document.getElementById("aiStyleSelect");
     const productName = product ? titleCase(product.dataset.productMode || product.textContent) : "Standard";
     const depthName = depth ? titleCase(depth.dataset.depthStyle || depth.textContent) : "Casual";
-    const styleName = style ? titleCase(style.value) : "Balanced";
+    const styleName = style ? titleCase(style.selectedOptions?.[0]?.textContent || style.value) : "Balanced";
     return productName + " • " + depthName + " • " + styleName;
   }
 
@@ -558,6 +558,7 @@ const SIMPLE_SHELL_SCRIPT = `<script id="${SIMPLE_SHELL_SCRIPT_ID}">
     });
     const styleSelect = document.getElementById("aiStyleSelect");
     if (styleSelect) styleSelect.addEventListener("change", syncSummaries);
+    window.addEventListener("unbound:ai-style-changed", syncSummaries);
   }
 
   function enhanceMobileMenu() {

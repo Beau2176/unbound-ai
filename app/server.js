@@ -79,6 +79,7 @@ const {
 const {
   normalizeAiStyle,
   getAiStylePrompt,
+  getAiStyleDepthPrompt,
   listAiStyles
 } = require("./preferences/ai-style");
 const {
@@ -6969,8 +6970,11 @@ app.post("/api/chat", chatRateLimit, researchRateLimit, async (req, res) => {
     const history = persistentChat
       ? persistentChat.history
       : cleanHistory(req.body.history).slice(-20);
-    const depthInstructions =
-      depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT;
+    const depthInstructions = getAiStyleDepthPrompt(
+      aiStyle,
+      depthStyle,
+      depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT
+    );
     const modeInstructions =
       productMode === "research"
         ? RESEARCH_MODE_PROMPT
@@ -7159,8 +7163,11 @@ app.post("/api/chat/stream", chatRateLimit, async (req, res) => {
     const history = persistentChat
       ? persistentChat.history
       : cleanHistory(req.body.history).slice(-20);
-    const depthInstructions =
-      depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT;
+    const depthInstructions = getAiStyleDepthPrompt(
+      aiStyle,
+      depthStyle,
+      depthStyle === "work" ? WORK_DEPTH_PROMPT : CASUAL_DEPTH_PROMPT
+    );
     const modeInstructions =
       productMode === "creative"
         ? CREATIVE_MODE_PROMPT

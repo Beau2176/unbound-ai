@@ -468,7 +468,7 @@ const MOBILE_LAYOUT_SCRIPT = `<script id="${MOBILE_LAYOUT_SCRIPT_ID}">
     const style = document.getElementById("aiStyleSelect");
     const productName = product ? titleCase(product.dataset.productMode || product.textContent) : "Standard";
     const depthName = depth ? titleCase(depth.dataset.depthStyle || depth.textContent) : "Casual";
-    const styleName = style ? titleCase(style.value) : "Balanced";
+    const styleName = style ? titleCase(style.selectedOptions?.[0]?.textContent || style.value) : "Balanced";
     summary.textContent = "Current: " + productName + " • " + depthName + " • " + styleName;
   }
 
@@ -640,6 +640,7 @@ const MOBILE_LAYOUT_SCRIPT = `<script id="${MOBILE_LAYOUT_SCRIPT_ID}">
 
     const styleSelect = document.getElementById("aiStyleSelect");
     if (styleSelect) styleSelect.addEventListener("change", syncModeSummary);
+    window.addEventListener("unbound:ai-style-changed", syncModeSummary);
 
     window.addEventListener("resize", setMenuTop, { passive: true });
     syncModeSummary();
