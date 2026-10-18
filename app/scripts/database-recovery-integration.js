@@ -6,6 +6,7 @@ const path = require("node:path");
 const net = require("node:net");
 const { spawn } = require("node:child_process");
 const { Client } = require("pg");
+const { verifyAccountPrivacy } = require("./account-privacy-integration");
 
 // Real PostgreSQL integration test. Never accepts an existing target database.
 // Only synthetic data and randomly named databases on a loopback test server.
@@ -225,6 +226,12 @@ async function main() {
     assert.equal(recovered.messages[0].content, "Synthetic recovered answer");
     const unauthorized = await fetch(`${app.origin}/api/conversations/${conversationId}`, { signal: AbortSignal.timeout(10000) });
     assert.equal(unauthorized.status, 401, "Recovered history must remain private");
+    client = await connect(dbUrl(names[1]));
+    await verifyAccountPrivacy({ origin: app.origin, client, userId, credentials, cookie, conversationId });
+    await client.end(); client = null;
+    client = await connect(dbUrl(names[0]));
+    assert.deepEqual(await snapshot(client), before, "Privacy tests on the restored copy must not modify the source database");
+    await client.end(); client = null;
     console.log(`PASS real database recovery: damaged archive rejection, ${Object.keys(before).length - 1} tables, sequence state, integrated startup, account login and private history.`);
   } finally {
     if (app) await app.stop();

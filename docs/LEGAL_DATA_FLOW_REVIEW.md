@@ -46,6 +46,8 @@ Segpay is the production-target commercial billing provider because UNBOUND's pl
 
 Yoti AVS is the production-target hard age-verification provider. The approved production template determines which age-assurance methods users may choose and therefore what evidence Yoti/subprocessors may process. UNBOUND is designed to receive only the age-check outcome plus limited session metadata, not the underlying raw evidence. Before publication, confirm the approved 18+ template, non-biometric alternative, launch jurisdictions, retention/re-verification period, provider privacy disclosures, and any biometric/sensitive-data consent language required for the methods actually offered.
 
+See [the account-data review](ACCOUNT_DATA_REVIEW.md) for the implemented export/deletion boundaries, isolated verification, and the draft request-handling process.
+
 ## UNBOUND-controlled records that still need a final retention schedule
 
 The final Privacy Notice and internal retention policy should assign reviewed retention periods and deletion/exception rules to at least:
@@ -65,7 +67,7 @@ The final Privacy Notice and internal retention policy should assign reviewed re
 
 ## Launch review questions still intentionally unresolved
 
-1. What legal entity operates UNBOUND AI, from what business address, and what is the support/privacy/legal contact?
+1. The operator is UNBOUND FORGEWORKS LLC and the existing support/privacy/legal contact is unboundai111710@gmail.com. What mailing address and any additional public contact details should appear in the final policies?
 2. Which U.S. states/countries are in the initial launch, and which are intentionally excluded pending review?
 3. The intended initial paid plans are Premium $49.99, Ultra $129.99, and Unlimited $299.99 per month; Max $199.99 remains disabled. What approved renewal, refund/cancellation, tax, and trial terms will apply to each enabled plan?
 4. Which adult-content categories/features are enabled at launch and which remain prohibited?
