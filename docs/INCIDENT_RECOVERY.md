@@ -52,7 +52,7 @@ The script:
 
 - creates a PostgreSQL custom-format dump;
 - avoids embedding credentials in filenames or console output;
-- validates the dump with `pg_restore --list`;
+- validates the catalog with `pg_restore --list` and reads all included data with `pg_restore --file=/dev/null`;
 - creates a SHA-256 checksum;
 - writes files with a restrictive process umask;
 - removes matching local backup files older than the configured retention period.
@@ -78,13 +78,16 @@ directory on a filesystem supporting hard links.
 
 Run `npm run backup-check` from `app` for isolated script regression tests. The
 tests substitute PostgreSQL commands and exercise concurrent runs, private file
-permissions, actual SHA-256 verification, failed dump/list/checksum commands,
+permissions, actual SHA-256 verification, failed dump/catalog/full-data-read/checksum commands,
 empty dumps, invalid configuration, and retention boundaries. Production CI
 includes this check. These tests do not connect to production or replace a real
 restore drill, durable storage configuration, or operational readiness evidence.
 
-Archive listing checks inspect the archive table of contents; they do not test
-restoring all data. See the official [PostgreSQL pg_restore documentation](https://www.postgresql.org/docs/current/app-pgrestore.html).
+A table-of-contents listing alone can succeed on an archive with truncated data.
+The script additionally runs `pg_restore --file=/dev/null` without `--dbname` to
+read and decompress all included data, discarding the generated SQL. This does
+not execute the SQL or prove database-level constraints, permissions, application
+startup, or login. See the official [PostgreSQL pg_restore documentation](https://www.postgresql.org/docs/18/app-pgrestore.html).
 
 A local dump is **not** a durable backup until it has been copied to storage that survives loss of the database host and application host.
 
@@ -95,7 +98,9 @@ Production CI also starts isolated PostgreSQL 16 and 18 services and runs
 application (`start.js`) against a new database, registers a synthetic account,
 and seeds conversation, subscription, consent, usage and audit records. It stops
 the application, runs the repository backup script, verifies the checksum,
-restores the dump with `--exit-on-error --single-transaction`, and compares every
+proves a truncated copy with a readable catalog is rejected by the real backup
+script before publication or retention cleanup, restores the original dump with
+`--exit-on-error --single-transaction`, and compares every
 public table's row count and content digest plus every sequence's state. It then
 starts the app against the restored database, signs in, loads recovered history,
 and confirms anonymous access to that history is denied.
@@ -119,13 +124,15 @@ version verified on 2026-09-13; each job installs matching client tools.
 
 ## Verify a backup before depending on it
 
-At minimum:
+First verify the adjacent `.sha256` file from within the backup directory using
+`sha256sum -c <archive-name>.dump.sha256` (or `shasum -a 256 -c`), then:
 
 ```bash
 pg_restore --list /path/to/unbound-ai-YYYYMMDDTHHMMSSZ.dump >/dev/null
+pg_restore --file=/dev/null /path/to/unbound-ai-YYYYMMDDTHHMMSSZ.dump
 ```
 
-Then verify its checksum using the adjacent `.sha256` file.
+Reject a checksum mismatch, a failed catalog, or a failed full read. None of these commands connects to a database.
 
 For launch readiness, also perform a restore drill into an empty disposable PostgreSQL database. Do not perform a destructive restore into the live production database.
 
@@ -137,6 +144,8 @@ pg_restore \
   --dbname="$TARGET_DATABASE_URL" \
   --no-owner \
   --no-privileges \
+  --exit-on-error \
+  --single-transaction \
   --verbose \
   /path/to/unbound-ai-YYYYMMDDTHHMMSSZ.dump
 ```

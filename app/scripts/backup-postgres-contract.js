@@ -22,7 +22,10 @@ done
 printf 'test archive content' > "$target"
 if [[ "\${FAIL_DUMP:-0}" == 1 ]]; then exit 11; fi
 if [[ "\${EMPTY_DUMP:-0}" == 1 ]]; then : > "$target"; fi`);
-executable("pg_restore", 'if [[ "${FAIL_RESTORE:-0}" == 1 ]]; then exit 12; fi');
+executable("pg_restore", `
+if [[ "\${FAIL_RESTORE:-0}" == 1 ]]; then exit 12; fi
+if [[ "$1" != --list && "\${FAIL_ARCHIVE_DATA:-0}" == 1 ]]; then exit 14; fi
+if [[ "$1" != --list && "$*" != *--file=/dev/null* ]]; then exit 15; fi`);
 const script = path.join(__dirname, "backup-postgres.sh");
 const baseEnv = {
   ...process.env,
@@ -63,7 +66,7 @@ function oldFile(relative) {
     assert.equal(run({ BACKUP_DATABASE_URL: "", DATABASE_URL: "" }).status, 2);
     assert.deepEqual(entries(), []);
 
-    for (const failure of ["FAIL_DUMP", "FAIL_RESTORE", "EMPTY_DUMP"]) {
+    for (const failure of ["FAIL_DUMP", "FAIL_RESTORE", "FAIL_ARCHIVE_DATA", "EMPTY_DUMP"]) {
       assert.notEqual(run({ [failure]: "1" }).status, 0);
       assert.deepEqual(entries(), [], "Failed backups must leave no published or staging files");
     }
@@ -94,7 +97,11 @@ function oldFile(relative) {
       oldFile("nested/unbound-ai-20000101T000000Z.dump"),
       oldFile("unbound-ai-20000101T000000Z.dump.partial")
     ];
-    assert.notEqual(run({ FAIL_DUMP: "1" }).status, 0);
+    const beforeFailure = entries();
+    for (const failure of ["FAIL_DUMP", "FAIL_ARCHIVE_DATA"]) {
+      assert.notEqual(run({ [failure]: "1" }).status, 0);
+      assert.deepEqual(entries(), beforeFailure, "Invalid archive data must not publish or prune backups");
+    }
     assert(fs.existsSync(legacy), "Failure must not prune existing backups");
     const result = run();
     assert.equal(result.status, 0, result.stderr);
@@ -102,7 +109,7 @@ function oldFile(relative) {
     for (const name of [legacy, legacyHash, modern]) assert(!fs.existsSync(name));
     for (const name of keep) assert(fs.existsSync(name));
     assert(!entries().some(name => name.startsWith(".unbound-backup.")));
-    console.log("Backup contracts passed: concurrency, permissions, checksums, failures, input validation and bounded retention.");
+    console.log("Backup contracts passed: concurrency, permissions, checksums, full archive-read failures, input validation and bounded retention.");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

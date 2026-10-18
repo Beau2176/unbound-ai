@@ -18,6 +18,33 @@ Connected Render inspection showed:
 
 These facts are a planning baseline, not launch approval. Do not set the production-infrastructure readiness attestations while the services remain in this state.
 
+## Current no-spend handoff — October 17 in America/Denver
+
+The full site is running on existing Free Render application/browser-worker
+services with both `/healthz` paths configured and on the existing Neon PostgreSQL
+18 database. The expired Render database is no longer the active store. A manual
+snapshot and isolated data comparison are complete; recurring backup protection
+and app-level validation of the actual restored copy remain open.
+
+The engineering gate reports four passing checks and seven blockers. Owner/business
+verification has zero of five recorded approvals; that is a record of missing
+launch evidence, not a statement that applications were denied. Readiness flags
+remain unchanged.
+
+| Remaining dependency | Concrete work prepared | Next real input/action | Cost boundary |
+| --- | --- | --- | --- |
+| Infrastructure | Both real health checks, deployment/rollback identifiers, quiet-traffic baseline | Choose and verify always-on production compute; size from representative load evidence | A hosting upgrade requires fresh spending approval |
+| Recovery | Snapshot/copy comparisons, complete archive-read validation, isolated PostgreSQL 16/18 CI | Establish an actual recurring backup destination/schedule and finish the actual-copy startup/login drill | Existing storage may allow more free preparation; no backup purchase authorized |
+| SES | Provider adapter, token/rate-limit/failure contracts, sender/DNS/test checklist | Full-site AWS region/sender/least-privilege credentials, actual production-access evidence, delivery test | Sender/DNS preparation is distinct from potentially billable delivery; no sends under this budget |
+| Segpay / bank | Exact three-plan checkout and lifecycle test matrix; truthful business packet | Provider approval, approved packages/credentials, verified settlement account | External approval is distinct from purchase; no charges, funding, or paid contracts authorized |
+| Yoti | Over-18, failure, expiry, signature, duplicate/outage cases and minimized evidence design | Approved use case/jurisdictions/template, credentials and provider test path | No paid checks or contract activation authorized |
+| Legal / consent | Drafts and data-flow map include Render and Neon separately; versioned consent controls | Actual operator/contact/jurisdiction/retention decisions and qualified review of the final configuration | Draft preparation stays free; review/publication approval remains outstanding |
+| Private scanning | Client/outage/EICAR contracts and private deployment plan | Real private scanner and operational fail-closed test | No paid private service authorized |
+
+The separate Founders Beta setup does not establish full-site email, billing,
+banking, age-verification, or legal approval. No application packet has been sent,
+no provider has been activated, and no purchase is authorized by this handoff.
+
 ## One-command preflight
 
 From `app/` run:
@@ -40,12 +67,12 @@ The command is read-only. It evaluates the existing readiness modules for infras
 
 Complete now:
 
-- record the current Render service/database IDs, region, plan, branch, deployment behavior, and health endpoints;
+- record the current Render service and Neon database IDs, regions, plans, branch, deployment behavior, and health endpoints;
 - measure current CPU, memory, request latency, error rate, and database connection behavior so the eventual paid sizes are based on evidence;
-- define the intended paid web/database target, `/healthz` platform health-check path, cutover sequence, rollback sequence, and post-cutover verification list;
+- define the intended always-on web and protected database target, `/healthz` platform health-check path, cutover sequence, rollback sequence, and post-cutover verification list;
 - keep `UNBOUND_INFRA_*` production attestations false until the paid always-on compute, durable database, and real platform health check exist.
 
-Stop point requiring spend: moving the web service/database to paid production plans.
+Stop point requiring spend: moving web compute to an approved always-on plan or purchasing any additional database/recovery capacity. Existing Neon durability and its actual recovery limitations must be evaluated separately.
 
 ### 2. Backup / restore — free preparation now
 
@@ -77,7 +104,7 @@ Stop point requiring external approval and possibly funding: opening and validat
 Complete now:
 
 - prepare the truthful underwriting packet and product description;
-- prepare the recurring TOP package requirements and final pricing decision inputs;
+- prepare the three initial recurring launch-package requirements and final pricing decision inputs;
 - prepare the exact signed hosted-pay-page test matrix for `amount`, `REF1`, and `REF2`;
 - prepare authenticated billing postback cases for sale, rebill, decline, cancellation, disable/expiry, reactivation, refund, chargeback, retry/idempotency, and portal handoff;
 - keep all Segpay verification attestations false until Merchant Services confirms the real production setup.

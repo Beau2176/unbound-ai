@@ -52,11 +52,11 @@ Do not begin the final production rehearsal unless:
 6. Test resend, expired token, invalid token, already-used token, and provider failure.
 7. Confirm logs/public API output never expose raw verification tokens, complete verification URLs, AWS secrets, or provider message IDs.
 
-## Phase 4 — TOP purchase and billing lifecycle
+## Phase 4 — three-plan purchase and billing lifecycle
 
-1. From a FREE account, start TOP checkout.
+1. Use a separate disposable FREE account for each launch plan: Premium $49.99/month, Ultra $129.99/month, and Unlimited $299.99/month. Start only the provider-approved test checkout for that plan; keep Max disabled.
 2. Confirm the checkout is HTTPS, hosted by Segpay, and contains the signed production amount plus opaque `REF1`/`REF2` references rather than account email/user ID.
-3. Complete an approved first payment and confirm TOP entitlement becomes active only after the authenticated provider lifecycle event.
+3. Complete an approved first payment and confirm only the purchased plan entitlement becomes active only after the authenticated provider lifecycle event.
 4. Confirm duplicate/retried provider events are idempotent.
 5. Exercise declined initial payment and declined rebill.
 6. Exercise cancellation and confirm access follows the intended end-of-period behavior.
@@ -84,7 +84,7 @@ Do not begin the final production rehearsal unless:
 
 ## Phase 7 — files, images, and malware defense
 
-1. Upload an accepted clean file for TOP file analysis.
+1. Upload an accepted clean file for Premium-or-higher file analysis.
 2. Confirm static filename/type/signature/active-content checks run before provider use.
 3. Confirm private ClamAV scans the bytes before provider forwarding.
 4. Test the harmless EICAR antivirus test file and verify the upload is blocked before the AI provider sees it.
@@ -99,7 +99,7 @@ Do not begin the final production rehearsal unless:
 1. Confirm Account Access shows the correct current non-draft Terms/Privacy versions.
 2. Verify a new/current account must accept the exact enforced versions where required.
 3. Confirm legal acceptance cannot be recorded for a draft version.
-4. Verify email verification state, billing state, age-verification state, and TOP entitlement are represented truthfully.
+4. Verify email verification state, billing state, age-verification state, and the actual purchased plan entitlement are represented truthfully.
 5. Open the customer billing portal.
 6. Complete the approved subscription cancellation flow and verify lifecycle state after the provider callback.
 7. Request account data export and inspect for intended content only.
@@ -152,3 +152,13 @@ Treat these as no-go/rollback conditions until resolved:
 - the production database is expiring/non-durable;
 - critical security/regression CI fails;
 - service health/readiness is materially unstable under expected launch load.
+
+## Current evidence must remain current
+
+A saved PASS does not override a currently blocked prerequisite. The summary keeps
+the historical result and evidence but shows that step as blocked while its
+current dependency is blocked. Finalization requires every required step to be
+PASS and the full current preflight to be ready. The checkout catalog uses current
+plan prices and includes Premium, Ultra, and Unlimited; Max remains outside the
+initial launch. Existing runs must complete the new Unlimited check before they
+can be finalized.

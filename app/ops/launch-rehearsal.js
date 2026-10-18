@@ -1,6 +1,7 @@
 "use strict";
 
 const { buildNoSpendLaunchPreflight } = require("../scripts/no-spend-launch-preflight");
+const { getPlanDefinition } = require("../access/entitlements");
 
 const REHEARSAL_STATUSES = Object.freeze(["not_run", "pass", "fail", "blocked"]);
 const REHEARSAL_ENVIRONMENTS = Object.freeze(["local", "staging", "production"]);
@@ -40,7 +41,7 @@ const REHEARSAL_STEPS = Object.freeze([
   },
   {
     key: "premium_checkout",
-    label: "Premium $59.99 checkout",
+    label: `Premium $${getPlanDefinition("premium").priceMonthlyUsd.toFixed(2)} checkout`,
     description: "Verify a real Premium purchase, webhook lifecycle, entitlement activation, settlement path, and account billing state.",
     dependencies: ["segpay", "business_bank"],
     required: true,
@@ -48,8 +49,16 @@ const REHEARSAL_STEPS = Object.freeze([
   },
   {
     key: "ultra_checkout",
-    label: "Ultra $114.99 checkout",
+    label: `Ultra $${getPlanDefinition("ultra").priceMonthlyUsd.toFixed(2)} checkout`,
     description: "Verify a real Ultra purchase, webhook lifecycle, entitlement activation, settlement path, and no accidental Premium/Ultra crossover.",
+    dependencies: ["segpay", "business_bank"],
+    required: true,
+    mayUsePaidProvider: true
+  },
+  {
+    key: "unlimited_checkout",
+    label: `Unlimited $${getPlanDefinition("unlimited").priceMonthlyUsd.toFixed(2)} checkout`,
+    description: "Verify the initial-launch Unlimited purchase, authenticated lifecycle updates, entitlement activation, and separation from the disabled Max plan.",
     dependencies: ["segpay", "business_bank"],
     required: true,
     mayUsePaidProvider: true
@@ -226,7 +235,7 @@ function buildRehearsalRunSummary({ catalogState, results = [] } = {}) {
     const stored = resultMap.get(step.key) || null;
     const storedStatus = normalizeRehearsalStatus(stored?.status) || "not_run";
     const effectiveStatus =
-      storedStatus === "not_run" && step.dependencyReady !== true ? "blocked" : storedStatus;
+      ["not_run", "pass"].includes(storedStatus) && step.dependencyReady !== true ? "blocked" : storedStatus;
     return {
       ...step,
       status: effectiveStatus,
@@ -244,7 +253,8 @@ function buildRehearsalRunSummary({ catalogState, results = [] } = {}) {
     notRun: steps.filter((item) => item.status === "not_run").length
   };
   const required = steps.filter((item) => item.required !== false);
-  const eligibleToFinalize = required.length > 0 && required.every((item) => item.status === "pass");
+  const eligibleToFinalize = catalogState?.externalPrerequisitesReady === true &&
+    required.length > 0 && required.every((item) => item.status === "pass");
   return {
     steps,
     counts,
