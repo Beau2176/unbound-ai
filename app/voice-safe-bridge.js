@@ -1,27 +1,16 @@
 (() => {
   'use strict';
 
-  const VERSION = 'unbound-voice-safe-bridge-v200';
+  const VERSION = 'unbound-voice-safe-bridge-v201';
   const LEGACY_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead';
   const SAFE_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead.safe.v2';
-  const CLOUD_SPEECH_URL = '/api/voice/natural-speech';
+  const VOICE_STORAGE_KEY = 'unbound.voice.systemVoiceURI';
   const MAX_UTTERANCE_LENGTH = 220;
   const POLL_MS = 450;
   const SETTLE_MS = 650;
-  const CLEAR_VOICE_NAMES = [
-    'Google US English',
-    'Sonia',
-    'Serena',
-    'Libby',
-    'Hazel',
-    'Susan'
-  ];
 
   let speechGeneration = 0;
   let browserSpeaking = false;
-  let cachedVoice = null;
-  let activeAudio = null;
-  let activeAudioUrl = '';
   let autoReadEnabled = false;
   let autoReadSawBusy = false;
   let autoReadLastText = '';
@@ -129,7 +118,7 @@
     const text = cleanSpeechText(value);
     if (!text) return [];
 
-    const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+    const sentences = text.match(/.+?(?:[.!?](?=\s|$)|$)/g) || [text];
     const chunks = [];
     let current = '';
 
@@ -159,59 +148,31 @@
     return chunks;
   }
 
-  function voiceScore(voice) {
-    const name = String(voice?.name || '');
-    const lang = String(voice?.lang || '');
-    let score = 0;
-    if (/^en-US$/i.test(lang)) score += 250;
-    else if (/^en(?:-|$)/i.test(lang)) score += 150;
-    if (/google/i.test(name)) score += 100;
-    if (/natural|neural|enhanced|premium/i.test(name)) score += 80;
-    if (voice?.default) score += 20;
-    return score;
-  }
-
   function resolveVoice() {
-    if (cachedVoice) return cachedVoice;
     if (!('speechSynthesis' in window)) return null;
+    try {
+      const selected = window.__unboundDeviceVoice?.getVoice?.();
+      if (selected) return selected;
+    } catch (_) {}
 
-    const all = window.speechSynthesis.getVoices() || [];
-    const english = all.filter((voice) => /^en(?:-|$)/i.test(String(voice.lang || '')));
-    const voices = (english.length ? english : all)
-      .slice()
-      .sort((a, b) => voiceScore(b) - voiceScore(a));
-
-    for (const preferred of CLEAR_VOICE_NAMES) {
-      const wanted = preferred.toLowerCase();
-      const match = voices.find((voice) => String(voice.name || '').toLowerCase().includes(wanted));
-      if (match) {
-        cachedVoice = match;
-        return cachedVoice;
-      }
-    }
-
-    cachedVoice = voices[0] || null;
-    return cachedVoice;
-  }
-
-  function stopCloudAudio() {
-    if (activeAudio) {
-      try {
-        activeAudio.pause();
-        activeAudio.currentTime = 0;
-      } catch (_) {}
-      activeAudio = null;
-    }
-    if (activeAudioUrl) {
-      try { URL.revokeObjectURL(activeAudioUrl); } catch (_) {}
-      activeAudioUrl = '';
-    }
+    let voices;
+    try { voices = window.speechSynthesis.getVoices() || []; }
+    catch (_) { return null; }
+    const wanted = String(document.getElementById('unboundVoicePreset')?.value || storageGet(VOICE_STORAGE_KEY) || '').trim();
+    const key = (voice) => JSON.stringify([
+      String(voice?.voiceURI || ''), String(voice?.name || ''),
+      String(voice?.lang || ''), Boolean(voice?.localService)
+    ]);
+    return voices.find((voice) => key(voice) === wanted)
+      || voices.find((voice) => String(voice?.voiceURI || '') === wanted)
+      || voices.find((voice) => String(voice?.name || '') === wanted)
+      || voices.find((voice) => voice?.default)
+      || voices[0] || null;
   }
 
   function stopPlayback() {
     speechGeneration += 1;
     browserSpeaking = false;
-    stopCloudAudio();
     if ('speechSynthesis' in window) {
       try { window.speechSynthesis.cancel(); } catch (_) {}
     }
@@ -242,14 +203,19 @@
       const utterance = new window.SpeechSynthesisUtterance(chunks[index]);
       if (voice) utterance.voice = voice;
       utterance.lang = voice?.lang || 'en-US';
+      if (voice?.voiceURI) {
+        try { utterance.voiceURI = voice.voiceURI; } catch (_) {}
+      }
       utterance.rate = 1;
       utterance.pitch = 1;
       utterance.volume = 1;
       utterance.onend = () => {
+        if (token !== speechGeneration) return;
         index += 1;
         window.setTimeout(next, 35);
       };
       utterance.onerror = () => {
+        if (token !== speechGeneration) return;
         browserSpeaking = false;
       };
 
@@ -261,56 +227,9 @@
     return true;
   }
 
-  function selectedPreset() {
-    return String(document.getElementById('unboundVoicePreset')?.value || 'clear')
-      .trim()
-      .toLowerCase() || 'clear';
-  }
-
   function setNote(message) {
     const note = document.querySelector('.unbound-voice-picker-note');
     if (note && note.textContent !== message) note.textContent = message;
-  }
-
-  async function speakCloud(text, preset) {
-    const cleaned = cleanSpeechText(text).slice(0, 4096);
-    if (!cleaned) return false;
-
-    stopPlayback();
-    const token = speechGeneration;
-
-    try {
-      const response = await window.fetch(CLOUD_SPEECH_URL, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: cleaned, preset })
-      });
-
-      if (token !== speechGeneration) return false;
-      if (!response.ok) throw new Error('cloud voice unavailable');
-
-      const blob = await response.blob();
-      if (token !== speechGeneration || !blob?.size) return false;
-
-      activeAudioUrl = URL.createObjectURL(blob);
-      activeAudio = new Audio(activeAudioUrl);
-      activeAudio.onended = stopCloudAudio;
-      activeAudio.onerror = stopCloudAudio;
-      await activeAudio.play();
-      return true;
-    } catch (_) {
-      if (token !== speechGeneration) return false;
-      setNote('Cloud voice was unavailable, so UNBOUND is using Voice 2 — Clear.');
-      return speakBrowser(cleaned);
-    }
-  }
-
-  function speakSelected(text) {
-    const preset = selectedPreset();
-    if (preset === 'clear') return speakBrowser(text);
-    void speakCloud(text, preset);
-    return true;
   }
 
   function closeVoiceMenu() {
@@ -448,7 +367,7 @@
     }
 
     setNote('Reading the answer text only.');
-    speakSelected(text);
+    speakBrowser(text);
   }
 
   function boot() {
@@ -457,13 +376,6 @@
     migrateAutoReadPreference();
     autoReadLastText = getLastAssistantText();
     document.addEventListener('click', handleCapturedClick, true);
-
-    if ('speechSynthesis' in window && typeof window.speechSynthesis.addEventListener === 'function') {
-      window.speechSynthesis.addEventListener('voiceschanged', () => {
-        cachedVoice = null;
-        resolveVoice();
-      });
-    }
 
     pollTimer = window.setInterval(pollAutoRead, POLL_MS);
     window.setTimeout(syncAutoReadButton, 250);

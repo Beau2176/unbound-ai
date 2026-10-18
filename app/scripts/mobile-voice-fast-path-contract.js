@@ -46,12 +46,12 @@ const marker = 'app.use("/api", createMaintenanceMiddleware());';
 const minimalServer = `const app = { use() {}, get() {} };\n${marker}\n`;
 const integrated = integrateNativeShellServerSource(minimalServer);
 assert(integrated.includes('app.get("/voice-mobile-fast-path.js"'), 'server must expose the mobile voice runtime');
-assert(integrated.includes('voice-mobile-fast-path.js?v=3'), 'homepage must load the mobile voice runtime');
+assert(integrated.includes('voice-mobile-fast-path.js?v=4'), 'homepage must load the mobile voice runtime');
 assert(integrated.includes('injectVoiceCanonicalText'), 'homepage integration must inject canonical speech text');
 assert(integrated.includes('/Android|iPhone|iPad|iPod/i.test(userAgent)'), 'mobile user agents must skip the desktop safe bridge');
 assert(integrated.includes('__unboundSafeVoiceBridgeMobileSkipped'), 'mobile safe-bridge skip must be explicit and diagnosable');
 assert(
-  integrated.indexOf('voice-mobile-fast-path.js?v=3') < integrated.indexOf('voice-safe-bridge.js?v=200'),
+  integrated.indexOf('voice-mobile-fast-path.js?v=4') < integrated.indexOf('voice-safe-bridge.js?v=201'),
   'mobile fast path must initialize before the desktop safe bridge request'
 );
 assert.strictEqual(integrateNativeShellServerSource(integrated), integrated, 'native shell integration must remain idempotent');

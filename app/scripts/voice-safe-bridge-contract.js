@@ -15,7 +15,7 @@ function assert(condition, message) {
 
 new vm.Script(bridge, { filename: 'voice-safe-bridge.js' });
 
-assert(bridge.includes('unbound-voice-safe-bridge-v200'), 'safe voice bridge version marker missing');
+assert(bridge.includes('unbound-voice-safe-bridge-v201'), 'safe voice bridge version marker missing');
 assert(!bridge.includes('new MutationObserver'), 'safe voice bridge must not use MutationObserver');
 assert(!bridge.includes('.observe(document.body'), 'safe voice bridge must not observe the whole page');
 assert(bridge.includes('window.setInterval(pollAutoRead, POLL_MS)'), 'safe auto-read polling is missing');
@@ -25,13 +25,15 @@ assert(bridge.includes("'.inline-citation'"), 'inline-citation stripping is miss
 assert(bridge.includes("'.typing'"), 'typing-indicator stripping is missing');
 assert(bridge.includes("storageSet(LEGACY_AUTO_READ_STORAGE_KEY, 'false')"), 'legacy auto-reader must be disabled');
 assert(bridge.includes("document.addEventListener('click', handleCapturedClick, true)"), 'manual voice capture handler is missing');
-assert(bridge.includes('/api/voice/natural-speech'), 'cloud voice path is missing');
+assert(!bridge.includes('/api/voice/natural-speech'), 'device playback must not call cloud speech');
+assert(bridge.includes('unbound.voice.systemVoiceURI'), 'device playback must use the saved voice selection');
+assert(bridge.includes('__unboundDeviceVoice?.getVoice'), 'device playback must honor the current voice picker');
 assert(bridge.includes('/api/account/access'), 'voice access check is missing');
 
 assert(integration.includes('app.get("/voice-safe-bridge.js"'), 'safe voice bridge route is missing');
-assert(integration.includes('voice-safe-bridge.js?v=200'), 'safe voice bridge script injection is missing');
+assert(integration.includes('voice-safe-bridge.js?v=201'), 'safe voice bridge script injection is missing');
 
-const safeIndex = integration.indexOf('voice-safe-bridge.js?v=200');
+const safeIndex = integration.indexOf('voice-safe-bridge.js?v=201');
 const legacyIndex = integration.indexOf('voice-presets.js?v=109');
 assert(safeIndex >= 0 && legacyIndex >= 0 && safeIndex < legacyIndex, 'safe voice bridge must load before legacy voice presets');
 

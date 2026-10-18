@@ -55,6 +55,7 @@ if (manifest) {
   const appRuntimeScripts = [
     'desktop-voice-input.js',
     'native-mobile-bridge.js',
+    'voice-mobile-fast-path.js',
     'voice-presets.js',
     'continuous-voice.js',
     'health-status.js',
@@ -134,6 +135,13 @@ if (manifest) {
     }
     if (!homepage.includes('src="./native-validation-link.js?v=109"')) {
       failures.push('generated homepage is missing the local native validation launcher');
+    }
+    if (!homepage.includes('bubble.dataset.speechText = String(content || "")') ||
+        !homepage.includes('unbound:assistant-stream')) {
+      failures.push('generated homepage must share canonical answer text and streaming events with mobile playback');
+    }
+    if (homepage.indexOf('src="./voice-mobile-fast-path.js?v=') > homepage.indexOf('src="./voice-presets.js?v=')) {
+      failures.push('mobile playback must initialize before the legacy voice picker handlers');
     }
     if (homepage.includes('src="./native-validation.js?v=110"')) {
       failures.push('generated homepage must not run the validation probe runtime continuously');

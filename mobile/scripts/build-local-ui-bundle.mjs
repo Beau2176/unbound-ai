@@ -15,6 +15,7 @@ const wwwDir = resolve(mobileDir, 'www');
 const { injectMobileLayoutStyles } = require(resolve(appDir, 'ui/mobile-layout.js'));
 const { injectSimpleShell } = require(resolve(appDir, 'ui/simple-shell.js'));
 const { injectVoiceListenControl } = require(resolve(appDir, 'ui/voice-listen.js'));
+const { injectVoiceCanonicalText } = require(resolve(appDir, 'ui/voice-canonical-text.js'));
 const { injectInterruptedStreamRecovery } = require(resolve(appDir, 'ui/chat-stream-recovery.js'));
 const { buildAiStyleIndexHtml } = require(resolve(appDir, 'preferences/mode-ui.js'));
 
@@ -34,6 +35,7 @@ const MOBILE_PAGES = [
 const RUNTIME_SCRIPTS = [
   ['desktop-voice-input.js', '121'],
   ['native-mobile-bridge.js', '102'],
+  ['voice-mobile-fast-path.js', '4'],
   ['voice-presets.js', '109'],
   ['continuous-voice.js', '099'],
   ['health-status.js', '121'],
@@ -111,7 +113,8 @@ async function buildHomepage() {
   const mobile = injectMobileLayoutStyles(modes);
   const simple = injectSimpleShell(mobile);
   const voice = injectVoiceListenControl(simple);
-  const recovered = injectInterruptedStreamRecovery(voice);
+  const canonicalVoice = injectVoiceCanonicalText(voice);
+  const recovered = injectInterruptedStreamRecovery(canonicalVoice);
   const transported = injectNativeApiTransport(recovered);
   return injectLocalRuntime(transported);
 }
@@ -183,6 +186,7 @@ const sourceFiles = [
   'ui/mobile-layout.js',
   'ui/simple-shell.js',
   'ui/voice-listen.js',
+  'ui/voice-canonical-text.js',
   'ui/chat-stream-recovery.js',
   ...RUNTIME_SCRIPTS.map(([file]) => file),
   ...PUBLIC_PAGES,
