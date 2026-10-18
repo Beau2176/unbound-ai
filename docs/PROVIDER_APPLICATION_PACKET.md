@@ -14,13 +14,14 @@ This document is a preparation aid for truthful eligibility/onboarding conversat
 | Initial recurring plans | Premium $49.99/month, Ultra $129.99/month, Unlimited $299.99/month; Max remains disabled |
 | SES account evidence | AWS's October 11 approval email confirms production sending access in US East (Ohio), us-east-2; the underlying request described Founders Beta transactional mail |
 | Full-site mail state | Backend sender/credentials and real delivery remain unverified; no sends or new approval attestations enabled in this preparation |
-| Business phone / published mailing address | A current public-facing choice remains unconfirmed; older formation drafts are not automatically copied into public site code |
+| Published mailing address | 251 Villa Vista St, Sterling, CO 80751, United States; owner selected the saved LLC-record address for public use on October 17, 2026 |
+| Business phone | A current public-facing phone remains unconfirmed |
 
 The existing SES approval establishes account/region sending access, not a new
 review of the full platform's actual adults-only use case. Preserve that scope
 when discussing the service with AWS. The case and original messages stay in the
 business inbox; no private account number, support-case identifier, tax ID,
-credential or residential address belongs in this public packet.
+credential or unapproved personal contact detail belongs in this public packet.
 
 ## Standard business description
 

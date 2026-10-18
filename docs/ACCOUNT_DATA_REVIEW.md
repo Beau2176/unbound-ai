@@ -8,9 +8,10 @@ deadlines, or establish legal approval.
 
 UNBOUND AI is operated by UNBOUND FORGEWORKS LLC. The existing business email is
 `unboundai111710@gmail.com`; the draft Terms and Privacy Notice now identify it
-for support/legal/privacy inquiries. The final published mailing address and any
-public business phone still need a current choice. Earlier private formation
-drafts are not copied into public source as a substitute for that decision.
+for support/legal/privacy inquiries. On October 17, 2026, the owner selected the
+mailing address in the saved LLC record for public display: **251 Villa Vista St,
+Sterling, CO 80751, United States**. It is now in both draft policies. A public
+business phone remains optional and unconfirmed.
 
 ## Current product behavior
 

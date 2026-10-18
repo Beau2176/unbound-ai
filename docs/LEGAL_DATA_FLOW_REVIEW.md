@@ -67,7 +67,7 @@ The final Privacy Notice and internal retention policy should assign reviewed re
 
 ## Launch review questions still intentionally unresolved
 
-1. The operator is UNBOUND FORGEWORKS LLC and the existing support/privacy/legal contact is unboundai111710@gmail.com. What mailing address and any additional public contact details should appear in the final policies?
+1. The operator is UNBOUND FORGEWORKS LLC and the existing support/privacy/legal contact is unboundai111710@gmail.com. The owner-selected public mailing address is 251 Villa Vista St, Sterling, CO 80751, United States. Are any additional public contact details needed in the reviewed final policies?
 2. Which U.S. states/countries are in the initial launch, and which are intentionally excluded pending review?
 3. The intended initial paid plans are Premium $49.99, Ultra $129.99, and Unlimited $299.99 per month; Max $199.99 remains disabled. What approved renewal, refund/cancellation, tax, and trial terms will apply to each enabled plan?
 4. Which adult-content categories/features are enabled at launch and which remain prohibited?

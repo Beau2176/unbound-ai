@@ -80,9 +80,10 @@ purchased during this follow-up.
 
 The existing business records and mailbox confirm UNBOUND FORGEWORKS LLC and
 `unboundai111710@gmail.com`. The draft Terms and Privacy Notice now use that
-operator/contact instead of leaving those known fields blank. A current public
-mailing address and any business phone are still a decision to complete; older
-private formation-address fields were not published. Draft status, noindex,
+operator/contact instead of leaving those known fields blank. The owner then
+selected the mailing address in the saved LLC record for public display: 251
+Villa Vista St, Sterling, CO 80751, United States. It is included in both draft
+policies. A public business phone remains unconfirmed. Draft status, noindex,
 legal version identifiers and consent/enforcement settings are unchanged.
 
 The business inbox also contains AWS's October 11 approval for SES production
