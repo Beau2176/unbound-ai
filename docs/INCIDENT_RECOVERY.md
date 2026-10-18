@@ -4,11 +4,13 @@ This runbook defines the minimum recovery procedure for UNBOUND AI production da
 
 ## Current production constraint
 
-A Render Postgres database on the **Free** compute plan does not receive Render-managed logical backups or point-in-time recovery (PITR). A Free database therefore must not be treated as production-protected data storage.
+The full site now uses the existing restored Neon PostgreSQL 18 production database. The old Render Free database expired and is no longer the application's recovery target. Neon is on its Free plan with a six-hour instant-restore window. A manual snapshot was verified through an isolated restore, but no scheduled snapshots are configured. See [the current checkpoint](FULL_SITE_RELEASE_CHECKPOINT_2026-10-17.md) for evidence and limitations.
+
+A six-hour history window and a single manual snapshot do not establish the ongoing production backup policy. Do not infer production protection or set recovery attestations from the existence of the snapshot alone. Scheduled Neon backups require a paid plan; an external logical-backup job also needs an actual durable destination and verified retention.
 
 Before paid/public launch, use at least one of these protections:
 
-1. Upgrade Render Postgres to a paid database plan and enable/verify Render-managed recovery.
+1. Enable and verify the required managed recovery/backup policy on the actual production database provider. For the current Neon database, confirm the purchased plan, history window, schedule, retention, and a successful isolated recovery test. A future move back to Render would require its own verified managed-recovery configuration.
 2. Configure an external backup job that runs `pg_dump`, verifies the dump, and copies it to durable storage outside the database instance.
 
 Best practice for a commercial launch is to use both managed recovery and an external logical backup.

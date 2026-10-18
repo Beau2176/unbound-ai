@@ -6,6 +6,8 @@ The rule is simple: **prepare, verify, document, and test what can be tested saf
 
 ## Verified baseline — September 14, 2026
 
+This section is a historical baseline. For the current Neon database connection, both configured Render health checks, snapshot verification, Conversation deployment, and remaining blockers, see [the October 17 checkpoint](FULL_SITE_RELEASE_CHECKPOINT_2026-10-17.md).
+
 Connected Render inspection showed:
 
 - `unbound-ai-app` is deployed from `main` on Render Free compute in Ohio.
