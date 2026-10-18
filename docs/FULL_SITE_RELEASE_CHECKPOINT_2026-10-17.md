@@ -31,6 +31,8 @@ A passive Free-plan baseline from `2026-10-18T02:13:24.401Z` through `2026-10-18
 
 Signed-in phone screenshots exposed a shared-shell bug: desktop initialization moved Security and the other account buttons into a panel hidden on mobile. Create Account also remained visible after being moved out of its signed-out container. Responsive placement now keeps the original account controls in the phone menu or desktop account panel as appropriate, and Create Account/Log Out explicitly follow account state. The new account-menu regression executes the production placement and account-rendering functions across initialization, repeated breakpoint changes, sign-in, sign-out, and administrator/ordinary-account states. Both reported failures reproduced before the fix and pass afterward.
 
+The password form now appears near the top of Account Security under a named Change password heading, before passkeys, recovery codes, devices, alerts, and activity. Opening Security resets its internal scroll position to the top. Guidance points users who forgot their password to the existing recovery-code reset and states its session/passkey/code revocation effects.
+
 This navigation correction retains the existing password and recovery checks. Changing a password or generating recovery codes still requires the current password. A signed-in passkey user who has forgotten that password does not yet have a passkey-verified password-reset flow. Do not claim that this menu fix resolves that separate recovery limitation. Real signed-in phone acceptance remains to be confirmed after deployment.
 
 ## Remaining release work
