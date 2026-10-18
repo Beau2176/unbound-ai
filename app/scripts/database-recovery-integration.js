@@ -211,7 +211,7 @@ async function main() {
     client = await connect(dbUrl(names[1]));
     assert.deepEqual(await snapshot(client), before, "Restored table contents or sequences differ from the source");
     await client.end(); client = null;
-    app = await startApp(dbUrl(names[1]), env);
+    app = await startApp(dbUrl(names[1]), { ...env, RATE_LIMIT_ACCOUNT_EXPORTS_PER_HOUR: "3" });
     const login = await fetch(`${app.origin}/api/auth/login`, {
       method: "POST", headers: { "Content-Type": "application/json", Origin: app.origin },
       body: JSON.stringify(credentials), signal: AbortSignal.timeout(10000)

@@ -86,6 +86,7 @@ const {
   buildExportFilename,
   buildDataExport
 } = require("./privacy/data-export");
+const { loadFeatureExport } = require("./privacy/feature-export");
 const {
   publicDeletionBlock
 } = require("./privacy/account-deletion");
@@ -2301,6 +2302,10 @@ const recoveryRateLimit = rateLimitMiddleware({
   policy: RATE_LIMIT_POLICY.recovery,
   subjectResolver: emailRateSubject
 });
+const accountExportRateLimit = rateLimitMiddleware({
+  policy: RATE_LIMIT_POLICY.accountExports,
+  subjectResolver: accountRateSubject
+});
 const securityActionRateLimit = rateLimitMiddleware({
   policy: RATE_LIMIT_POLICY.securityActions,
   subjectResolver: accountRateSubject
@@ -4165,6 +4170,7 @@ app.get(
   requireDatabase,
   requireSignedIn,
   requireCapability("data_export"),
+  accountExportRateLimit,
   async (req, res) => {
     try {
       const userId = req.user.id;
@@ -4179,7 +4185,8 @@ app.get(
         passkeyResult,
         recoveryResult,
         usageResult,
-        overrideResult
+        overrideResult,
+        features
       ] = await Promise.all([
         pool.query(
           `SELECT id, email, display_name, role, plan_tier,
@@ -4267,7 +4274,8 @@ app.get(
            WHERE user_id = $1
            ORDER BY entitlement_key`,
           [userId]
-        )
+        ),
+        loadFeatureExport(pool, userId)
       ]);
 
       const accountRow = accountResult.rows[0];
@@ -4332,6 +4340,7 @@ app.get(
         preferences,
         access,
         conversations: Array.from(conversationMap.values()),
+        features,
         devices,
         securityEvents: securityEventResult.rows.map(publicSecurityEvent),
         securityAlerts: securityAlertResult.rows.map(publicSecurityAlert),

@@ -100,7 +100,26 @@ exclusions, password/origin/subscription protection, forced late-failure rollbac
 linked-record cleanup and old-session denial. It checks that the source database
 is unchanged. These tests do not mark the complete live account/privacy rehearsal
 PASS. The [account-data review](ACCOUNT_DATA_REVIEW.md) records current behavior,
-remaining feature-export/retention questions and a concrete draft request process.
+remaining retention/scope questions and a concrete draft request process.
+
+## Saved-feature export follow-up
+
+The core account/history download omitted saved feature work. Export version 2
+adds 18 account-scoped sections covering Memory, tasks/events, connected-app
+metadata, projects, project memories/settings, vault metadata, coding metadata,
+agent runs/results, teams/schedules, selected Future Core snapshots, creator
+skills/installations, activity metadata and community-learning settings.
+Explicit column and nested-field allowlists exclude credentials, raw provider
+payloads and worker claims. Vault metadata does not include file bytes or
+external provider history. The default download limit is six attempts per
+account per hour; a query failure produces an error instead of a partial file.
+
+The isolated PostgreSQL 16/18 recovery tests now seed both synthetic accounts
+across all 18 sections and check saved output, disabled records, exact large
+IDs/counts, nested secret exclusion, failure/repair, independent download quotas
+and cascading cleanup. No model, mail, voice, payment or age-provider request is
+required. This expands software verification without asserting that a statutory
+rights workflow or the live launch rehearsal is complete.
 
 ## Remaining release work
 
