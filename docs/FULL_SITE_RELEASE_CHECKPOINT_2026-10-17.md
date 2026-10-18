@@ -76,6 +76,31 @@ backup, rehearsal-route, and legal-draft checks passed. No production data was
 restored, provider call made, commercial readiness flag changed, or paid service
 purchased during this follow-up.
 
+## Business/contact and account-privacy preparation
+
+The existing business records and mailbox confirm UNBOUND FORGEWORKS LLC and
+`unboundai111710@gmail.com`. The draft Terms and Privacy Notice now use that
+operator/contact instead of leaving those known fields blank. A current public
+mailing address and any business phone are still a decision to complete; older
+private formation-address fields were not published. Draft status, noindex,
+legal version identifiers and consent/enforcement settings are unchanged.
+
+The business inbox also contains AWS's October 11 approval for SES production
+sending in Ohio (`us-east-2`). The original request and follow-up specifically
+described Founders Beta transactional mail. The provider packet now records that
+existing account evidence and its scope. The SES handoff includes the correct
+full-site verification origin, reply-to contact, a narrowly scoped IAM policy
+template, and feedback/suppression requirements. No credential, identity, DNS,
+provider activation, case submission or delivery test was performed.
+
+The recovery CI now exercises account export and deletion in its disposable
+restored database, including a second-account isolation check, credential-value
+exclusions, password/origin/subscription protection, forced late-failure rollback,
+linked-record cleanup and old-session denial. It checks that the source database
+is unchanged. These tests do not mark the complete live account/privacy rehearsal
+PASS. The [account-data review](ACCOUNT_DATA_REVIEW.md) records current behavior,
+remaining feature-export/retention questions and a concrete draft request process.
+
 ## Remaining release work
 
 - **Always-on hosting:** Render web compute remains Free. Do not assert paid production infrastructure readiness.

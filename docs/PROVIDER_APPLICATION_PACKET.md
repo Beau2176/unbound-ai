@@ -2,6 +2,26 @@
 
 This document is a preparation aid for truthful eligibility/onboarding conversations. It is not an application submission, approval, legal advice, or authorization to spend money.
 
+## Known full-site details for entry
+
+| Field | Prepared value / evidence |
+| --- | --- |
+| Legal operator | UNBOUND FORGEWORKS LLC; existing company-record review confirms the Colorado formation receipt dated September 21, 2026 |
+| Product | UNBOUND AI, full adults-only platform |
+| Existing business contact | unboundai111710@gmail.com; use for support, privacy and provider correspondence |
+| Full-site application | https://unbound-ai-app.onrender.com/ |
+| Separate Founders Beta | https://unboundforgeworks.com/; its approvals/configuration do not establish full-site readiness |
+| Initial recurring plans | Premium $49.99/month, Ultra $129.99/month, Unlimited $299.99/month; Max remains disabled |
+| SES account evidence | AWS's October 11 approval email confirms production sending access in US East (Ohio), us-east-2; the underlying request described Founders Beta transactional mail |
+| Full-site mail state | Backend sender/credentials and real delivery remain unverified; no sends or new approval attestations enabled in this preparation |
+| Business phone / published mailing address | A current public-facing choice remains unconfirmed; older formation drafts are not automatically copied into public site code |
+
+The existing SES approval establishes account/region sending access, not a new
+review of the full platform's actual adults-only use case. Preserve that scope
+when discussing the service with AWS. The case and original messages stay in the
+business inbox; no private account number, support-case identifier, tax ID,
+credential or residential address belongs in this public packet.
+
 ## Standard business description
 
 Use a description consistent with the actual product:

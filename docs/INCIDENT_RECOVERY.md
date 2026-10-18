@@ -103,7 +103,9 @@ script before publication or retention cleanup, restores the original dump with
 `--exit-on-error --single-transaction`, and compares every
 public table's row count and content digest plus every sequence's state. It then
 starts the app against the restored database, signs in, loads recovered history,
-and confirms anonymous access to that history is denied.
+and confirms anonymous access to that history is denied. It then runs the
+[isolated account/privacy checks](ACCOUNT_DATA_REVIEW.md) on the restored database
+and verifies the source snapshot remains unchanged.
 
 For a local run, provide `TEST_POSTGRES_URL` pointing to a disposable loopback
 PostgreSQL server's `/postgres` maintenance database. The script refuses remote

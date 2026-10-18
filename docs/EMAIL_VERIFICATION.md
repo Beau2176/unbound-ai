@@ -53,3 +53,54 @@ The application remains truthful when `EMAIL_PROVIDER` is `none`, when an adapte
 The database schema, send/resend/status/consume service, HTTP routes, verification landing page, startup integration, abuse protection, and Amazon SES adapter are implemented and covered by permanent CI contracts.
 
 The remaining launch work is external configuration and live verification: verify the sender/domain with SES, configure SPF/DKIM/DMARC as appropriate, obtain production sending access if the AWS account/region is still in the SES sandbox, set production environment secrets, and run end-to-end delivery/expiry/resend/failure tests. Launch-readiness status must stay blocked until that real delivery path is verified.
+
+## Existing account evidence and full-site handoff — October 17, 2026
+
+The business inbox contains AWS's October 11 approval for production sending in
+`us-east-2` (US East, Ohio). The request was for Founders Beta transactional mail,
+with `unboundforgeworks.com` described as the verified domain. This is useful
+existing account evidence, not proof that the full-site sender, credentials,
+identity/DKIM state, feedback handling, or live verification path are configured.
+The approval quota is capacity, not a spending budget. No email is sent during
+this no-spend handoff.
+
+Prepare the full-site connection using the existing region and a sender verified
+in that region. `PUBLIC_APP_ORIGIN` must point to the full application,
+`https://unbound-ai-app.onrender.com`, so verification links return to the correct
+product. `EMAIL_REPLY_TO_ADDRESS` can use the existing business contact,
+`unboundai111710@gmail.com`. The exact From address still needs to be selected
+and verified against the intended identity; do not assume a new mailbox exists.
+Store AWS keys and `EMAIL_VERIFICATION_TOKEN_SECRET` only in the service's secret
+configuration. Keep `EMAIL_PROVIDER=none` until live sending is deliberately
+authorized and the actual full-site configuration has been reviewed.
+
+For the application sending credential, prepare an IAM identity policy allowing
+only `ses:SendEmail` on the exact verified identity ARN, constrained with
+`ses:FromAddress` to the selected From address. Replace the placeholders before
+application; this is a template, not an applied policy or a credential:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": "ses:SendEmail",
+    "Resource": "arn:aws:ses:us-east-2:<AWS_ACCOUNT_ID>:identity/<VERIFIED_IDENTITY>",
+    "Condition": {
+      "StringEquals": { "ses:FromAddress": "<SELECTED_FROM_ADDRESS>" }
+    }
+  }]
+}
+```
+
+Account/identity inspection permissions should be separate from the application's
+sending permission. Confirm which identity is used and its current verification
+state; do not grant SES administration or unrestricted `ses:*` to the app.
+AWS documents [IAM action/resource/From restrictions](https://docs.aws.amazon.com/ses/latest/dg/control-user-access.html).
+
+Before live delivery, verify bounce/complaint feedback notifications or event
+publishing, suppression handling, monitoring responsibility and pause procedure.
+API acceptance is not proof of mailbox delivery. See AWS's
+[sending activity definitions and monitoring requirements](https://docs.aws.amazon.com/ses/latest/dg/monitor-sending-activity.html).
+No IAM change, DNS edit, case submission, sender activation or test delivery was
+performed by this document update.

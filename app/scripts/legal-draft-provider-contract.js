@@ -25,6 +25,8 @@ function main() {
     assert.match(source, /noindex, nofollow/, `${name} must remain noindex during legal review`);
     assert.match(source, /Draft version: 2026-09-draft/, `${name} must retain the draft version`);
     assert.match(source, /review required before launch/i, `${name} must require review before launch`);
+    assert.ok(source.includes("UNBOUND FORGEWORKS LLC"), `${name} must identify the known operator`);
+    assert.ok(source.includes('href="mailto:unboundai111710@gmail.com"'), `${name} must provide the existing business contact`);
   }
 
   assert.strictEqual(DEFAULT_LEGAL_VERSIONS.terms, "2026-09-draft");
