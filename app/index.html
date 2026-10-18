@@ -1578,7 +1578,7 @@
         <button id="adminButton" class="account-button primary" type="button" hidden>ADMIN</button>
         <button id="securityButton" class="account-button" type="button" hidden>SECURITY</button>
         <button id="deleteAccountButton" class="account-button danger" type="button" hidden>DELETE ACCOUNT</button>
-        <button id="logoutButton" class="logout-button" type="button">LOG OUT</button>
+        <button id="logoutButton" class="logout-button" type="button" hidden>LOG OUT</button>
       </div>
     </div>
   </header>
@@ -3828,6 +3828,8 @@
       if (currentUser) {
         signedOutActions.hidden = true;
         signedInActions.hidden = false;
+        createAccountButton.hidden = true;
+        logoutButton.hidden = false;
         userAvatar.textContent = initialsForUser(currentUser);
         userName.textContent = currentUser.displayName || currentUser.email || "UNBOUND User";
         userPlan.textContent = planLabelForUser(currentUser);
@@ -3865,6 +3867,8 @@
 
       signedOutActions.hidden = false;
       signedInActions.hidden = true;
+      createAccountButton.hidden = false;
+      logoutButton.hidden = true;
       userAvatar.textContent = "U";
       userName.textContent = "UNBOUND User";
       userPlan.textContent = "FREE";
