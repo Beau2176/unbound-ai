@@ -174,6 +174,21 @@ During SIGTERM/SIGINT shutdown, UNBOUND marks the process unready, broadcasts a 
 
 Queued and active shutdown cancellations keep the shutdown reason end-to-end. Normal JSON chat receives a retryable HTTP 503 with `Retry-After: 5` when the connection is still open; an already-started streaming response is ended with a retryable restart event. Client-disconnect cancellations remain silent and continue to be tracked separately.
 
+## Device voice playback
+
+Voice / Listen and device Auto-Read use the selected phone or computer voice.
+These playback paths do not send answer text to UNBOUND's cloud speech endpoint.
+Desktop playback respects the current picker, saved composite voice keys and
+legacy selections, falling back to the device default if a voice disappears.
+Currency amounts and decimal numbers remain intact when answers are chunked.
+Late cancellation events from a previous answer cannot stop its replacement.
+
+`node scripts/voice-playback-behavior-contract.js` (from `app/`) executes the
+shipped desktop/mobile playback handlers with synthetic voices and messages.
+It covers selection, zero speech requests, chunk completion after cancellation,
+mobile default-voice retry and the existing Auto-Read entitlement checks. These
+offline checks do not replace listening on a real phone or testing paid speech.
+
 ## Mobile
 
 From `mobile/`:

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'unbound-mobile-voice-fast-path-v7';
+  const VERSION = 'unbound-mobile-voice-fast-path-v8';
   const SAFE_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead.safe.v2';
   const LEGACY_AUTO_READ_STORAGE_KEY = 'unbound.voice.autoRead';
   const VOICE_STORAGE_KEY = 'unbound.voice.systemVoiceURI';
@@ -226,6 +226,7 @@
     };
     utterance.onerror = () => {
       clearWatchdog();
+      if (token !== generation) return;
       if (retryWithDefaultVoice()) return;
       speaking = false;
       manualPlayback = false;
