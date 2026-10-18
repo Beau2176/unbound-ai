@@ -1,5 +1,7 @@
 const fs = require("fs");
 const path = require("path");
+const assert = require("assert");
+const proxyaddr = require("proxy-addr");
 
 const appRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(appRoot, "..");
@@ -7,6 +9,23 @@ const serverPath = path.join(appRoot, "server.js");
 const packagePath = path.join(appRoot, "package.json");
 const server = fs.readFileSync(serverPath, "utf8");
 const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+
+// Untrusted clients must not spoof their IP through an IPv6 trust subnet.
+// Regression coverage for GHSA-jqcg-44mw-7w3h, including valid proxy behavior.
+const spoofedRequest = {
+  socket: { remoteAddress: "203.0.113.10" },
+  headers: { "x-forwarded-for": "198.51.100.20" }
+};
+for (const subnet of ["::ffff:10.0.0.0/8", "::/1"]) {
+  assert.strictEqual(proxyaddr(spoofedRequest, subnet), "203.0.113.10");
+}
+const trustedRequest = {
+  socket: { remoteAddress: "10.0.0.8" },
+  headers: { "x-forwarded-for": "198.51.100.20" }
+};
+for (const subnet of ["10.0.0.0/8", "::ffff:10.0.0.0/104"]) {
+  assert.strictEqual(proxyaddr(trustedRequest, subnet), "198.51.100.20");
+}
 
 function requireText(text, needle, label) {
   if (!text.includes(needle)) throw new Error(`Security contract missing: ${label}`);
