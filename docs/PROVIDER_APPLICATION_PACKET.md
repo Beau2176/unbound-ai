@@ -34,7 +34,7 @@ Record the date, reviewer/channel, outcome, restrictions, case/reference number,
 - adults-only AI/SaaS service with an enforced hard 18+ gateway for adult features;
 - prohibited-minor/exploitation/non-consensual/unlawful-content rules;
 - hosted Segpay checkout; UNBOUND does not collect/store card numbers or CVV;
-- recurring TOP subscription is the intended first commercial billing product;
+- initial recurring subscriptions are Premium $49.99/month, Ultra $129.99/month, and Unlimited $299.99/month; Max $199.99/month remains disabled;
 - customer self-service uses Segpay's HTTPS consumer portal;
 - UNBOUND uses opaque merchant references rather than account email/user ID in checkout correlation;
 - authenticated postbacks drive subscription lifecycle state;
@@ -44,7 +44,7 @@ Record the date, reviewer/channel, outcome, restrictions, case/reference number,
 
 1. Written approval for UNBOUND's actual adults-only/AI-assisted product and launch content model.
 2. Required card-brand/site compliance items before production processing.
-3. Approved recurring TOP price/package and hosted pay-page reference.
+3. Approved recurring packages and separate hosted pay-page references for every enabled launch plan.
 4. Confirmation that Require Signing is enabled for `amount`, `REF1`, and `REF2`.
 5. Exact transaction and member-management postback configuration, including how `REF1` and `REF2` are returned.
 6. Basic-auth requirements for production postbacks.

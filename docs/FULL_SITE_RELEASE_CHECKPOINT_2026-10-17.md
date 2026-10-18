@@ -43,6 +43,39 @@ The live engineering endpoint returned four passing checks and seven blockers ou
 
 The dashboard incorrectly read the engineering endpoint's `{ launch: ... }` response as a direct payload, displaying zero checks. The page now reads that documented wrapper and rejects missing or empty check lists with a visible error. The regression executes the actual server route and actual dashboard script together, preserves the separate direct owner/business payload, and checks malformed responses and denied administrator access. It reproduced the zero-check error before the fix and passes afterward.
 
+## Further no-spend release preparation
+
+The backup script previously checked only the custom archive's catalog before
+publishing and pruning old backups. A temporary truncated copy of the saved
+PostgreSQL 18 archive reproduced the gap: the catalog check returned success,
+while a complete `pg_restore --file=/dev/null` read failed. The original archive
+passed the full read and was unchanged; the temporary damaged copy was removed.
+The script now requires that complete read before publication or retention
+cleanup. Failure contracts verify existing backups survive, and the PostgreSQL
+16/18 integration matrix includes the same truncated-data scenario using only
+synthetic fixtures. This strengthens archive validation; it does not establish
+recurring offsite backups or complete the actual-copy startup/login drill.
+
+Rehearsal summaries also previously counted old PASS results even when a current
+prerequisite became blocked. They now preserve historical evidence separately,
+show the affected step as blocked, and require all current preflight prerequisites
+before finalization. The regression executes the actual integrated finalization
+route: drifted prerequisites and incomplete results return 409 without updating
+the run; current prerequisites and complete results allow the normal audited
+completion. The launch catalog now derives prices from the plan definitions and
+requires Premium $49.99, Ultra $129.99, and Unlimited $299.99 checkout evidence;
+Max remains excluded from the initial launch.
+
+The draft Terms/Privacy and internal data-flow map now distinguish Render
+application/browser-worker hosting from Neon PostgreSQL storage. They remain
+non-binding drafts with acceptance and enforcement off. Billing/provider packets
+and the no-spend handoff now match the three-plan launch and list the exact next
+external inputs without treating missing approvals as denials or authorizing
+purchases. Local full CI passed with zero audit vulnerabilities, and focused
+backup, rehearsal-route, and legal-draft checks passed. No production data was
+restored, provider call made, commercial readiness flag changed, or paid service
+purchased during this follow-up.
+
 ## Remaining release work
 
 - **Always-on hosting:** Render web compute remains Free. Do not assert paid production infrastructure readiness.

@@ -68,6 +68,10 @@ pg_dump \
   "${DATABASE_URL_VALUE}"
 
 pg_restore --list "${TEMP_FILE}" >/dev/null
+# A readable table of contents can hide truncated or corrupt data blocks.
+# Generate the complete restore script without a database connection or SQL
+# output, before publishing the archive or pruning any existing backup.
+pg_restore --file=/dev/null "${TEMP_FILE}"
 if [[ ! -s "${TEMP_FILE}" ]]; then
   echo "ERROR: The backup archive is empty." >&2
   exit 6
@@ -95,5 +99,5 @@ while IFS= read -r -d '' old_file; do
 done < <(find "${BACKUP_DIR_VALUE}" -maxdepth 1 -type f -mtime "+${RETENTION_DAYS_VALUE}" -print0)
 
 FILE_SIZE_BYTES="$(wc -c < "${FINAL_FILE}" | tr -d ' ')"
-echo "Backup created; archive listing and checksum verified: ${FINAL_FILE} (${FILE_SIZE_BYTES} bytes)"
+echo "Backup created; full archive read and checksum verified: ${FINAL_FILE} (${FILE_SIZE_BYTES} bytes)"
 echo "Checksum: ${CHECKSUM_FILE}"

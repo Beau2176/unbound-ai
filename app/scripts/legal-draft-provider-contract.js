@@ -37,6 +37,7 @@ function main() {
 
   for (const provider of [
     "Render",
+    "Neon",
     "OpenAI",
     "Amazon Simple Email Service",
     "Segpay",
@@ -52,7 +53,7 @@ function main() {
     );
   }
 
-  for (const provider of ["OpenAI", "Amazon Simple Email Service", "Segpay", "Yoti", "Render"]) {
+  for (const provider of ["OpenAI", "Amazon Simple Email Service", "Segpay", "Yoti", "Render", "Neon"]) {
     assert.ok(terms.includes(provider), `terms draft must identify ${provider}`);
   }
 

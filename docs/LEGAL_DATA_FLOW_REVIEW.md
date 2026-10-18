@@ -12,7 +12,8 @@ Do not enable legal acceptance or enforcement merely because this map exists. Th
 
 | Function | Current production target | Data UNBOUND may send | Data UNBOUND is designed to keep | Data UNBOUND is designed not to keep | Primary code boundary |
 | --- | --- | --- | --- | --- | --- |
-| Hosting / database | Render | Application/database traffic and data needed to host the service | Account, conversation, security, entitlement, operational and other application records in PostgreSQL | Infrastructure secrets in public responses/repo | `app/server.js`, `app/ops/*` |
+| Application / browser-worker hosting | Render | Application requests and browser-worker traffic needed to operate the requested service | Application operational records; persistent account data is stored in the separate Neon database | Infrastructure secrets in public responses/repo | `app/server.js`, `browser-worker/*`, `app/ops/*` |
+| PostgreSQL database / recovery | Neon | Account, conversation, security, entitlement, operational and other application records stored through database queries | Persistent PostgreSQL records and provider-managed recovery data; a separate recovery-test copy exists | Database credentials in public responses/repo; an unverified promise of recurring backups | `app/server.js`, `app/ops/recovery-readiness.js`, `docs/INCIDENT_RECOVERY.md` |
 | AI generation / research | OpenAI API | User prompt/content and necessary conversation/mode context for requested AI features | Conversation/history and usage metadata according to UNBOUND product settings | Passwords, recovery codes, billing secrets, raw age evidence merely because they exist elsewhere | `app/ai/gateway.js` |
 | Transactional email | Amazon Simple Email Service (SES) | Recipient email, limited display-name data, verification/security email content and one-time verification link | Email-verification state and only the HMAC token hash/challenge metadata | Raw verification token after the outbound request, provider message IDs in public state, AWS secrets | `app/email/*` |
 | Commercial billing | Segpay | Signed plan price plus opaque account reference through hosted checkout; authenticated lifecycle postbacks return subscription state | Plan/status, periods, cancellation state, opaque provider identifiers and idempotent webhook metadata | Full card number, CVV, raw payment method, Segpay signing/postback secrets | `app/billing/*` |
@@ -27,7 +28,11 @@ The production-target AI gateway uses the OpenAI API. Before publication, confir
 
 ### Render
 
-Render is the current hosting/database platform. Before publication, update the notice to match the paid production plan/region and real backup/recovery configuration rather than the current development/free-tier state. Review Render's then-current DPA/privacy/security materials for controller/processor and international-transfer language appropriate to UNBOUND's markets.
+Render currently hosts the full-site application and browser worker on Free web services in Ohio. Both have `/healthz` configured. The active PostgreSQL database is on Neon, not the expired Render database. Before publication, confirm the final Render plans/regions and review Render's then-current DPA/privacy/security materials for the application and browser-worker data flows.
+
+### Neon
+
+The existing Neon PostgreSQL 18 production project is in AWS us-east-2. Its current Free configuration has a six-hour history window and no scheduled snapshots. A manual production snapshot and an isolated recovery branch were created for verification; data/schema comparisons passed, while application startup/login against that actual copy remains unverified. These recovery copies contain personal data and need an access, retention, and deletion policy. They are not proof of recurring backup protection. Before final publication, review Neon's then-current privacy/DPA/subprocessor terms and describe the actual purchased or externally backed-up production arrangement. See the [current checkpoint](FULL_SITE_RELEASE_CHECKPOINT_2026-10-17.md).
 
 ### Amazon SES
 
@@ -62,7 +67,7 @@ The final Privacy Notice and internal retention policy should assign reviewed re
 
 1. What legal entity operates UNBOUND AI, from what business address, and what is the support/privacy/legal contact?
 2. Which U.S. states/countries are in the initial launch, and which are intentionally excluded pending review?
-3. What is the TOP subscription price, billing cadence, refund/cancellation policy, taxes, and trial policy if any?
+3. The intended initial paid plans are Premium $49.99, Ultra $129.99, and Unlimited $299.99 per month; Max $199.99 remains disabled. What approved renewal, refund/cancellation, tax, and trial terms will apply to each enabled plan?
 4. Which adult-content categories/features are enabled at launch and which remain prohibited?
 5. What Yoti methods are approved for each launch jurisdiction, and what non-biometric path is available?
 6. What exact retention periods apply to each record category above?

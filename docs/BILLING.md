@@ -18,7 +18,7 @@ Premium adds the paid productivity/understanding layer above Free, including web
 
 Ultra includes Premium and adds the advanced tool layer, including image generation/editing, agents, scheduled monitoring, multi-model routing, connected apps, Command Center, and verified-18+ Adult Mode.
 
-Legacy internal/database plan value `top` is accepted only as a backwards-compatibility alias for **Ultra**. New checkout and entitlement responses use `premium` or `ultra`.
+Legacy internal/database plan value `top` is accepted only as a backwards-compatibility alias for **Ultra**. New checkout and entitlement responses use the actual plan ID: `premium`, `ultra`, or launch-enabled `unlimited`; Max remains disabled initially.
 
 ## Production Segpay configuration
 
@@ -26,13 +26,15 @@ Set `BILLING_PROVIDER=segpay` only after the merchant setup is ready.
 
 Required values:
 
-- `SEGPAY_PREMIUM_PAY_PAGE_REF` — hosted pay page for the **$59.99 Premium** recurring package.
-- `SEGPAY_ULTRA_PAY_PAGE_REF` — hosted pay page for the **$114.99 Ultra** recurring package. `SEGPAY_PAY_PAGE_REF` remains a temporary backwards-compatible Ultra alias during migration.
+- `SEGPAY_PREMIUM_PAY_PAGE_REF` — hosted pay page for the **$49.99 Premium** recurring package.
+- `SEGPAY_ULTRA_PAY_PAGE_REF` — hosted pay page for the **$129.99 Ultra** recurring package. `SEGPAY_PAY_PAGE_REF` remains a temporary backwards-compatible Ultra alias during migration.
+- `SEGPAY_UNLIMITED_PAY_PAGE_REF` — hosted pay page for the **$299.99 Unlimited** recurring package.
+- `UNBOUND_UNLIMITED_LAUNCH_ENABLED=true` — set only for the approved initial three-plan launch. Keep `UNBOUND_MAX_LAUNCH_ENABLED=false`.
 - `SEGPAY_SIGNING_KEY` — hosted-pay-page HS256 signing key issued by Segpay Merchant Services. Use the string exactly as issued.
 - `SEGPAY_POSTBACK_USERNAME`
 - `SEGPAY_POSTBACK_PASSWORD`
 - `SEGPAY_MERCHANT_APPROVAL_VERIFIED=true` — only after Segpay actually approves the intended UNBOUND business model.
-- `SEGPAY_SIGNED_CHECKOUT_FIELDS_VERIFIED=true` — only after Merchant Services confirms Require Signing for `amount`, `REF1`, and `REF2` on both production pay pages.
+- `SEGPAY_SIGNED_CHECKOUT_FIELDS_VERIFIED=true` — only after Merchant Services confirms Require Signing for `amount`, `REF1`, and `REF2` on every enabled production pay page.
 - `SEGPAY_POSTBACK_AUTH_VERIFIED=true` — only after production postback authentication is tested.
 
 The exact prices are enforced server-side in the adapter:
@@ -42,7 +44,7 @@ The exact prices are enforced server-side in the adapter:
 - Max: `199.99` — launch-disabled initially.
 - Unlimited: `299.99` — intended for the initial public launch.
 
-The browser cannot choose an arbitrary price. Both paid pay-page references plus shared credentials/attestations must be present before the Segpay adapter reports fully configured.
+The browser cannot choose an arbitrary price. All enabled paid-plan pay-page references plus shared credentials/attestations must be present before the Segpay adapter reports fully configured.
 
 Keep `BILLING_SUBJECT_SECRET`, signing keys, and postback passwords outside the repository.
 
@@ -110,7 +112,7 @@ The code does not equal provider approval. Before live paid launch:
 3. Create recurring packages/pay pages for Premium $49.99, Ultra $129.99, and Unlimited $299.99 for initial launch. Prepare Max $199.99 separately but keep it disabled.
 4. Confirm signed `amount`, `REF1`, and `REF2` on every launch-enabled package.
 5. Configure authenticated transaction/member-management postbacks and verify the `REF1`/`REF2` round trip.
-6. Verify initial Premium sale, initial Ultra sale, recurring billing, cancellation, disable/expiry, refund/chargeback, reactivation, and failure paths.
+6. Verify initial Premium, Ultra, and Unlimited sales, recurring billing, cancellation, disable/expiry, refund/chargeback, reactivation, and failure paths.
 7. Verify provider-supported plan changes among Premium, Ultra, and Unlimited before enabling an in-app direct plan-change workflow.
 8. For initial public launch, set `UNBOUND_UNLIMITED_LAUNCH_ENABLED=true` and keep `UNBOUND_MAX_LAUNCH_ENABLED` unset/false.
 9. Only then set the three Segpay production attestations to true.

@@ -112,6 +112,50 @@ async function snapshot(client) {
   return result;
 }
 
+async function verifyDamagedArchiveRejected(dump, temp, env, databaseUrl) {
+  // Preserve the real archive's catalog while truncating its final data block.
+  const damaged = path.join(temp, "damaged.dump");
+  const bytes = fs.readFileSync(dump);
+  fs.writeFileSync(damaged, bytes.subarray(0, bytes.length - 64), { mode: 0o600 });
+  await runCommand("pg_restore", ["--list", damaged], env);
+  await assert.rejects(
+    runCommand("pg_restore", ["--file=/dev/null", damaged], env),
+    /pg_restore failed/,
+    "A readable catalog must not hide damaged archive data"
+  );
+
+  const bin = path.join(temp, "damaged-bin");
+  const output = path.join(temp, "rejected-backups");
+  fs.mkdirSync(bin);
+  fs.mkdirSync(output);
+  // Simulate a damaged pg_dump output; keep the real pg_restore in PATH.
+  fs.writeFileSync(path.join(bin, "pg_dump"), `#!/usr/bin/env bash
+set -eu
+for arg in "$@"; do
+  case "$arg" in --file=*) target="\${arg#--file=}" ;; esac
+done
+cp -- "$BACKUP_CORRUPT_FIXTURE" "$target"
+`, { mode: 0o700 });
+  const retainedName = "unbound-ai-20000101T000000Z.dump";
+  const retained = path.join(output, retainedName);
+  fs.copyFileSync(dump, retained);
+  fs.chmodSync(retained, 0o600);
+  const checksum = crypto.createHash("sha256").update(bytes).digest("hex");
+  fs.writeFileSync(`${retained}.sha256`, `${checksum}  ${retainedName}\n`, { mode: 0o600 });
+  const old = new Date(Date.now() - 40 * 86_400_000);
+  for (const file of [retained, `${retained}.sha256`]) fs.utimesSync(file, old, old);
+  const before = fs.readdirSync(output).sort();
+  await assert.rejects(runCommand("bash", [path.join(__dirname, "backup-postgres.sh")], {
+    ...env,
+    PATH: `${bin}:${env.PATH}`,
+    BACKUP_DATABASE_URL: databaseUrl,
+    BACKUP_DIR: output,
+    BACKUP_CORRUPT_FIXTURE: damaged
+  }), /bash failed/, "The real backup script must reject truncated data before publishing or pruning");
+  assert.deepEqual(fs.readdirSync(output).sort(), before);
+  assert.equal(crypto.createHash("sha256").update(fs.readFileSync(retained)).digest("hex"), checksum);
+}
+
 async function main() {
   const adminUrl = validateTestConnection(process.env.TEST_POSTGRES_URL || "");
   const prefix = `unbound_ci_${crypto.randomBytes(8).toString("hex")}`;
@@ -161,6 +205,7 @@ async function main() {
     const dump = path.join(temp, dumps[0]);
     const expectedHash = fs.readFileSync(`${dump}.sha256`, "utf8").split(/\s+/)[0];
     assert.equal(crypto.createHash("sha256").update(fs.readFileSync(dump)).digest("hex"), expectedHash);
+    await verifyDamagedArchiveRejected(dump, temp, env, dbUrl(names[0]));
     await runCommand("pg_restore", ["--dbname", dbUrl(names[1]), "--no-owner", "--no-privileges", "--exit-on-error", "--single-transaction", dump], env);
     client = await connect(dbUrl(names[1]));
     assert.deepEqual(await snapshot(client), before, "Restored table contents or sequences differ from the source");
@@ -180,7 +225,7 @@ async function main() {
     assert.equal(recovered.messages[0].content, "Synthetic recovered answer");
     const unauthorized = await fetch(`${app.origin}/api/conversations/${conversationId}`, { signal: AbortSignal.timeout(10000) });
     assert.equal(unauthorized.status, 401, "Recovered history must remain private");
-    console.log(`PASS real database recovery: ${Object.keys(before).length - 1} tables, sequence state, integrated startup, account login and private history.`);
+    console.log(`PASS real database recovery: damaged archive rejection, ${Object.keys(before).length - 1} tables, sequence state, integrated startup, account login and private history.`);
   } finally {
     if (app) await app.stop();
     if (client) await client.end();
