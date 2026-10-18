@@ -524,11 +524,6 @@ const SIMPLE_SHELL_SCRIPT = `<script id="${SIMPLE_SHELL_SCRIPT_ID}">
       userPill.setAttribute("aria-label", "Open account menu");
     }
 
-    ["accessButton", "adminButton", "securityButton", "deleteAccountButton", "logoutButton"].forEach((id) => {
-      const control = document.getElementById(id);
-      if (control) accountActions.appendChild(control);
-    });
-
     toolsButton.addEventListener("click", () => openPanel(toolsPanel, toolsButton));
     chatOptionsButton.addEventListener("click", () => openPanel(chatPanel, chatOptionsButton));
     if (userPill) {
@@ -583,6 +578,13 @@ const SIMPLE_SHELL_SCRIPT = `<script id="${SIMPLE_SHELL_SCRIPT_ID}">
   function applyDesktopPlacement() {
     if (!window.matchMedia(DESKTOP_QUERY).matches) {
       closePanels();
+      const accountNav = document.getElementById("mobileMenuNav");
+      if (accountNav) {
+        ["accessButton", "adminButton", "securityButton", "deleteAccountButton", "logoutButton"].forEach((id) => {
+          const control = document.getElementById(id);
+          if (control && control.parentNode !== accountNav) accountNav.appendChild(control);
+        });
+      }
       enhanceMobileMenu();
       syncSummaries();
       return;

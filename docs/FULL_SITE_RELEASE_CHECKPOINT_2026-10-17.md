@@ -27,6 +27,12 @@ A later content-digest comparison confirmed the original conversations/messages 
 
 A passive Free-plan baseline from `2026-10-18T02:13:24.401Z` through `2026-10-18T02:43:24.401Z` returned four CPU samples (maximum `0.0018737833` CPU units) and eight memory samples (maximum `125612030` bytes, about 120 MiB). No HTTP latency samples were available. This sparse, quiet-traffic interval is not a load test or production-sizing recommendation.
 
+## Phone account-menu follow-up
+
+Signed-in phone screenshots exposed a shared-shell bug: desktop initialization moved Security and the other account buttons into a panel hidden on mobile. Create Account also remained visible after being moved out of its signed-out container. Responsive placement now keeps the original account controls in the phone menu or desktop account panel as appropriate, and Create Account/Log Out explicitly follow account state. The new account-menu regression executes the production placement and account-rendering functions across initialization, repeated breakpoint changes, sign-in, sign-out, and administrator/ordinary-account states. Both reported failures reproduced before the fix and pass afterward.
+
+This navigation correction retains the existing password and recovery checks. Changing a password or generating recovery codes still requires the current password. A signed-in passkey user who has forgotten that password does not yet have a passkey-verified password-reset flow. Do not claim that this menu fix resolves that separate recovery limitation. Real signed-in phone acceptance remains to be confirmed after deployment.
+
 ## Remaining release work
 
 - **Always-on hosting:** Render web compute remains Free. Do not assert paid production infrastructure readiness.
