@@ -1,9 +1,65 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
+const vm = require("vm");
 const { buildLaunchReadiness } = require("../ops/launch-readiness");
 
-function main() {
+async function checkLiveWireFormat(page, launch) {
+  const server = fs.readFileSync(path.join(__dirname, "../server.js"), "utf8");
+  const start = server.indexOf('app.get(\n  "/api/admin/ops/launch-readiness"');
+  const end = server.indexOf('app.get(\n  "/api/admin/ops/status"', start);
+  assert.ok(start >= 0 && end > start);
+  let handler;
+  vm.runInNewContext(server.slice(start, end), {
+    app: { get(_route, ...handlers) { handler = handlers.at(-1); } },
+    requireDatabase() {}, requireAdmin() {}, buildCurrentOperationalSnapshot: () => ({ launch })
+  });
+  let wire;
+  await handler({}, { json(value) { wire = value; } });
+  const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const element = () => ({
+    children: [], style: {}, textContent: "", hidden: false, disabled: false,
+    get firstChild() { return this.children[0] || null; },
+    append(...items) { this.children.push(...items); },
+    appendChild(item) { this.children.push(item); },
+    removeChild(item) { this.children.splice(this.children.indexOf(item), 1); },
+    addEventListener() {}
+  });
+  async function render(engineeringWire, status = 200) {
+    const nodes = new Map();
+    const get = (id) => { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); };
+    await vm.runInNewContext(script, {
+      document: { getElementById: get, createElement: element },
+      fetch: async (url) => ({
+        ok: status === 200, status,
+        json: async () => url.endsWith("/owner-readiness")
+          ? { ready: false, completionPercent: 50, checks: [{ ready: true, label: "Verified" }, { ready: false, label: "Pending" }] }
+          : engineeringWire
+      })
+    });
+    return get;
+  }
+  const get = await render(wire);
+  assert.strictEqual(get("checks").children.length, launch.checks.length, "Render the checks returned by the actual engineering route.");
+  assert.strictEqual(get("readyCount").textContent, "10");
+  assert.strictEqual(get("blockerCount").textContent, "1");
+  assert.strictEqual(get("score").textContent, "91%");
+  assert.strictEqual(get("overallStatus").textContent, "BLOCKED");
+  assert.strictEqual(get("ownerScore").textContent, "50%", "The owner gate still uses its direct payload.");
+  assert.strictEqual(get("ownerChecks").children.length, 2);
+  const ready = await render({ launch: { ...launch, launchReady: true, checks: launch.checks.map((check) => ({ ...check, ready: true })) } });
+  assert.strictEqual(ready("score").textContent, "100%");
+  assert.strictEqual(ready("overallStatus").textContent, "READY");
+  for (const malformed of [{}, { launch: {} }, { launch: { launchReady: true, checks: [] } }]) {
+    const failed = await render(malformed);
+    assert.strictEqual(failed("errorBox").hidden, false, "Missing checks must show an error rather than a fabricated readiness result.");
+  }
+  const denied = await render({}, 403);
+  assert.strictEqual(denied("errorBox").hidden, false);
+  assert.ok(denied("errorBox").textContent.includes("Administrator access is required"));
+}
+
+async function main() {
   const appRoot = path.resolve(__dirname, "..");
   const page = fs.readFileSync(path.join(appRoot, "launch-readiness.html"), "utf8");
 
@@ -62,8 +118,9 @@ function main() {
   assert.strictEqual(mixed.checks.filter((item) => item.ready).length, 10);
   assert.strictEqual(mixed.blockers[0].key, "database_recovery");
   assert.strictEqual(mixed.blockers[0].detail, "Restore drill required.");
+  await checkLiveWireFormat(page, mixed);
 
-  console.log("PASS launch-readiness UI contract: engineering and owner/business scores remain separate, admin-only APIs are used, blocker semantics stay truthful, and browser secret isolation is preserved.");
+  console.log("PASS launch-readiness UI contract: real route/dashboard wire format, separate owner scores, ready/blocked states, malformed responses, admin access errors, and browser secret isolation.");
 }
 
-main();
+main().catch((error) => { console.error(error); process.exitCode = 1; });
