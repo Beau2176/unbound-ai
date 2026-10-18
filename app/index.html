@@ -1831,6 +1831,25 @@
           <span id="currentSessionExpiry"></span>
         </div>
 
+        <h3 id="passwordChangeTitle" class="access-section-title">Change password</h3>
+        <p class="auth-help">Enter your current UNBOUND AI password, then choose a new password with at least 12 characters.</p>
+        <form id="passwordChangeForm" class="auth-form" autocomplete="off" aria-labelledby="passwordChangeTitle">
+          <div class="auth-field">
+            <label for="currentPasswordForChange">Current password</label>
+            <input id="currentPasswordForChange" type="password" autocomplete="current-password" maxlength="200" required />
+          </div>
+          <div class="auth-field">
+            <label for="newPassword">New password</label>
+            <input id="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="200" required />
+          </div>
+          <div class="auth-field">
+            <label for="newPasswordConfirm">Confirm new password</label>
+            <input id="newPasswordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="200" required />
+          </div>
+          <button id="passwordChangeSubmit" class="auth-submit" type="submit">CHANGE PASSWORD</button>
+        </form>
+        <p class="auth-help">Forgot your current password? On the sign-in screen, choose RECOVER and use a saved recovery code. A recovery reset signs out every device and removes existing passkeys and all recovery codes.</p>
+
         <div class="access-section-title">Passkeys</div>
         <div class="auth-help">Passkeys use public-key cryptography. Fingerprints, face scans, PINs, and private keys stay with your device or credential provider and are never stored by UNBOUND AI.</div>
         <div class="auth-field" style="margin-top:10px;">
@@ -1878,22 +1897,6 @@
 
         <div class="access-section-title">Recent security activity</div>
         <div id="securityEventList" class="security-event-list"><div class="history-empty">Loading security activity…</div></div>
-
-        <form id="passwordChangeForm" class="auth-form" autocomplete="off">
-          <div class="auth-field">
-            <label for="currentPasswordForChange">Current password</label>
-            <input id="currentPasswordForChange" type="password" autocomplete="current-password" maxlength="200" required />
-          </div>
-          <div class="auth-field">
-            <label for="newPassword">New password</label>
-            <input id="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="200" required />
-          </div>
-          <div class="auth-field">
-            <label for="newPasswordConfirm">Confirm new password</label>
-            <input id="newPasswordConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="200" required />
-          </div>
-          <button id="passwordChangeSubmit" class="auth-submit" type="submit">CHANGE PASSWORD</button>
-        </form>
 
         <div style="height:1px;background:rgba(255,255,255,.08);margin:18px 0;"></div>
 
@@ -4952,6 +4955,8 @@
       recoveryCodesPanel.hidden = true;
       clearSecurityFeedback();
       securityModal.hidden = false;
+      const securityCard = securityModal.querySelector(".auth-card");
+      if (securityCard) securityCard.scrollTop = 0;
       document.body.classList.add("modal-open");
       focusModal(securityModal, securityCloseButton);
       try {
