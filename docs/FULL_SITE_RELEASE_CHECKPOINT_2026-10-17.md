@@ -118,8 +118,13 @@ The isolated PostgreSQL 16/18 recovery tests now seed both synthetic accounts
 across all 18 sections and check saved output, disabled records, exact large
 IDs/counts, nested secret exclusion, failure/repair, independent download quotas
 and cascading cleanup. No model, mail, voice, payment or age-provider request is
-required. This expands software verification without asserting that a statutory
-rights workflow or the live launch rehearsal is complete.
+required. A PostgreSQL 18 run also exposed an existing quota-test shutdown
+race after all assertions passed: the pool could finish ending before idle
+client sockets closed, and forced database cleanup then killed a closing
+connection. The runner now waits for each client's end event and drops its
+synthetic database without force. This expands software verification without
+asserting that a statutory rights workflow or the live launch rehearsal is
+complete.
 
 ## Remaining release work
 
