@@ -20,10 +20,11 @@ function buildDataExport({
   recovery,
   usage = [],
   entitlementOverrides = [],
+  features = {},
   exportedAt = new Date().toISOString()
 } = {}) {
   return {
-    exportVersion: 1,
+    exportVersion: 2,
     product: "UNBOUND AI",
     exportedAt,
     privacy: {
@@ -35,13 +36,16 @@ function buildDataExport({
         "recovery-code hashes",
         "passkey credential IDs and public keys",
         "provider response IDs",
-        "age-verification provider reference hashes"
+        "age-verification provider reference hashes",
+        "connected-app access/refresh tokens and OAuth authorization state",
+        "worker claim tokens and external coding-provider job IDs"
       ]
     },
     account: account || null,
     preferences: preferences || null,
     access: access || null,
     conversations: Array.isArray(conversations) ? conversations : [],
+    features,
     security: {
       devices: Array.isArray(devices) ? devices : [],
       events: Array.isArray(securityEvents) ? securityEvents : [],

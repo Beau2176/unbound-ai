@@ -12,9 +12,26 @@ async function main() {
   const name = "usage_test_" + crypto.randomBytes(8).toString("hex");
   const admin = new Client({ connectionString: url.href }); await admin.connect();
   let pool;
+  let disconnects = [];
+  function openPool(max = 10) {
+    disconnects = [];
+    pool = new Pool({ connectionString: url.href, max });
+    pool.on("connect", client => {
+      disconnects.push(new Promise(resolve => client.once("end", resolve)));
+    });
+  }
+  async function closePool() {
+    if (!pool) return;
+    // Pool.end() can resolve after removing idle clients but before their
+    // sockets close. Wait for each public Client 'end' event before reconnect
+    // or database cleanup; forced DROP can otherwise kill a closing client.
+    await pool.end();
+    await Promise.all(disconnects);
+    pool = null;
+  }
   try {
     await admin.query(`CREATE DATABASE "${name}"`);
-    url.pathname = "/" + name; pool = new Pool({ connectionString: url.href, max: 15 });
+    url.pathname = "/" + name; openPool(15);
     await pool.query(`CREATE TABLE rate_limit_buckets (scope TEXT NOT NULL, subject_hash TEXT NOT NULL, subject_kind TEXT NOT NULL,
       window_started_at TIMESTAMPTZ NOT NULL, request_count INTEGER NOT NULL, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY (scope, subject_hash))`);
     const subject = { kind: "account", value: "1" }; const secret = "synthetic-test-only";
@@ -38,12 +55,14 @@ async function main() {
     const reset = await reserveUsage(pool, secret, subject, policy); assert(reset.allowed); assert(reset.windows.every(w => w.used === 1));
     await refundUsage(pool, first); // old-window refund cannot reduce fresh counts
     windows = await readUsage(pool, secret, subject, policy); assert(windows.every(w => w.used === 1));
-    await pool.end(); pool = new Pool({ connectionString: url.href });
+    await closePool(); openPool();
     windows = await readUsage(pool, secret, subject, policy); assert(windows.every(w => w.used === 1), "usage survives reconnect/restart");
     console.log("PASS PostgreSQL usage quotas: concurrent admission, atomic multi-feature block, refunds, upgrades, weekly cap, reset, late refund and persistence.");
   } finally {
-    if (pool) await pool.end();
-    await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`); await admin.end();
+    try {
+      await closePool();
+      await admin.query(`DROP DATABASE IF EXISTS "${name}"`);
+    } finally { await admin.end(); }
   }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });
