@@ -285,12 +285,15 @@ const SIMPLE_SHELL_SCRIPT = `<script id="${SIMPLE_SHELL_SCRIPT_ID}">
   const TOOL_LINKS = [
     ["Voice", "/voice.html", "Talk and listen hands-free"],
     ["Files", "/files.html", "Upload, read, and analyze files"],
+    ["Create", "/artifact-studio.html", "Create documents, spreadsheets, and slides"],
     ["Images", "/images.html", "Create and understand images"],
+    ["Image Studio", "/image-tools.html", "Edit and transform images"],
     ["Tasks", "/tasks.html", "Scheduled and recurring work"],
     ["Connected Apps", "/connected-apps.html", "Work with linked services"],
     ["Memory", "/memory.html", "Review AI memory controls"],
     ["Agents", "/agents.html", "Run multi-step AI work"],
-    ["More Modes", "/modes.html", "Explore specialized modes"]
+    ["More Modes", "/modes.html", "Explore specialized modes"],
+    ["Command Center", "/command-center.html", "Review work and platform controls"]
   ];
 
   let initialized = false;

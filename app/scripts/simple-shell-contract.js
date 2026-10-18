@@ -19,10 +19,13 @@ function main() {
   assert.ok(rendered.includes("Everything powerful stays available without crowding the main chat."), "tools panel should explain progressive disclosure");
   assert.ok(rendered.includes('/voice.html'), "tools should expose voice");
   assert.ok(rendered.includes('/files.html'), "tools should expose files");
+  assert.ok(rendered.includes('/artifact-studio.html'), "tools should expose artifact creation");
   assert.ok(rendered.includes('/images.html'), "tools should expose images");
+  assert.ok(rendered.includes('/image-tools.html'), "tools should expose image editing");
   assert.ok(rendered.includes('/tasks.html'), "tools should expose tasks");
   assert.ok(rendered.includes('/connected-apps.html'), "tools should expose connected apps");
   assert.ok(rendered.includes('/memory.html'), "tools should expose memory");
+  assert.ok(rendered.includes('/command-center.html'), "tools should expose command center");
   assert.ok(rendered.includes("simpleAccountPanel"), "signed-in account actions should have one account panel");
   assert.ok(rendered.includes("simpleMobileToolsSection"), "mobile menu should expose tools without cluttering chat");
   assert.ok(rendered.includes("Current: "), "desktop and mobile should expose compact mode summaries");
