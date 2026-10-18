@@ -131,6 +131,9 @@ function checkServedHomepage() {
     assert.strictEqual((select.match(/<option value=/g) || []).length, 100);
     assert.ok(select.includes('<option value="listener">CONVERSATION</option>'));
     assert.ok(html.includes('id="conversationModeButton"'));
+    const header = html.match(/<header class="topbar">[\s\S]*?<\/header>/)?.[0] || "";
+    assert.strictEqual((header.match(/class="account-button advertiser-link"/g) || []).length, 1,
+      "The native homepage must keep product links in Tools instead of duplicating them across the header.");
     for (const match of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
       if (match[1].trim()) new vm.Script(match[1]);
     }
