@@ -159,13 +159,17 @@
         if (response.status === 401 || response.status === 403) throw new Error("Administrator access is required to view launch readiness.");
         throw new Error(payload.error || "Could not load readiness status.");
       }
-      renderPayload(target, payload, options);
+      const gate = options?.payloadField ? payload[options.payloadField] : payload;
+      if (!Array.isArray(gate?.checks) || gate.checks.length === 0) {
+        throw new Error("Readiness response is missing required checks.");
+      }
+      renderPayload(target, gate, options);
     }
 
     async function loadReadiness() {
       refreshButton.disabled = true;
       const results = await Promise.allSettled([
-        fetchGate("/api/admin/ops/launch-readiness", engineering, { readyField:"launchReady" }),
+        fetchGate("/api/admin/ops/launch-readiness", engineering, { readyField:"launchReady", payloadField:"launch" }),
         fetchGate("/api/admin/ops/owner-readiness", owner, { readyField:"ready", percentField:"completionPercent" })
       ]);
       if (results[0].status === "rejected") { engineering.errorBox.textContent = results[0].reason?.message || "Could not load engineering readiness."; engineering.errorBox.hidden = false; }
