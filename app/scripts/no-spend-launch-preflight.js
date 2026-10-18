@@ -111,7 +111,6 @@ function buildNoSpendLaunchPreflight({ env = process.env, nowMs = Date.now() } =
       ready: bool(infrastructure.launchReady),
       status: infrastructure.status,
       blockers: infrastructure.blockers,
-      launchPlanPolicy: initialLaunchPlanPolicy,
       freeWorkNow: [
         "Keep current infrastructure truthfully marked non-production until the paid migration actually occurs.",
         "Document the target Render service/database plans, health-check path, cutover steps, rollback steps, and verification evidence.",
@@ -150,6 +149,7 @@ function buildNoSpendLaunchPreflight({ env = process.env, nowMs = Date.now() } =
     {
       key: "segpay",
       label: "Segpay",
+      launchPlanPolicy: initialLaunchPlanPolicy,
       ready: bool(
         billing.configured &&
         billing.checkout &&
