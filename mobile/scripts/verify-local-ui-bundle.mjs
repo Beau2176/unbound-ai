@@ -117,6 +117,12 @@ if (manifest) {
 
   try {
     const homepage = await readFile(resolve(wwwDir, 'index.html'), 'utf8');
+    const styleSelect = homepage.match(/<select id="aiStyleSelect"[\s\S]*?<\/select>/)?.[0] || '';
+    if ((styleSelect.match(/<option value=/g) || []).length !== 100 ||
+        !styleSelect.includes('<option value="listener">CONVERSATION</option>') ||
+        !homepage.includes('id="conversationModeButton"')) {
+      failures.push('generated homepage must include the shared mode catalog and Conversation control');
+    }
     if (!homepage.includes('<meta name="unbound-local-ui-bundle" content="generated" />')) {
       failures.push('generated homepage is missing the local UI bundle marker');
     }

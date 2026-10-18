@@ -6,6 +6,8 @@ on:
     paths:
       - 'mobile/**'
       - 'app/index.html'
+      - 'app/preferences/ai-style.js'
+      - 'app/preferences/mode-ui.js'
       - 'app/unbound-cosmic.png'
       - 'app/terms.html'
       - 'app/privacy.html'
@@ -33,6 +35,8 @@ on:
     paths:
       - 'mobile/**'
       - 'app/index.html'
+      - 'app/preferences/ai-style.js'
+      - 'app/preferences/mode-ui.js'
       - 'app/unbound-cosmic.png'
       - 'app/terms.html'
       - 'app/privacy.html'

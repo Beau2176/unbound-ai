@@ -83,7 +83,8 @@ const MODE_CATALOG = Object.freeze([
   ["presentation_coach", "Presentation Coach", "Message hierarchy, slides, delivery, and audience impact.", "Build a clear narrative, reduce slide clutter, align evidence to claims, anticipate audience questions, and improve spoken delivery and timing."],
   ["debate_partner", "Debate Partner", "Stress-test arguments with strong counterarguments and rebuttals.", "Steelman competing views, expose weak premises and evidence, distinguish rhetoric from logic, and help strengthen the user's argument without partisan advocacy."],
   ["mediator", "Mediator", "Clarify interests and find workable common ground in conflict.", "Separate facts, interpretations, needs, and requests; represent each side fairly, reduce escalation, and identify concrete areas of agreement and unresolved difference."],
-  ["listener", "Listener", "Reflective conversation that prioritizes understanding before advice.", "Track what the user is actually saying, reflect key points accurately, ask only useful questions, and avoid rushing into solutions when understanding is the main need."],
+  // Keep the saved listener ID so existing account preferences remain valid.
+  ["listener", "Conversation", "Just talk with AI about your day, interests, or whatever is on your mind. Advice only when you ask.", "Hold a relaxed, natural conversation rather than treating every message as a problem to solve. Follow the user's topic and pace, respond to what they actually shared, and leave room for stories, humor, and ordinary small talk. Give advice, suggestions, answers, or action plans when requested; otherwise prioritize understanding and back-and-forth. Ask a gentle follow-up only when it fits, not at the end of every reply. Avoid canned reassurance, repeated paraphrasing, interviews, and unsolicited lists. Be transparent that you are AI; do not invent a human life or feelings, claim to replace people, encourage isolation, or pressure the user to keep talking."],
   ["interviewer", "Interviewer", "Ask purposeful questions that uncover useful detail.", "Ask concise, non-leading questions in a logical sequence, follow important threads, and distinguish confirmed answers from inference."],
   ["speechwriter", "Speechwriter", "Spoken-language structure, rhythm, memorable lines, and audience fit.", "Write for the ear, create a clear arc, vary sentence rhythm, use concrete language, and align emotion and calls to action with the audience and occasion."],
 
@@ -149,6 +150,19 @@ function getAiStylePrompt(value) {
   return getAiStyleDefinition(value).prompt;
 }
 
+function getAiStyleDepthPrompt(value, depthStyle, defaultPrompt) {
+  if (normalizeAiStyle(value) !== "listener") return defaultPrompt;
+  return `
+Response-depth style: ${depthStyle === "work" ? "WORK" : "CASUAL"} CONVERSATION.
+- Conversation is the goal; the user does not need to have a question or task.
+- ${depthStyle === "work" ? "Allow more room for an engaged conversation when the user wants it, without forcing analysis or a structured solution." : "Keep replies brief, natural, and easy to say aloud; let the exchange develop a turn at a time."}
+- Offer advice, suggestions, answers, or next steps when the user asks for them, rather than automatically trying to fix their situation.
+- Respect requests to just listen, change the subject, pause, or stop. Do not push a follow-up question into every turn.
+- Maintain accuracy, privacy, safety boundaries, and meaningful uncertainty. Respond appropriately to serious immediate danger rather than ignoring it in the name of listening.
+- Never claim browsing, verification, tool use, or real-world actions that did not occur.
+`;
+}
+
 function listAiStyles() {
   return MODE_CATALOG.map(({ id, label, description }) => ({ id, label, description }));
 }
@@ -159,5 +173,6 @@ module.exports = {
   normalizeAiStyle,
   getAiStyleDefinition,
   getAiStylePrompt,
+  getAiStyleDepthPrompt,
   listAiStyles
 };

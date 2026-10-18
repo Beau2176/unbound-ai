@@ -31,6 +31,7 @@ function browser(mode, fetch) {
     productMode: mode,
     depthStyle: "casual",
     aiStyle: {},
+    aiStyleSaving: false,
     MAX_CONTEXT_MESSAGES: 20,
     input: { value: "unsent message", focus() {} },
     sendButton: {},

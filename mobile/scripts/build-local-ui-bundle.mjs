@@ -16,6 +16,7 @@ const { injectMobileLayoutStyles } = require(resolve(appDir, 'ui/mobile-layout.j
 const { injectSimpleShell } = require(resolve(appDir, 'ui/simple-shell.js'));
 const { injectVoiceListenControl } = require(resolve(appDir, 'ui/voice-listen.js'));
 const { injectInterruptedStreamRecovery } = require(resolve(appDir, 'ui/chat-stream-recovery.js'));
+const { buildAiStyleIndexHtml } = require(resolve(appDir, 'preferences/mode-ui.js'));
 
 const LOCAL_BUNDLE_MARKER = '<meta name="unbound-local-ui-bundle" content="generated" />';
 const NATIVE_API_MARKER = '<meta name="unbound-native-api-transport" content="capacitor-http-v1" />';
@@ -106,7 +107,8 @@ function injectLocalRuntime(html) {
 
 async function buildHomepage() {
   const raw = await readFile(resolve(appDir, 'index.html'), 'utf8');
-  const mobile = injectMobileLayoutStyles(raw);
+  const modes = buildAiStyleIndexHtml(raw);
+  const mobile = injectMobileLayoutStyles(modes);
   const simple = injectSimpleShell(mobile);
   const voice = injectVoiceListenControl(simple);
   const recovered = injectInterruptedStreamRecovery(voice);
@@ -176,6 +178,8 @@ for (const file of outputFiles) {
 
 const sourceFiles = [
   'index.html',
+  'preferences/ai-style.js',
+  'preferences/mode-ui.js',
   'ui/mobile-layout.js',
   'ui/simple-shell.js',
   'ui/voice-listen.js',
