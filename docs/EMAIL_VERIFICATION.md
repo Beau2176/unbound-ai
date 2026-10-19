@@ -53,6 +53,14 @@ The application remains truthful when `EMAIL_PROVIDER` is `none`, when an adapte
 
 The database schema, send/resend/status/consume service, HTTP routes, verification landing page, startup integration, abuse protection, and Amazon SES adapter are implemented and covered by permanent CI contracts.
 
+Account status reads the expiry of the most recent active challenge. Resending
+invalidates the earlier challenge, and its expiry must not replace the new
+link's expiry. A pending link becomes expired at its exact expiry boundary.
+The `email-postgres-check` CI command exercises these states, one-time concurrent
+consumption, failed delivery and recovery against real PostgreSQL 16 and 18.
+It uses disposable local test schemas and a delivery fixture; it never sends mail
+or connects to a remote production database.
+
 The remaining launch work is external configuration and live verification: verify the sender/domain with SES, configure SPF/DKIM/DMARC as appropriate, obtain production sending access if the AWS account/region is still in the SES sandbox, set production environment secrets, and run end-to-end delivery/expiry/resend/failure tests. Launch-readiness status must stay blocked until that real delivery path is verified.
 
 ## Existing account evidence and full-site handoff — October 17, 2026
