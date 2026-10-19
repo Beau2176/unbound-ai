@@ -74,9 +74,19 @@ async function getEmailVerificationRecord(pool, userId) {
   assertPool(pool);
   const normalizedUserId = normalizeUserId(userId);
   const result = await pool.query(
-    `SELECT user_id, status, verified_at, last_sent_at, created_at, updated_at
-       FROM account_email_verification
-      WHERE user_id = $1
+    `SELECT a.user_id, a.status, a.verified_at, a.last_sent_at,
+            a.created_at, a.updated_at, c.expires_at
+       FROM account_email_verification a
+       LEFT JOIN LATERAL (
+         SELECT expires_at
+           FROM email_verification_challenges
+          WHERE user_id = a.user_id
+            AND used_at IS NULL
+            AND invalidated_at IS NULL
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
+       ) c ON TRUE
+      WHERE a.user_id = $1
       LIMIT 1`,
     [normalizedUserId]
   );

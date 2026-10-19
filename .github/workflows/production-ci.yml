@@ -73,3 +73,7 @@ jobs:
         env:
           TEST_POSTGRES_URL: postgresql://postgres:unbound-ci-only@127.0.0.1:5432/postgres
         run: npm run recovery-integration-check
+      - name: Verify real PostgreSQL email verification lifecycle
+        env:
+          TEST_POSTGRES_URL: postgresql://postgres:unbound-ci-only@127.0.0.1:5432/postgres
+        run: npm run email-postgres-check

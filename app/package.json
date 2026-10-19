@@ -11,6 +11,7 @@
     "ci": "npm run check && npm run security-check && npm run regression-check && npm run backup-check && npm audit --omit=dev --audit-level=moderate",
     "backup-check": "node scripts/backup-postgres-contract.js",
     "recovery-integration-check": "node scripts/database-recovery-integration.js && node scripts/usage-limits-integration.js",
+    "email-postgres-check": "node scripts/email-verification-postgres-contract.js",
     "launch-preflight": "node scripts/no-spend-launch-preflight.js",
     "no-spend-complete": "node scripts/no-spend-completion.js",
     "live-smoke": "node scripts/live-smoke-check.js",
