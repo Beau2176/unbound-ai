@@ -21,7 +21,8 @@ const ENV = {
   AWS_REGION: "us-east-2",
   EMAIL_FROM_ADDRESS: "verify@unbound.example",
   EMAIL_FROM_NAME: "UNBOUND AI",
-  EMAIL_REPLY_TO_ADDRESS: "support@unbound.example"
+  EMAIL_REPLY_TO_ADDRESS: "support@unbound.example",
+  EMAIL_FEEDBACK_FORWARDING_ADDRESS: "feedback@unbound.example"
 };
 const NOW = new Date("2026-09-12T19:30:45.000Z");
 const VERIFICATION_URL = "https://unbound.example/verify-email#token=browser-only-secret";
@@ -35,11 +36,13 @@ async function main() {
     region: "us-east-2",
     fromAddress: "verify@unbound.example",
     fromName: "UNBOUND AI",
-    replyToAddress: "support@unbound.example"
+    replyToAddress: "support@unbound.example",
+    feedbackForwardingAddress: "feedback@unbound.example"
   });
   assert.strictEqual(isConfigured(ENV), true);
   assert.strictEqual(isConfigured({ ...ENV, AWS_SECRET_ACCESS_KEY: "" }), false);
   assert.strictEqual(isConfigured({ ...ENV, EMAIL_FROM_ADDRESS: "not-an-email" }), false);
+  assert.strictEqual(isConfigured({ ...ENV, EMAIL_FEEDBACK_FORWARDING_ADDRESS: "not-an-email" }), false);
   assert.strictEqual(formatAmzDate(NOW), "20260912T193045Z");
 
   const message = buildVerificationMessage({
@@ -51,6 +54,7 @@ async function main() {
   assert.strictEqual(message.FromEmailAddress, '"UNBOUND AI" <verify@unbound.example>');
   assert.deepStrictEqual(message.Destination.ToAddresses, ["person@example.com"]);
   assert.deepStrictEqual(message.ReplyToAddresses, ["support@unbound.example"]);
+  assert.strictEqual(message.FeedbackForwardingEmailAddress, "feedback@unbound.example");
   assert.strictEqual(message.Content.Simple.Subject.Data, DEFAULT_SUBJECT);
   assert.ok(message.Content.Simple.Body.Text.Data.includes(VERIFICATION_URL));
   assert.ok(message.Content.Simple.Body.Html.Data.includes("browser-only-secret"));
@@ -58,6 +62,13 @@ async function main() {
   assert.ok(!JSON.stringify(message).includes(ENV.AWS_ACCESS_KEY_ID));
   assert.ok(!JSON.stringify(message).includes(ENV.AWS_SECRET_ACCESS_KEY));
   assert.ok(!JSON.stringify(message).includes(ENV.AWS_SESSION_TOKEN));
+
+  const withoutFeedbackOverride = buildVerificationMessage({
+    toEmail: "person@example.com",
+    verificationUrl: VERIFICATION_URL,
+    env: { ...ENV, EMAIL_FEEDBACK_FORWARDING_ADDRESS: "" }
+  });
+  assert.ok(!Object.hasOwn(withoutFeedbackOverride, "FeedbackForwardingEmailAddress"));
 
   const signed = buildSignedRequest({ payload: message, env: ENV, now: NOW });
   assert.strictEqual(
@@ -108,8 +119,22 @@ async function main() {
   assert.strictEqual(requests[0].url, signed.endpoint);
   assert.strictEqual(requests[0].options.method, "POST");
   assert.strictEqual(requests[0].options.redirect, "error");
+  const deliveredPayload = JSON.parse(requests[0].options.body);
+  assert.strictEqual(deliveredPayload.FeedbackForwardingEmailAddress, "feedback@unbound.example");
+  assert.deepStrictEqual(deliveredPayload.Destination, { ToAddresses: ["person@example.com"] });
+  assert.deepStrictEqual(deliveredPayload.ReplyToAddresses, ["support@unbound.example"]);
   assert.ok(!requests[0].options.body.includes(ENV.AWS_SECRET_ACCESS_KEY));
   assert.ok(!requests[0].options.body.includes(ENV.AWS_SESSION_TOKEN));
+
+  await assert.rejects(
+    provider.sendVerification({
+      toEmail: "person@example.com",
+      verificationUrl: VERIFICATION_URL,
+      env: { ...ENV, EMAIL_FEEDBACK_FORWARDING_ADDRESS: "feedback@example.com\r\nBcc: other@example.com" }
+    }),
+    (error) => error?.code === "AWS_SES_FEEDBACK_ADDRESS_INVALID"
+  );
+  assert.strictEqual(requests.length, 1, "An invalid feedback address must not send a request");
 
   const failedProvider = createAwsSesProvider({
     now: () => NOW,

@@ -21,7 +21,8 @@ function getAwsSesConfig(env = process.env) {
     region: getAwsRegion(env),
     fromAddress: cleanEnvValue(env.EMAIL_FROM_ADDRESS).toLowerCase(),
     fromName: cleanEnvValue(env.EMAIL_FROM_NAME || "UNBOUND AI").slice(0, 100),
-    replyToAddress: cleanEnvValue(env.EMAIL_REPLY_TO_ADDRESS).toLowerCase()
+    replyToAddress: cleanEnvValue(env.EMAIL_REPLY_TO_ADDRESS).toLowerCase(),
+    feedbackForwardingAddress: cleanEnvValue(env.EMAIL_FEEDBACK_FORWARDING_ADDRESS).toLowerCase()
   };
 }
 
@@ -37,7 +38,8 @@ function isConfigured(env = process.env) {
       config.secretAccessKey &&
       config.region &&
       isEmailShape(config.fromAddress) &&
-      (!config.replyToAddress || isEmailShape(config.replyToAddress))
+      (!config.replyToAddress || isEmailShape(config.replyToAddress)) &&
+      (!config.feedbackForwardingAddress || isEmailShape(config.feedbackForwardingAddress))
   );
 }
 
@@ -93,6 +95,12 @@ function buildVerificationMessage({ toEmail, displayName, verificationUrl, env =
     throw error;
   }
 
+  if (config.feedbackForwardingAddress && !isEmailShape(config.feedbackForwardingAddress)) {
+    const error = new Error("A valid SES feedback forwarding email address is required.");
+    error.code = "AWS_SES_FEEDBACK_ADDRESS_INVALID";
+    throw error;
+  }
+
   const url = cleanEnvValue(verificationUrl);
   let parsedUrl;
   try {
@@ -138,6 +146,9 @@ function buildVerificationMessage({ toEmail, displayName, verificationUrl, env =
 
   if (config.replyToAddress) {
     payload.ReplyToAddresses = [config.replyToAddress];
+  }
+  if (config.feedbackForwardingAddress) {
+    payload.FeedbackForwardingEmailAddress = config.feedbackForwardingAddress;
   }
 
   return payload;

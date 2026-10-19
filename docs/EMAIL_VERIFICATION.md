@@ -32,6 +32,7 @@ Optional values:
 - `AWS_SESSION_TOKEN` for temporary credentials
 - `EMAIL_FROM_NAME` (defaults to `UNBOUND AI`)
 - `EMAIL_REPLY_TO_ADDRESS`
+- `EMAIL_FEEDBACK_FORWARDING_ADDRESS` — a monitored, SES-authorized address for bounce and complaint notices; independent of customer replies and message recipients
 - `EMAIL_VERIFICATION_TOKEN_TTL_MINUTES`
 - `RATE_LIMIT_EMAIL_VERIFICATION_SEND_PER_HOUR`
 - `RATE_LIMIT_EMAIL_VERIFICATION_CONSUME_PER_15_MIN`
@@ -97,6 +98,17 @@ Account/identity inspection permissions should be separate from the application'
 sending permission. Confirm which identity is used and its current verification
 state; do not grant SES administration or unrestricted `ses:*` to the app.
 AWS documents [IAM action/resource/From restrictions](https://docs.aws.amazon.com/ses/latest/dg/control-user-access.html).
+
+Set `EMAIL_FEEDBACK_FORWARDING_ADDRESS` to a monitored inbox after confirming its
+SES verification/authorization in the sending region. The adapter passes it as
+the SES v2 `FeedbackForwardingEmailAddress` field. `EMAIL_REPLY_TO_ADDRESS` only
+controls customer replies and does not configure the feedback destination.
+Leaving the forwarding address blank omits the API override and preserves SES's
+default routing; this alone is not evidence that the resulting mailbox is
+monitored. A malformed nonempty forwarding address blocks the request locally.
+Keep identity email feedback forwarding enabled while using this route. See the
+[SES v2 SendEmail reference](https://docs.aws.amazon.com/ses/latest/APIReference-V2/API_SendEmail.html)
+and [email feedback forwarding guide](https://docs.aws.amazon.com/ses/latest/dg/monitor-sending-activity-using-notifications-email.html).
 
 Before live delivery, verify bounce/complaint feedback notifications or event
 publishing, suppression handling, monitoring responsibility and pause procedure.
