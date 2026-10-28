@@ -13,6 +13,26 @@ permissions:
   contents: read
 
 jobs:
+  verify-browser-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: browser-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: browser-worker/package-lock.json
+      - name: Install locked browser dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check browser worker syntax
+        run: node --check server.js
+      - name: Audit browser worker dependencies
+        run: npm audit --omit=dev --audit-level=moderate
+
   verify-production-source:
     runs-on: ubuntu-latest
     timeout-minutes: 10
