@@ -204,8 +204,8 @@ forbidText(
   "age webhook must not persist raw payload"
 );
 
-if (pkg.overrides?.qs !== "6.16.0") {
-  throw new Error("Security contract violation: qs must remain pinned to patched 6.16.0");
+if (pkg.overrides?.qs !== "6.16.1") {
+  throw new Error("Security contract violation: qs must remain pinned to patched 6.16.1");
 }
 if (pkg.engines?.node !== "24.x") {
   throw new Error("Runtime contract violation: package engines.node must remain pinned to Node 24.x");
